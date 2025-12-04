@@ -1,5 +1,5 @@
 #pragma once
-#include <JuceHeader.h>
+#include "JuceHeader.h"
 
 class FruityClipAudioProcessor : public juce::AudioProcessor
 {
@@ -8,10 +8,10 @@ public:
     ~FruityClipAudioProcessor() override {}
 
     //==============================================================================
-    void prepareToPlay(double sampleRate, int samplesPerBlock) override {}
+    void prepareToPlay (double /*sampleRate*/, int /*samplesPerBlock*/) override {}
     void releaseResources() override {}
 
-    bool isBusesLayoutSupported(const BusesLayout& layouts) const override
+    bool isBusesLayoutSupported (const BusesLayout& layouts) const override
     {
         return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo()
             || layouts.getMainOutputChannelSet() == juce::AudioChannelSet::mono();
@@ -35,13 +35,13 @@ public:
     //==============================================================================
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int index) override {}
-    const juce::String getProgramName (int index) override { return {}; }
-    void changeProgramName (int index, const juce::String& newName) override {}
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
 
     //==============================================================================
-    void getStateInformation (juce::MemoryBlock& destData) override {}
-    void setStateInformation (const void* data, int sizeInBytes) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
 
 private:
     float thresholdLinear;
