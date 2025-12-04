@@ -7,7 +7,7 @@
 static float fruitySoftClipSample (float x, float threshold)
 {
     float sign = x >= 0.0f ? 1.0f : -1.0f;
-    float ax   = std::abs(x);
+    float ax   = std::abs (x);
 
     if (ax <= threshold)
         return x;
@@ -53,7 +53,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         {
             float x = samples[i];
 
-            float clipped = fruitySoftClipSample(x, thresholdLinear);
+            float clipped = fruitySoftClipSample (x, thresholdLinear);
 
             clipped *= postGain;
 
@@ -63,9 +63,18 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 }
 
 // ==========================
-// Editor
+// EDITOR
 // ==========================
 juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
 {
     return new juce::GenericAudioProcessorEditor (*this);
+}
+
+// ==========================
+// !!! REQUIRED ENTRY POINT !!!
+// This fixes your linker error
+// ==========================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FruityClipAudioProcessor();
 }
