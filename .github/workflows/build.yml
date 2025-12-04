@@ -20,7 +20,7 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Upload VST3
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: FRUITYCLIP-VST3
           path: build/**/*.vst3
