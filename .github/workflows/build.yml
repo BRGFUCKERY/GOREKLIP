@@ -1,0 +1,26 @@
+name: Build FRUITYCLIP VST3
+
+on: [push]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Clone JUCE
+        run: |
+          git clone --depth 1 https://github.com/juce-framework/JUCE.git
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . -DJUCE_DIR=JUCE
+
+      - name: Build Plug-In
+        run: cmake --build build --config Release
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v3
+        with:
+          name: FRUITYCLIP-VST3
+          path: build/**/*.vst3
