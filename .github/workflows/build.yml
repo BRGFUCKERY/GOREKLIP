@@ -14,7 +14,7 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build -S . -DJUCE_DIR=JUCE
+          cmake -B build -S . 
 
       - name: Build Plug-In
         run: cmake --build build --config Release
