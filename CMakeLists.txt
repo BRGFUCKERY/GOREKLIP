@@ -8,6 +8,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # JUCE will be in the JUCE folder (we clone it in the workflow)
 add_subdirectory(JUCE)
 
+juce_add_binary_data(FRUITYCLIPData
+    SOURCES
+        Assets/bg.png
+)
+
 juce_add_plugin(FRUITYCLIP
     COMPANY_NAME "BRG"
     PLUGIN_MANUFACTURER_CODE BRGF
@@ -34,6 +39,9 @@ target_link_libraries(FRUITYCLIP
         juce::juce_core
         juce::juce_gui_basics
         juce::juce_gui_extra
+        FRUITYCLIPData
+)
+
 )
 
 target_compile_definitions(FRUITYCLIP PRIVATE JUCE_VST3_CAN_REPLACE_VST2=0)
