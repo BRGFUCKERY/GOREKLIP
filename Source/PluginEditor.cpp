@@ -15,19 +15,17 @@
 FRUITYCLIPAudioProcessorEditor::FRUITYCLIPAudioProcessorEditor (FRUITYCLIPAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    // Make sure that before the constructor has finished, you've set the
-    // editor's size to whatever you need it to be.
     setSize (400, 300);
 
-      // Load GUI image from embedded binary data
-    backgroundImage = juce::ImageFileFormat::loadFrom(
-        juce::MemoryInputStream (BinaryData::bg_png,
-                                 BinaryData::bg_pngSize,
-                                 false));
+    // Load GUI image from embedded binary data
+    backgroundImage = juce::ImageFileFormat::loadFrom (BinaryData::bg_png,
+                                                       BinaryData::bg_pngSize);
 
     // If image loads, resize plugin window to match image size
     if (backgroundImage.isValid())
         setSize (backgroundImage.getWidth(), backgroundImage.getHeight());
+}
+
 
 }
 
