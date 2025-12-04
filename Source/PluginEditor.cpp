@@ -14,8 +14,28 @@
 FRUITYCLIPAudioProcessorEditor::FRUITYCLIPAudioProcessorEditor (FRUITYCLIPAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    // Default size in case image fails to load
-    setSize (400, 300);
+    // Load GUI image
+    backgroundImage = juce::ImageFileFormat::loadFrom(
+        BinaryData::bg_png,
+        BinaryData::bg_pngSize
+    );
+
+    if (backgroundImage.isValid())
+    {
+        float scale = 0.7f; // 70%
+
+        int w = (int)(backgroundImage.getWidth()  * scale);
+        int h = (int)(backgroundImage.getHeight() * scale);
+
+        setSize (w, h);
+    }
+    else
+    {
+        // fallback size
+        setSize(400, 300);
+    }
+}
+
 
     // Load GUI image from embedded binary data
     backgroundImage = juce::ImageFileFormat::loadFrom (BinaryData::bg_png,
