@@ -29,5 +29,7 @@ private:
     // access the processor object that created it.
     FRUITYCLIPAudioProcessor& audioProcessor;
 
+    juce::Image backgroundImage;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FRUITYCLIPAudioProcessorEditor)
 };
