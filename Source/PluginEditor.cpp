@@ -10,11 +10,11 @@
 #include "PluginEditor.h"
 #include "BinaryData.h"
 
-
 //==============================================================================
 FRUITYCLIPAudioProcessorEditor::FRUITYCLIPAudioProcessorEditor (FRUITYCLIPAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
+    // Default size in case image fails to load
     setSize (400, 300);
 
     // Load GUI image from embedded binary data
@@ -24,9 +24,6 @@ FRUITYCLIPAudioProcessorEditor::FRUITYCLIPAudioProcessorEditor (FRUITYCLIPAudioP
     // If image loads, resize plugin window to match image size
     if (backgroundImage.isValid())
         setSize (backgroundImage.getWidth(), backgroundImage.getHeight());
-}
-
-
 }
 
 FRUITYCLIPAudioProcessorEditor::~FRUITYCLIPAudioProcessorEditor()
@@ -52,9 +49,8 @@ void FRUITYCLIPAudioProcessorEditor::paint (juce::Graphics& g)
     }
 }
 
-
 void FRUITYCLIPAudioProcessorEditor::resized()
 {
     // This is generally where you'll want to lay out the positions of any
-    // subcomponents in your editor..
+    // subcomponents in your editor.
 }
