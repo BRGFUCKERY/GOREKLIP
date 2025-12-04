@@ -20,17 +20,17 @@ FRUITYCLIPAudioProcessorEditor::FRUITYCLIPAudioProcessorEditor (FRUITYCLIPAudioP
 
     if (backgroundImage.isValid())
     {
-        // Scale the window to 70% of the image size
-        const float scale = 0.7f;
+        // Final scale = previous 70% * additional 50% = 0.35
+        const float scale = 0.35f;
 
-        const int w = (int) (backgroundImage.getWidth()  * scale);
-        const int h = (int) (backgroundImage.getHeight() * scale);
+        const int w = (int)(backgroundImage.getWidth()  * scale);
+        const int h = (int)(backgroundImage.getHeight() * scale);
 
         setSize (w, h);
     }
     else
     {
-        // Fallback size if image fails to load
+        // Fallback size
         setSize (400, 300);
     }
 }
@@ -60,6 +60,5 @@ void FRUITYCLIPAudioProcessorEditor::paint (juce::Graphics& g)
 
 void FRUITYCLIPAudioProcessorEditor::resized()
 {
-    // This is generally where you'll want to lay out the positions of any
-    // subcomponents in your editor.
+    // Layout for future UI elements comes here
 }
