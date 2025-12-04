@@ -42,6 +42,4 @@ target_link_libraries(FRUITYCLIP
         FRUITYCLIPData
 )
 
-)
-
 target_compile_definitions(FRUITYCLIP PRIVATE JUCE_VST3_CAN_REPLACE_VST2=0)
