@@ -1,59 +1,51 @@
-/*
-  ==============================================================================
-
-    This file contains the basic framework code for a JUCE plugin processor.
-
-  ==============================================================================
-*/
-
 #pragma once
+#include <JuceHeader.h>
 
-#include "JuceHeader.h"
-
-//==============================================================================
-/**
-*/
-class FRUITYCLIPAudioProcessor  : public juce::AudioProcessor
+class FruityClipAudioProcessor : public juce::AudioProcessor
 {
 public:
-    //==============================================================================
-    FRUITYCLIPAudioProcessor();
-    ~FRUITYCLIPAudioProcessor() override;
+    FruityClipAudioProcessor();
+    ~FruityClipAudioProcessor() override {}
 
     //==============================================================================
-    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override;
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override {}
+    void releaseResources() override {}
 
-   #ifndef JucePlugin_PreferredChannelConfigurations
-    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
-   #endif
+    bool isBusesLayoutSupported(const BusesLayout& layouts) const override
+    {
+        return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo()
+            || layouts.getMainOutputChannelSet() == juce::AudioChannelSet::mono();
+    }
 
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     //==============================================================================
     juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override;
+    bool hasEditor() const override { return true; }
 
     //==============================================================================
-    const juce::String getName() const override;
+    const juce::String getName() const override { return "FRUITYCLIP"; }
 
-    bool acceptsMidi() const override;
-    bool producesMidi() const override;
-    bool isMidiEffect() const override;
-    double getTailLengthSeconds() const override;
+    bool acceptsMidi()  const override { return false; }
+    bool producesMidi() const override { return false; }
+    bool isMidiEffect() const override { return false; }
 
-    //==============================================================================
-    int getNumPrograms() override;
-    int getCurrentProgram() override;
-    void setCurrentProgram (int index) override;
-    const juce::String getProgramName (int index) override;
-    void changeProgramName (int index, const juce::String& newName) override;
+    double getTailLengthSeconds() const override { return 0.0; }
 
     //==============================================================================
-    void getStateInformation (juce::MemoryBlock& destData) override;
-    void setStateInformation (const void* data, int sizeInBytes) override;
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int index) override {}
+    const juce::String getProgramName (int index) override { return {}; }
+    void changeProgramName (int index, const juce::String& newName) override {}
+
+    //==============================================================================
+    void getStateInformation (juce::MemoryBlock& destData) override {}
+    void setStateInformation (const void* data, int sizeInBytes) override {}
 
 private:
-    //==============================================================================
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FRUITYCLIPAudioProcessor)
+    float thresholdLinear;
+    float postGain;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
 };
