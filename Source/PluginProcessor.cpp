@@ -78,7 +78,7 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
     : parameters (*this, nullptr, "PARAMS", createParameterLayout())
 {
     // This is the factor that matched Fruity in your noise + song tests
-    postGain        = 0.99997096f; // ~ -0.00026 dB
+    postGain        = 0.99999385f; // ~ -0.00026 dB
 
     // Threshold for the saturation curve (~ -6 dB at satAmount = 1)
     thresholdLinear = juce::Decibels::decibelsToGain (-6.0f);
