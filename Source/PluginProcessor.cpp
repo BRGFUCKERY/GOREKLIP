@@ -6,11 +6,10 @@
 // ==========================
 FruityClipAudioProcessor::FruityClipAudioProcessor()
 {
-    // This is the linear factor that best matches Fruity
-    // with THRES at max and POST around 3 o'clock.
-    // Derived from your +6 and +12 white noise tests.
-    postGain        = 0.99997096f; // a ≈ 0.99997
-    thresholdLinear = 1.0f;        // unused now, but kept for future use
+    // Linear factor that best matches Fruity at your settings
+    // (THRES max, POST ~3 o'clock), derived from +6 and +12 tests.
+    postGain        = 0.99997096f; // ~ -0.00026 dB
+    thresholdLinear = 1.0f;        // unused for now
 }
 
 // ==========================
@@ -23,7 +22,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     const int numChannels = buffer.getNumChannels();
     const int numSamples  = buffer.getNumSamples();
-    const float g = postGain; // just a tiny gain trim
+    const float g         = postGain;
 
     for (int ch = 0; ch < numChannels; ++ch)
     {
@@ -33,8 +32,12 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         {
             float x = samples[i];
 
-            // EXACT Fruity behaviour at your settings: linear scale only
+            // 1) Match Fruity's tiny gain factor
             float y = x * g;
+
+            // 2) Hard ceiling at 0 dBFS (±1.0), like the DAW/Fruity bus
+            if (y >  1.0f) y =  1.0f;
+            if (y < -1.0f) y = -1.0f;
 
             samples[i] = y;
         }
