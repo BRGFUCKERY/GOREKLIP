@@ -141,21 +141,27 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     else
         g.fillAll (juce::Colours::black);
 
-    // LOGO - smaller & higher (further from knobs)
+    // LOGO - crop invisible padding so the visible part touches the top
     if (logoImage.isValid())
     {
-        const float targetW = w * 0.80f;                  // a bit smaller
+        const float targetW = w * 0.80f;
         const float scale   = targetW / logoImage.getWidth();
 
         const int drawW = (int)(logoImage.getWidth()  * scale);
         const int drawH = (int)(logoImage.getHeight() * scale);
 
         const int x = (w - drawW) / 2;
-        const int y = 0;                                  // glued to top
+        const int y = 0; // absolutely top
+
+        // --- CROP TOP 20% OF SOURCE LOGO ---
+        const int cropY      = (int)(logoImage.getHeight() * 0.20f);   // remove top 20%
+        const int cropHeight = logoImage.getHeight() - cropY;          // keep lower 80%
 
         g.drawImage (logoImage,
-                     x, y, drawW, drawH,
-                     0, 0, logoImage.getWidth(), logoImage.getHeight());
+                     x, y, drawW, drawH,     // destination
+                     0, cropY,               // source x, y (start 20% down)
+                     logoImage.getWidth(),
+                     cropHeight);            // source height
     }
 }
 
@@ -169,19 +175,20 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    // Reserve a thin band for logo visually (~18% height)
+    // Reserve a thin band for the logo visually (~18% height)
     const int logoSpace = (int)(h * 0.18f);
     bounds.removeFromTop (logoSpace);
 
-    // 20% smaller knobs than previous (0.18 * 0.8 = 0.144)
+    // Smaller knobs
     const int knobSize = juce::jmax (50, (int)(h * 0.144f));
-    // More distance between knobs
-    const int spacing  = (int)(w * 0.10f);
+
+    // MUCH more distance between knobs
+    const int spacing  = (int)(w * 0.22f);
 
     const int totalW   = knobSize * 2 + spacing;
     const int startX   = (w - totalW) / 2;
 
-    // Keep them low – near the bottom of the editor
+    // Keep knobs low near the bottom
     const int bottomMargin = (int)(h * 0.05f);
     const int knobY        = h - knobSize - bottomMargin;
 
