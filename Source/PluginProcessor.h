@@ -31,9 +31,10 @@ public:
 
     double getTailLengthSeconds() const override { return 0.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
+    //==============================================================================
+    int getNumPrograms() override               { return 1; }
+    int getCurrentProgram() override            { return 0; }
+    void setCurrentProgram (int) override       {}
     const juce::String getProgramName (int) override { return {}; }
     void changeProgramName (int, const juce::String&) override {}
 
@@ -44,14 +45,12 @@ public:
     juce::AudioProcessorValueTreeState& getParametersState() { return parameters; }
 
 private:
-
-    // === These MUST exist for your new DSP to compile ===
-    float thresholdLinear; // saturation threshold (~ -6 dB)
-    float postGain;        // Fruity matching output correction
+    // === These match your original Fruity-null behavior ===
+    float thresholdLinear; // saturation knee (~ -6 dB when satAmount = 1)
+    float postGain;        // Fruity-matching output gain
 
     juce::AudioProcessorValueTreeState parameters;
 
-    // Parameter layout factory
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
