@@ -1,9 +1,8 @@
-#include "PluginProcessor.h"
 #include "PluginEditor.h"
 
 //==============================================================================
 
-GOREKLIPERAudioProcessorEditor::GOREKLIPERAudioProcessorEditor (GOREKLIPERAudioProcessor& p)
+FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
     : AudioProcessorEditor (&p),
       processorRef (p)
 {
@@ -33,7 +32,7 @@ GOREKLIPERAudioProcessorEditor::GOREKLIPERAudioProcessorEditor (GOREKLIPERAudioP
     silkSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     silkSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
 
-    // 7 o'clock -> 5 o'clock
+    // 7 o'clock -> 5 o'clock sweep
     silkSlider.setRotaryParameters (2.356f, -0.785f, true);
 
     // attach to your APVTS parameter (change "SILK" if your ID is different)
@@ -47,7 +46,7 @@ GOREKLIPERAudioProcessorEditor::GOREKLIPERAudioProcessorEditor (GOREKLIPERAudioP
     satSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     satSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
 
-    // 7 o'clock -> 5 o'clock
+    // 7 o'clock -> 5 o'clock sweep
     satSlider.setRotaryParameters (2.356f, -0.785f, true);
 
     // attach to your APVTS parameter (change "SAT" if your ID is different)
@@ -55,11 +54,11 @@ GOREKLIPERAudioProcessorEditor::GOREKLIPERAudioProcessorEditor (GOREKLIPERAudioP
         processorRef.apvts, "SAT", satSlider);
 }
 
-GOREKLIPERAudioProcessorEditor::~GOREKLIPERAudioProcessorEditor() = default;
+FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor() = default;
 
 //==============================================================================
 
-void GOREKLIPERAudioProcessorEditor::paint (juce::Graphics& g)
+void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
     auto w = bounds.getWidth();
@@ -78,8 +77,8 @@ void GOREKLIPERAudioProcessorEditor::paint (juce::Graphics& g)
     // -------------------------------------------------------------------------
     if (logoImage.isValid())
     {
-        const float logoWidth  = w * 0.60f;      // 60% of total width
-        const float logoHeight = logoWidth * 0.25f;  // tweak ratio if needed
+        const float logoWidth  = w * 0.60f;          // 60% of total width
+        const float logoHeight = logoWidth * 0.25f;  // tweak this ratio if needed
 
         const float logoX = (w - logoWidth) * 0.5f;  // center
         const float logoY = h * 0.08f;               // a little down from top
@@ -100,7 +99,7 @@ void GOREKLIPERAudioProcessorEditor::paint (juce::Graphics& g)
 
 //==============================================================================
 
-void GOREKLIPERAudioProcessorEditor::resized()
+void FruityClipAudioProcessorEditor::resized()
 {
     auto bounds = getLocalBounds();
 
@@ -114,32 +113,10 @@ void GOREKLIPERAudioProcessorEditor::resized()
     //  - starting higher on the GUI (where the old small knobs ended)
     // -------------------------------------------------------------------------
     const int knobDiameter = (int) (height * 0.30f);     // 30% of height
-    const int knobY        = (int) (height * 0.55f);     // bring up a bit
+    const int knobY        = (int) (height * 0.55f);     // lifted up
 
     const int spacingBetweenKnobs = (int) (width * 0.06f);   // small gap
     const int centerX             = width / 2;
 
     const int totalKnobsWidth     = knobDiameter * 2 + spacingBetweenKnobs;
-    const int firstKnobX          = centerX - (totalKnobsWidth / 2);
-    const int secondKnobX         = firstKnobX + knobDiameter + spacingBetweenKnobs;
-
-    silkSlider.setBounds (firstKnobX,  knobY, knobDiameter, knobDiameter);
-    satSlider .setBounds (secondKnobX, knobY, knobDiameter, knobDiameter);
-
-    // -------------------------------------------------------------------------
-    // SILK / SAT icon positions (small diamonds like in your screenshot)
-    // -------------------------------------------------------------------------
-    const int iconHeight = (int) (height * 0.06f);
-    const int iconWidth  = iconHeight;  // square-ish
-    const int iconY      = knobY + knobDiameter + (int) (height * 0.015f);
-
-    silkIconBounds = { firstKnobX + (knobDiameter - iconWidth) / 2,
-                       iconY,
-                       iconWidth,
-                       iconHeight };
-
-    satIconBounds  = { secondKnobX + (knobDiameter - iconWidth) / 2,
-                       iconY,
-                       iconWidth,
-                       iconHeight };
-}
+    const int firstKnobX          = centerX
