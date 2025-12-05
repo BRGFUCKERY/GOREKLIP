@@ -49,8 +49,7 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
     }
     else
     {
-        // All other knobs (GAIN, SILK, SAT) – just map 0..1 to angle.
-        // No SAT-based visual compensation so the gain finger never looks "stuck".
+        // All other knobs (GAIN, SILK, SAT) – plain 0..1 to angle
         angle = minAngle + (maxAngle - minAngle) * sliderPosProportional;
     }
 
@@ -132,6 +131,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         lbl.setText (text, juce::dontSendNotification);
         lbl.setJustificationType (juce::Justification::centred);
         lbl.setColour (juce::Label::textColourId, juce::Colours::white);
+        // Deprecated ctor, but fine – JUCE just warns
         lbl.setFont (juce::Font (16.0f, juce::Font::bold));
     };
 
@@ -151,4 +151,204 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     auto& apvts = processor.getParametersState();
 
     gainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                        apvts,
+                        apvts, "inputGain", gainSlider);
+
+    satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "satAmount",  satSlider);
+
+    silkAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "silkAmount", silkSlider);
+
+    modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "useLimiter", modeSlider);
+
+    // Initial state from param
+    if (auto* modeParam = apvts.getRawParameterValue ("useLimiter"))
+    {
+        const bool useLimiter = (modeParam->load() >= 0.5f);
+        satSlider.setEnabled (! useLimiter);
+        modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
+    }
+
+    // When MODE changes, update SAT enable + text
+    modeSlider.onValueChange = [this]
+    {
+        const bool useLimiter = (modeSlider.getValue() >= 0.5f);
+        satSlider.setEnabled (! useLimiter);
+        modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
+    };
+
+    // Now the LNF knows which slider is which
+    fingerLnf.setControlledSliders (&gainSlider, &modeSlider, &satSlider);
+
+    // Start GUI update timer (for burn animation)
+    startTimerHz (30);
+}
+
+FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
+{
+    stopTimer();
+    gainSlider.setLookAndFeel (nullptr);
+    silkSlider.setLookAndFeel (nullptr);
+    satSlider.setLookAndFeel  (nullptr);
+    modeSlider.setLookAndFeel (nullptr);
+}
+
+//==============================================================
+// PAINT
+//==============================================================
+void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
+{
+    const int w = getWidth();
+    const int h = getHeight();
+
+    if (bgImage.isValid())
+        g.drawImageWithin (bgImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+    else
+        g.fillAll (juce::Colours::black);
+
+    // LOGO - crop invisible padding so the visible part touches the top
+    if (logoImage.isValid())
+    {
+        const float targetW = w * 0.80f;
+        const float scale   = targetW / logoImage.getWidth();
+
+        const int drawW = (int)(logoImage.getWidth()  * scale);
+        const int drawH = (int)(logoImage.getHeight() * scale);
+
+        const int x = (w - drawW) / 2;
+        const int y = 0; // absolutely top
+
+        // --- CROP TOP 20% OF SOURCE LOGO ---
+        const int cropY      = (int)(logoImage.getHeight() * 0.20f);   // remove top 20%
+        const int cropHeight = logoImage.getHeight() - cropY;          // keep lower 80%
+
+        g.drawImage (logoImage,
+                     x, y, drawW, drawH,     // destination
+                     0, cropY,               // source x, y (start 20% down)
+                     logoImage.getWidth(),
+                     cropHeight);            // source height
+    }
+
+    // BURN OVERLAY – more smashed = more washed-out / burnt TikTok meme
+    if (lastBurn > 0.01f)
+    {
+        const float b      = juce::jlimit (0.0f, 1.0f, lastBurn);
+        const float shaped = std::pow (b, 0.35f); // ramps VERY fast near the top
+
+        // 1) Heavy white wash – almost completely overexposed at full burn
+        g.setColour (juce::Colours::white.withAlpha (0.85f * shaped));
+        g.fillAll();
+
+        // 2) Cold blue / purple-ish tints (TikTok cooked filter vibes)
+        const juce::Colour tint1 = juce::Colour::fromFloatRGBA (0.55f, 0.80f, 1.0f, 0.65f * shaped);
+        g.setColour (tint1);
+        g.fillAll();
+
+        const juce::Colour tint2 = juce::Colour::fromFloatRGBA (0.45f, 0.55f, 0.95f, 0.45f * shaped);
+        g.setColour (tint2);
+        g.fillAll();
+
+        // 3) Thick dark frame – boxed, crunchy
+        const int frameThickness = juce::jmax (4, (int) std::round (8.0f + 20.0f * shaped));
+        g.setColour (juce::Colours::black.withAlpha (0.40f * shaped));
+        g.drawRect (getLocalBounds(), frameThickness);
+
+        // 4) Inner vignette – crush the middle
+        juce::Rectangle<int> inner = getLocalBounds().reduced ((int) std::round (10.0f + 50.0f * shaped));
+        g.setColour (juce::Colours::black.withAlpha (0.60f * shaped));
+        g.fillRect (inner);
+
+        // 5) Vertical smear bands – fake sensor streaks
+        juce::Random& r = juce::Random::getSystemRandom();
+        const int bandCount = (int) (30 * shaped);
+        for (int i = 0; i < bandCount; ++i)
+        {
+            const int bandX   = r.nextInt (w);
+            const int bandW   = juce::jmax (1, r.nextInt (5));
+            const float alpha = 0.22f * shaped;
+
+            juce::Colour bandColour = juce::Colour::fromFloatRGBA (0.95f, 0.98f, 1.0f, alpha);
+            g.setColour (bandColour);
+            g.fillRect (bandX, 0, bandW, h);
+        }
+
+        // 6) Noise speckles – gritty meme texture
+        const int noiseCount = (int) (300 * shaped);
+        for (int i = 0; i < noiseCount; ++i)
+        {
+            const int px   = r.nextInt (w);
+            const int py   = r.nextInt (h);
+            const int size = 1 + r.nextInt (2);
+
+            const float choice = r.nextFloat();
+            if (choice < 0.5f)
+                g.setColour (juce::Colours::white.withAlpha (0.25f * shaped));
+            else
+                g.setColour (juce::Colours::black.withAlpha (0.25f * shaped));
+
+            g.fillRect (px, py, size, size);
+        }
+    }
+}
+
+//==============================================================
+// LAYOUT
+//==============================================================
+void FruityClipAudioProcessorEditor::resized()
+{
+    const int w = getWidth();
+    const int h = getHeight();
+
+    const int knobSize = juce::jmin (w / 6, h / 3);
+    const int spacing  = knobSize / 2;
+
+    const int totalW   = knobSize * 4 + spacing * 3;
+    const int startX   = (w - totalW) / 2;
+
+    // Keep knobs low near the bottom
+    const int bottomMargin = (int)(h * 0.05f);
+    const int knobY        = h - knobSize - bottomMargin;
+
+    gainSlider.setBounds (startX + 0 * (knobSize + spacing), knobY, knobSize, knobSize);
+    silkSlider.setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
+    satSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
+    modeSlider.setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
+
+    const int labelH = 20;
+
+    gainLabel.setBounds (gainSlider.getX(),
+                         gainSlider.getBottom() + 2,
+                         gainSlider.getWidth(),
+                         labelH);
+
+    silkLabel.setBounds (silkSlider.getX(),
+                         silkSlider.getBottom() + 2,
+                         silkSlider.getWidth(),
+                         labelH);
+
+    satLabel.setBounds (satSlider.getX(),
+                        satSlider.getBottom() + 2,
+                        satSlider.getWidth(),
+                        labelH);
+
+    modeLabel.setBounds (modeSlider.getX(),
+                         modeSlider.getBottom() + 2,
+                         modeSlider.getWidth(),
+                         labelH);
+}
+
+//==============================================================
+// TIMER – pull burn value from processor
+//==============================================================
+void FruityClipAudioProcessorEditor::timerCallback()
+{
+    const float newBurn = processor.getGuiBurn();
+
+    // Only repaint if it actually changed a bit
+    if (std::abs (newBurn - lastBurn) > 0.01f)
+    {
+        lastBurn = newBurn;
+        repaint();
+    }
+}
