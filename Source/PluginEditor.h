@@ -25,14 +25,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> satAttachment;
 
     // --- Images ---
-    juce::Image backgroundImage;
-    juce::Image logoImage;
-    juce::Image silkIconImage;
-    juce::Image satIconImage;
-
-    // Cached bounds for SILK / SAT icons
-    juce::Rectangle<int> silkIconBounds;
-    juce::Rectangle<int> satIconBounds;
+    juce::Image backgroundImage;   // from bg.png
+    juce::Image fingerImage;       // from finger.png
+    juce::Image logoImage;         // from gorekliper_logo.png
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessorEditor)
 };
