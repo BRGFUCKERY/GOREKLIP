@@ -57,7 +57,7 @@ public:
     // Value used by the GUI for the "burn" animation (0..1)
     float getGuiBurn() const noexcept { return guiBurn.load(); }
 
-    // (Optional) expose auto-trim for debug/visualising later
+    // Expose SAT auto-trim (in dB) for debug / future visuals
     float getSatCompDb() const noexcept { return satCompDb.load(); }
 
 private:
@@ -79,7 +79,7 @@ private:
     float  limiterGain      = 1.0f;
     float  limiterReleaseCo = 0.0f;
 
-    // Auto input trim for SAT (in dB), adjusted dynamically to keep loudness near-unity
+    // SAT input-trim in dB, now **static mapping from SAT** (no adaptive RMS)
     std::atomic<float> satCompDb { 0.0f };
 
     // GUI meter smoothed state (0..1)
