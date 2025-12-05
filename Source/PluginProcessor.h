@@ -1,6 +1,7 @@
 #pragma once
 
 #include "JuceHeader.h"
+#include <atomic>
 
 class FruityClipAudioProcessor : public juce::AudioProcessor
 {
@@ -22,7 +23,7 @@ public:
     // Editor
     //==========================================================
     juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override;
+    bool hasEditor() const override { return true; }
 
     //==========================================================
     // Metadata
@@ -34,7 +35,7 @@ public:
     double getTailLengthSeconds() const override;
 
     //==========================================================
-    // Programs (we just use 1)
+    // Programs (we don't really use them)
     //==========================================================
     int getNumPrograms() override;
     int getCurrentProgram() override;
@@ -48,26 +49,41 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    //==========================================================
+    // Accessors
+    //==========================================================
     juce::AudioProcessorValueTreeState& getParametersState() { return parameters; }
 
+    // Value used by the GUI for the "burn" animation (0..1)
+    float getGuiBurn() const noexcept { return guiBurn.load(); }
+
 private:
-    // DSP state
-    float thresholdLinear = 0.0f;   // clip threshold for SAT path
-    float postGain        = 1.0f;   // Fruity-null alignment gain
+    //==========================================================
+    // Parameters
+    //==========================================================
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    //==========================================================
+    // DSP State
+    //==========================================================
+    // Soft-clip threshold at SAT = 1.0 (~ -6 dB)
+    float thresholdLinear = 0.0f;
+    // Post-gain that makes us "null" Fruity
+    float postGain        = 1.0f;
 
     // Limiter state
     double sampleRate       = 44100.0;
     float  limiterGain      = 1.0f;
     float  limiterReleaseCo = 0.0f;
 
+    // GUI meter smoothed state
+    std::atomic<float> guiBurn { 0.0f };
+
+    // Parameter state
     juce::AudioProcessorValueTreeState parameters;
 
-    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-
-    // Helper DSP functions
-    static float silkCurveFull (float x);
-    static float bassBoostSaturate (float x, float satAmount);
-    float        processLimiterSample (float x);
+    // Helpers
+    float processLimiterSample (float x);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
 };
