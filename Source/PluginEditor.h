@@ -1,21 +1,21 @@
 #pragma once
 
-#include <JuceHeader.h>
+#include "JuceHeader.h"
 #include "PluginProcessor.h"
 
 //==============================================================================
 
-class GOREKLIPERAudioProcessorEditor  : public juce::AudioProcessorEditor
+class FruityClipAudioProcessorEditor  : public juce::AudioProcessorEditor
 {
 public:
-    GOREKLIPERAudioProcessorEditor (GOREKLIPERAudioProcessor&);
-    ~GOREKLIPERAudioProcessorEditor() override;
+    FruityClipAudioProcessorEditor (FruityClipAudioProcessor&);
+    ~FruityClipAudioProcessorEditor() override;
 
     void paint   (juce::Graphics&) override;
     void resized() override;
 
 private:
-    GOREKLIPERAudioProcessor& processorRef;
+    FruityClipAudioProcessor& processorRef;
 
     // --- Controls ---
     juce::Slider silkSlider;
@@ -34,5 +34,5 @@ private:
     juce::Rectangle<int> silkIconBounds;
     juce::Rectangle<int> satIconBounds;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GOREKLIPERAudioProcessorEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessorEditor)
 };
