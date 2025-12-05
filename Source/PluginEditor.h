@@ -4,14 +4,27 @@
 #include "PluginProcessor.h"
 
 //==============================================================
-//  Custom LookAndFeel for the finger knob
+//  Custom LookAndFeel for the finger knobs
 //==============================================================
 class MiddleFingerLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     MiddleFingerLookAndFeel() = default;
 
-    void setKnobImage (const juce::Image& img) { knobImage = img; }
+    void setKnobImage (const juce::Image& img)
+    {
+        knobImage = img;
+    }
+
+    // Let the LNF know which sliders are which
+    void setControlledSliders (juce::Slider* gain,
+                               juce::Slider* mode,
+                               juce::Slider* sat)
+    {
+        gainSlider = gain;
+        modeSlider = mode;
+        satSlider  = sat;
+    }
 
     void drawRotarySlider (juce::Graphics& g,
                            int x, int y, int width, int height,
@@ -22,18 +35,24 @@ public:
 
 private:
     juce::Image knobImage;
+
+    // Pointers to specific sliders (not owned)
+    juce::Slider* gainSlider = nullptr; // left finger (GAIN)
+    juce::Slider* modeSlider = nullptr; // right finger (CLIPPER/LIMITER)
+    juce::Slider* satSlider  = nullptr; // SAT knob
 };
 
 //==============================================================
 //  Main Editor
 //==============================================================
-class FruityClipAudioProcessorEditor  : public juce::AudioProcessorEditor
+class FruityClipAudioProcessorEditor  : public juce::AudioProcessorEditor,
+                                        private juce::Timer
 {
 public:
     FruityClipAudioProcessorEditor (FruityClipAudioProcessor&);
     ~FruityClipAudioProcessorEditor() override;
 
-    void paint   (juce::Graphics&) override;
+    void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
@@ -47,20 +66,26 @@ private:
     // LookAndFeel + knobs
     MiddleFingerLookAndFeel fingerLnf;
 
-    juce::Slider gainSlider;
-    juce::Slider silkSlider;
-    juce::Slider satSlider;
+    juce::Slider gainSlider; // left finger: GAIN
+    juce::Slider silkSlider; // second: SILK
+    juce::Slider satSlider;  // third: SAT
+    juce::Slider modeSlider; // fourth: CLIPPER/LIMITER
 
     juce::Label  gainLabel;
     juce::Label  silkLabel;
     juce::Label  satLabel;
-
-    juce::ToggleButton limitButton; // LIMIT mode toggle
+    juce::Label  modeLabel;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> silkAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> limitAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> modeAttachment;
+
+    // GUI burn value (cached from processor)
+    float lastBurn = 0.0f;
+
+    // Timer for GUI updates
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessorEditor)
 };
