@@ -1,4 +1,6 @@
+#include "BinaryData.h"   // 
 #include "PluginEditor.h"
+
 
 //==============================================================
 // MiddleFingerLookAndFeel
