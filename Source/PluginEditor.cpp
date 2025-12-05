@@ -141,17 +141,17 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     else
         g.fillAll (juce::Colours::black);
 
-    // BIG LOGO - glued to the top edge
+    // LOGO - smaller & higher (further from knobs)
     if (logoImage.isValid())
     {
-        const float targetW = w * 0.90f;                  // very wide
+        const float targetW = w * 0.80f;                  // a bit smaller
         const float scale   = targetW / logoImage.getWidth();
 
         const int drawW = (int)(logoImage.getWidth()  * scale);
         const int drawH = (int)(logoImage.getHeight() * scale);
 
         const int x = (w - drawW) / 2;
-        const int y = 0;                                  // flush with top
+        const int y = 0;                                  // glued to top
 
         g.drawImage (logoImage,
                      x, y, drawW, drawH,
@@ -169,20 +169,20 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    // Reserve just a small band for the logo visually (~20%),
-    // leaving a big negative-space middle.
-    const int logoSpace = (int)(h * 0.20f);
+    // Reserve a thin band for logo visually (~18% height)
+    const int logoSpace = (int)(h * 0.18f);
     bounds.removeFromTop (logoSpace);
 
-    // C-layout: knobs smaller & way lower near the bottom.
-    const int knobSize = juce::jmax (60, (int)(h * 0.18f)); // smaller, subtle
-    const int spacing  = (int)(w * 0.06f);
+    // 20% smaller knobs than previous (0.18 * 0.8 = 0.144)
+    const int knobSize = juce::jmax (50, (int)(h * 0.144f));
+    // More distance between knobs
+    const int spacing  = (int)(w * 0.10f);
 
     const int totalW   = knobSize * 2 + spacing;
     const int startX   = (w - totalW) / 2;
 
-    // Push knobs near the bottom of the whole editor (brutal negative space)
-    const int bottomMargin = (int)(h * 0.04f);
+    // Keep them low – near the bottom of the editor
+    const int bottomMargin = (int)(h * 0.05f);
     const int knobY        = h - knobSize - bottomMargin;
 
     silkSlider.setBounds (startX, knobY, knobSize, knobSize);
