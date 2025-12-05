@@ -52,12 +52,22 @@ public:
 
 private:
     // DSP state
-    float thresholdLinear = 0.0f;
-    float postGain        = 1.0f;
+    float thresholdLinear = 0.0f;   // clip threshold for SAT path
+    float postGain        = 1.0f;   // Fruity-null alignment gain
+
+    // Limiter state
+    double sampleRate       = 44100.0;
+    float  limiterGain      = 1.0f;
+    float  limiterReleaseCo = 0.0f;
 
     juce::AudioProcessorValueTreeState parameters;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    // Helper DSP functions
+    static float silkCurveFull (float x);
+    static float bassBoostSaturate (float x, float satAmount);
+    float        processLimiterSample (float x);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
 };
