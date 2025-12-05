@@ -45,30 +45,30 @@ static float fruitySoftClipSample (float x, float threshold)
 }
 
 // ==========================
-// Silk Red "full" curve (5060-style saturation)
+// Silk Red "full" curve (subtle, 5060-style)
 // ==========================
-// This is the shape at Silk = 100%. The knob will MORPH into this curve,
-// not dry/wet blend audio.
+// 100% Silk curve. Mostly gentle 3rd harmonic, tiny 5th, normalised so
+// input 1.0 -> output 1.0. Designed to be transformer-ish, not a fuzzbox.
 static float silkCurveFull (float x)
 {
-    // Odd harmonics only (transformer-ish): x + a3 x^3 + a5 x^5
     const float x2 = x * x;
     const float x3 = x2 * x;
     const float x5 = x3 * x2;
 
-    constexpr float a3 = 0.8f;
-    constexpr float a5 = 0.25f;
+    // Subtle Neve-ish color: gentle 3rd, tiny 5th
+    constexpr float a3 = 0.15f;  // main 3rd harmonic
+    constexpr float a5 = 0.02f;  // tiny 5th
 
     float y = x + a3 * x3 + a5 * x5;
 
-    // Normalise so that |x| = 1 -> |y| = 1
+    // Normalise so |x| = 1 -> |y| = 1
     constexpr float y1   = 1.0f + a3 * 1.0f + a5 * 1.0f;
     constexpr float norm = 1.0f / y1;
 
     y *= norm;
 
-    // Keep things reasonable pre-clip
-    return juce::jlimit (-1.5f, 1.5f, y);
+    // Tiny safety clamp pre-clip
+    return juce::jlimit (-1.2f, 1.2f, y);
 }
 
 // ==========================
@@ -102,10 +102,10 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto* silkParam = parameters.getRawParameterValue ("silkAmount");
 
     const float satAmountRaw  = satParam  ? satParam->load()  : 0.0f; // 0..1
-    const float silkAmount    = silkParam ? silkParam->load() : 0.0f; // 0..1
+    const float silkAmountRaw = silkParam ? silkParam->load() : 0.0f; // 0..1
 
-    // Clamp just in case
-    const float satAmount = juce::jlimit (0.0f, 1.0f, satAmountRaw);
+    const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
+    const float silkAmount = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
 
     for (int ch = 0; ch < numChannels; ++ch)
     {
@@ -117,14 +117,20 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             float y = x;
 
             // ============================================================
-            // 1) PRE-CLIP SILK: function morph, NOT dry/wet blend
-            //    silkAmount = 0 -> y
-            //    silkAmount = 1 -> silkCurveFull(y)
+            // 1) PRE-CLIP SILK: subtle function morph, NOT dry/wet blend
+            //
+            //    silkAmount = 0   -> y
+            //    silkAmount = 1   -> silkCurveFull(y)
+            //    First half of the knob is VERY subtle (amount^2).
             // ============================================================
             if (silkAmount > 0.0f)
             {
                 const float silkFull = silkCurveFull (y);
-                y = y + silkAmount * (silkFull - y);
+
+                // square the amount so 0–50% is very gentle
+                const float amt = silkAmount * silkAmount; // 0..1
+
+                y = y + amt * (silkFull - y);
             }
 
             // ============================================================
@@ -132,12 +138,10 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             //
             //    satAmount = 0 -> threshold = 1.0 (no soft-clip until 0 dBFS)
             //    satAmount = 1 -> threshold = thresholdLinear (~ -6 dB)
-            //    So the knee moves earlier as you turn the knob,
-            //    but the curve itself is the same fruitySoftClipSample shape.
+            //    Same curve shape, knee moves earlier as you turn the knob.
             // ============================================================
             if (satAmount > 0.0f)
             {
-                // Map satAmount 0..1 to threshold 1.0..thresholdLinear
                 const float currentThreshold = juce::jmap (satAmount, 1.0f, thresholdLinear);
                 y = fruitySoftClipSample (y, currentThreshold);
             }
@@ -163,7 +167,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 // ==========================
 juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
 {
-    // For now: generic UI with Saturation Amount + Silk Amount sliders
+    // You can replace this with your custom editor when ready
     return new juce::GenericAudioProcessorEditor (*this);
 }
 
