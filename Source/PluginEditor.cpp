@@ -149,7 +149,7 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
         const int drawH = (int)(logoImage.getHeight() * scale);
 
         const int x = (w - drawW) / 2;
-        const int y = h * 0.03f;   // near top
+        const int y = (int)(h * 0.03f);   // near top
 
         g.drawImage (logoImage, x, y, drawW, drawH, 0, 0,
                      logoImage.getWidth(), logoImage.getHeight());
@@ -170,12 +170,12 @@ void FruityClipAudioProcessorEditor::resized()
     bounds.removeFromTop (logoSpace);
 
     // BIG, HIGHER, CLOSER KNOBS
-    const int knobSize = juce::jmax (80, h * 0.30f);
-    const int spacing  = w * 0.06f;
+    const int knobSize = juce::jmax (80, (int)(h * 0.30f));  // <- FIXED
+    const int spacing  = (int)(w * 0.06f);
 
     const int totalW   = knobSize * 2 + spacing;
     const int startX   = (w - totalW) / 2;
-    const int knobY    = bounds.getY() + (bounds.getHeight() - knobSize) * 0.3f;
+    const int knobY    = bounds.getY() + (int)((bounds.getHeight() - knobSize) * 0.3f);
 
     silkSlider.setBounds (startX, knobY, knobSize, knobSize);
     satSlider .setBounds (startX + knobSize + spacing, knobY, knobSize, knobSize);
