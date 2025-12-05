@@ -84,14 +84,35 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         s.setMouseDragSensitivity (250);
     };
 
+    // GAIN uses dB range, set below
+    gainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    gainSlider.setMouseDragSensitivity (250);
+
     setupKnob (silkSlider);
     setupKnob (satSlider);
 
+    gainSlider.setLookAndFeel (&fingerLnf);
     silkSlider.setLookAndFeel (&fingerLnf);
     satSlider.setLookAndFeel  (&fingerLnf);
 
+    addAndMakeVisible (gainSlider);
     addAndMakeVisible (silkSlider);
     addAndMakeVisible (satSlider);
+
+    // ----------------------
+    // LIMIT BUTTON
+    // ----------------------
+    limitButton.setButtonText ("LIMIT");
+    limitButton.setClickingTogglesState (true);
+    addAndMakeVisible (limitButton);
+
+    // When limiter is on, SAT is disabled visually
+    limitButton.onStateChange = [this]
+    {
+        const bool useLimiter = limitButton.getToggleState();
+        satSlider.setEnabled (! useLimiter);
+    };
 
     // ----------------------
     // LABELS
@@ -104,9 +125,11 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         lbl.setFont (juce::Font (16.0f, juce::Font::bold));
     };
 
+    setupLabel (gainLabel, "GAIN");
     setupLabel (silkLabel, "SILK");
     setupLabel (satLabel,  "SAT");
 
+    addAndMakeVisible (gainLabel);
     addAndMakeVisible (silkLabel);
     addAndMakeVisible (satLabel);
 
@@ -115,15 +138,27 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // ----------------------
     auto& apvts = processor.getParametersState();
 
+    // GAIN in dB (-12..+12)
+    gainSlider.setRange (-12.0, 12.0, 0.01);
+    gainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "inputGain", gainSlider);
+
     satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "satAmount",  satSlider);
 
     silkAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "silkAmount", silkSlider);
+
+    limitAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+                        apvts, "useLimiter", limitButton);
+
+    // Ensure SAT enabled/disabled state matches initial limiter param
+    satSlider.setEnabled (! limitButton.getToggleState());
 }
 
 FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
 {
+    gainSlider.setLookAndFeel (nullptr);
     silkSlider.setLookAndFeel (nullptr);
     satSlider.setLookAndFeel  (nullptr);
 }
@@ -179,23 +214,35 @@ void FruityClipAudioProcessorEditor::resized()
     const int logoSpace = (int)(h * 0.18f);
     bounds.removeFromTop (logoSpace);
 
-    // Smaller knobs
+    // Knobs
     const int knobSize = juce::jmax (50, (int)(h * 0.144f));
 
-    // MUCH more distance between knobs
-    const int spacing  = (int)(w * 0.22f);
-
-    const int totalW   = knobSize * 2 + spacing;
+    const int spacing  = (int)(w * 0.07f);
+    const int totalW   = knobSize * 3 + spacing * 2;
     const int startX   = (w - totalW) / 2;
 
-    // Keep knobs low near the bottom
     const int bottomMargin = (int)(h * 0.05f);
     const int knobY        = h - knobSize - bottomMargin;
 
-    silkSlider.setBounds (startX, knobY, knobSize, knobSize);
-    satSlider .setBounds (startX + knobSize + spacing, knobY, knobSize, knobSize);
+    // GAIN, SILK, SAT knobs
+    gainSlider.setBounds (startX,
+                          knobY,
+                          knobSize, knobSize);
+
+    silkSlider.setBounds (startX + knobSize + spacing,
+                          knobY,
+                          knobSize, knobSize);
+
+    satSlider .setBounds (startX + (knobSize + spacing) * 2,
+                          knobY,
+                          knobSize, knobSize);
 
     const int labelH = 20;
+
+    gainLabel.setBounds (gainSlider.getX(),
+                         gainSlider.getBottom() + 2,
+                         gainSlider.getWidth(),
+                         labelH);
 
     silkLabel.setBounds (silkSlider.getX(),
                          silkSlider.getBottom() + 2,
@@ -206,4 +253,12 @@ void FruityClipAudioProcessorEditor::resized()
                         satSlider.getBottom() + 2,
                         satSlider.getWidth(),
                         labelH);
+
+    // LIMIT button on the right side above SAT
+    const int buttonW = 70;
+    const int buttonH = 24;
+    const int buttonX = satSlider.getX() + (satSlider.getWidth() - buttonW) / 2;
+    const int buttonY = satSlider.getY() - buttonH - 6;
+
+    limitButton.setBounds (buttonX, buttonY, buttonW, buttonH);
 }
