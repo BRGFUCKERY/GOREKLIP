@@ -5,8 +5,20 @@ project(GOREKLIP VERSION 1.0.0)
 # JUCE
 set(CMAKE_CXX_STANDARD 17)
 
-# Add JUCE
-add_subdirectory(JUCE)
+# Pull JUCE from a local checkout if present, otherwise fetch it
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/CMakeLists.txt")
+    add_subdirectory(JUCE)
+else()
+    include(FetchContent)
+    FetchContent_Declare(
+        JUCE
+        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+        GIT_TAG        7.0.12
+        GIT_SHALLOW    TRUE
+    )
+
+    FetchContent_MakeAvailable(JUCE)
+endif()
 
 # ============================================================
 #  Embed images into plugin binary
