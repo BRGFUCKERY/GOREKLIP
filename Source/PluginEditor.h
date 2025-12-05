@@ -33,7 +33,7 @@ public:
     FruityClipAudioProcessorEditor (FruityClipAudioProcessor&);
     ~FruityClipAudioProcessorEditor() override;
 
-    void paint (juce::Graphics&) override;
+    void paint   (juce::Graphics&) override;
     void resized() override;
 
 private:
@@ -42,12 +42,12 @@ private:
     // Background & logo
     juce::Image bgImage;
     juce::Image logoImage;
-    const float bgScale = 0.35f;
+    const float bgScale = 0.35f; // scale for bg.png
 
     // LookAndFeel + knobs
     MiddleFingerLookAndFeel fingerLnf;
 
-    juce::Slider silkSlider; 
+    juce::Slider silkSlider;
     juce::Slider satSlider;
 
     juce::Label  silkLabel;
