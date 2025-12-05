@@ -1,9 +1,9 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-// ==========================
+//==============================================================
 // Parameter layout
-// ==========================
+//==============================================================
 juce::AudioProcessorValueTreeState::ParameterLayout
 FruityClipAudioProcessor::createParameterLayout()
 {
@@ -20,13 +20,13 @@ FruityClipAudioProcessor::createParameterLayout()
     return { params.begin(), params.end() };
 }
 
-// ==========================
-// Fruity Soft Clip Curve
-// ==========================
+//==============================================================
+// Fruity soft clip curve
+//==============================================================
 static float fruitySoftClipSample (float x, float threshold)
 {
-    float sign = (x >= 0.0f ? 1.0f : -1.0f);
-    float ax   = std::abs (x);
+    const float sign = (x >= 0.0f ? 1.0f : -1.0f);
+    const float ax   = std::abs (x);
 
     if (ax <= threshold)
         return x;
@@ -34,29 +34,29 @@ static float fruitySoftClipSample (float x, float threshold)
     if (ax >= 1.0f)
         return sign * 1.0f;
 
-    float t = (ax - threshold) / (1.0f - threshold); // 0..1
+    const float t = (ax - threshold) / (1.0f - threshold); // 0..1
 
-    float shaped = threshold + (1.0f - (1.0f - t) * (1.0f - t)) * (1.0f - threshold);
+    const float shaped = threshold + (1.0f - (1.0f - t) * (1.0f - t)) * (1.0f - threshold);
 
     return sign * shaped;
 }
 
-// ==========================
-// Subtle Neve 5060-Style Silk Curve
-// ==========================
+//==============================================================
+// Subtle Neve 5060-style Silk curve
+//==============================================================
 static float silkCurveFull (float x)
 {
     const float x2 = x * x;
     const float x3 = x2 * x;
     const float x5 = x3 * x2;
 
-    // Gentle harmonics
-    constexpr float a3 = 0.15f; 
+    // Gentle odd harmonics
+    constexpr float a3 = 0.15f;
     constexpr float a5 = 0.02f;
 
     float y = x + a3 * x3 + a5 * x5;
 
-    // Normalize so 1.0 in = 1.0 out
+    // Normalise so |1| in -> |1| out
     constexpr float y1   = 1.0f + a3 * 1.0f + a5 * 1.0f;
     constexpr float norm = 1.0f / y1;
 
@@ -65,39 +65,39 @@ static float silkCurveFull (float x)
     return juce::jlimit (-1.2f, 1.2f, y);
 }
 
-// ==========================
-// Constructor
-// ==========================
+//==============================================================
+// Constructor / Destructor
+//==============================================================
 FruityClipAudioProcessor::FruityClipAudioProcessor()
-    : parameters (*this, nullptr, "PARAMS", createParameterLayout())
+    : juce::AudioProcessor (BusesProperties()
+                                .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                                .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+      parameters (*this, nullptr, "PARAMS", createParameterLayout())
 {
-    // Ultra fine-tuned Fruity null gain
+    // Ultra fine-tuned Fruity-null gain
     postGain        = 0.99999385f;
-
-    // Soft clip threshold (Fruity behavior)
+    // Soft clip threshold (~ -6 dB at satAmount = 1)
     thresholdLinear = juce::Decibels::decibelsToGain (-6.0f);
 }
 
-FruityClipAudioProcessor::~FruityClipAudioProcessor() {}
+FruityClipAudioProcessor::~FruityClipAudioProcessor() = default;
 
-// ==========================
-// Prepare / Release
-// ==========================
-void FruityClipAudioProcessor::prepareToPlay (double, int) {}
+//==============================================================
+// Basic AudioProcessor overrides
+//==============================================================
+void FruityClipAudioProcessor::prepareToPlay (double /*sampleRate*/, int /*samplesPerBlock*/) {}
 void FruityClipAudioProcessor::releaseResources() {}
 
-// ==========================
-// Buses layout
-// ==========================
 bool FruityClipAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo()
-        || layouts.getMainOutputChannelSet() == juce::AudioChannelSet::mono();
+    auto main = layouts.getMainOutputChannelSet();
+    return main == juce::AudioChannelSet::stereo()
+        || main == juce::AudioChannelSet::mono();
 }
 
-// ==========================
+//==============================================================
 // CORE DSP
-// ==========================
+//==============================================================
 void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                              juce::MidiBuffer&)
 {
@@ -106,13 +106,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const int numChannels = buffer.getNumChannels();
     const int numSamples  = buffer.getNumSamples();
 
-    const float g = postGain;
-
     auto* satParam  = parameters.getRawParameterValue ("satAmount");
     auto* silkParam = parameters.getRawParameterValue ("silkAmount");
 
-    const float satAmount  = satParam  ? satParam->load()  : 0.0f;
-    const float silkAmount = silkParam ? silkParam->load() : 0.0f;
+    const float satAmountRaw  = satParam  ? satParam->load()  : 0.0f;
+    const float silkAmountRaw = silkParam ? silkParam->load() : 0.0f;
+
+    const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
+    const float silkAmount = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
+
+    const float g = postGain;
 
     for (int ch = 0; ch < numChannels; ++ch)
     {
@@ -122,36 +125,25 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         {
             float y = samples[i];
 
-            // =============================
-            // 1) SILK (subtle transformer color)
-            // =============================
+            // 1) SILK (pre-clip transformer-ish color)
             if (silkAmount > 0.0f)
             {
                 const float silkFull = silkCurveFull (y);
-
-                // square for subtle early movement
-                const float amt = silkAmount * silkAmount;
-
+                const float amt      = silkAmount * silkAmount; // make first half of knob super subtle
                 y = y + amt * (silkFull - y);
             }
 
-            // =============================
-            // 2) SATURATION (Fruity-style)
-            // =============================
+            // 2) SATURATION (Fruity soft clip, threshold moves)
             if (satAmount > 0.0f)
             {
-                const float clipped = fruitySoftClipSample (y, thresholdLinear);
-                y = y + satAmount * (clipped - y);
+                const float currentThreshold = juce::jmap (satAmount, 1.0f, thresholdLinear);
+                y = fruitySoftClipSample (y, currentThreshold);
             }
 
-            // =============================
-            // 3) Post-gain (Fruity null alignment)
-            // =============================
+            // 3) Post-gain (Fruity-null alignment)
             y *= g;
 
-            // =============================
-            // 4) Hard limit (0 dBFS)
-            // =============================
+            // 4) Hard ceiling at 0 dBFS
             if (y >  1.0f) y =  1.0f;
             if (y < -1.0f) y = -1.0f;
 
@@ -160,9 +152,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 }
 
-// ==========================
+//==============================================================
 // Editor
-// ==========================
+//==============================================================
 juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
 {
     return new FruityClipAudioProcessorEditor (*this);
@@ -170,9 +162,27 @@ juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
 
 bool FruityClipAudioProcessor::hasEditor() const { return true; }
 
-// ==========================
+//==============================================================
+// Metadata
+//==============================================================
+const juce::String FruityClipAudioProcessor::getName() const      { return "GOREKLIPER"; }
+bool FruityClipAudioProcessor::acceptsMidi() const                { return false; }
+bool FruityClipAudioProcessor::producesMidi() const               { return false; }
+bool FruityClipAudioProcessor::isMidiEffect() const               { return false; }
+double FruityClipAudioProcessor::getTailLengthSeconds() const     { return 0.0; }
+
+//==============================================================
+// Programs (we don't really use them)
+//==============================================================
+int FruityClipAudioProcessor::getNumPrograms()                    { return 1; }
+int FruityClipAudioProcessor::getCurrentProgram()                 { return 0; }
+void FruityClipAudioProcessor::setCurrentProgram (int)            {}
+const juce::String FruityClipAudioProcessor::getProgramName (int) { return {}; }
+void FruityClipAudioProcessor::changeProgramName (int, const juce::String&) {}
+
+//==============================================================
 // State
-// ==========================
+//==============================================================
 void FruityClipAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = parameters.copyState();
@@ -189,9 +199,9 @@ void FruityClipAudioProcessor::setStateInformation (const void* data, int sizeIn
     }
 }
 
-// ==========================
+//==============================================================
 // Entry point
-// ==========================
+//==============================================================
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new FruityClipAudioProcessor();
