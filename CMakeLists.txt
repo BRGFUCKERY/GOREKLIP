@@ -11,6 +11,8 @@ add_subdirectory(JUCE)
 juce_add_binary_data(FRUITYCLIPData
     SOURCES
         Assets/bg.png
+        Assets/finger.png
+        assets/gorekliper_logo.png
 )
 
 juce_add_plugin(FRUITYCLIP
