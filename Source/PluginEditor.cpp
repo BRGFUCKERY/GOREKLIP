@@ -49,17 +49,20 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
     }
     else if (gainSlider != nullptr && satSlider != nullptr && &slider == gainSlider)
     {
-        // GAIN FINGER: display effective (user gain + SAT auto-trim visual)
+        // GAIN FINGER: display effective (user gain + static SAT auto-trim visual)
         const float gainDb = (float) slider.getValue();     // -12..+12
         const float sat    = (float) satSlider->getValue(); // 0..1
 
-        // Mirror the max range used in the processor (-18..+6), but visualised inside slider range
         const auto& range = slider.getRange();
         const float minDb = (float) range.getStart(); // -12
         const float maxDb = (float) range.getEnd();   // +12
 
-        // Assume auto-trim might be up to about -6 dB at heavy SAT
-        const float satCompDb  = -6.0f * (sat * sat);
+        // Match the processor's static auto-trim law:
+        // maxSatTrimDb = -4.5 dB at full SAT, quadratic ramp
+        constexpr float maxSatTrimDb = -4.5f;
+        const float satCurve  = sat * sat;
+        const float satCompDb = maxSatTrimDb * satCurve;
+
         const float effectiveDb = gainDb + satCompDb;
 
         float norm = (effectiveDb - minDb) / (maxDb - minDb);
@@ -252,28 +255,62 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     // BURN OVERLAY – more smashed = more washed-out / burnt TikTok meme
     if (lastBurn > 0.01f)
     {
-        // Emphasise the top end so most of the drama is when you're really slamming
-        const float b     = juce::jlimit (0.0f, 1.0f, lastBurn);
-        const float shaped = std::pow (b, 0.6f); // 0.6 -> quicker ramp near the top
+        const float b      = juce::jlimit (0.0f, 1.0f, lastBurn);
+        const float shaped = std::pow (b, 0.45f); // ramps VERY fast near the top
 
         // 1) Heavy white wash – almost overexposed at full burn
-        g.setColour (juce::Colours::white.withAlpha (0.40f * shaped));
+        g.setColour (juce::Colours::white.withAlpha (0.70f * shaped));
         g.fillAll();
 
-        // 2) Cold blue-ish tint overlay
-        const juce::Colour tint = juce::Colour::fromFloatRGBA (0.75f, 0.82f, 1.0f, 0.30f * shaped);
-        g.setColour (tint);
+        // 2) Cold blue / purple-ish tint overlay (TikTok cooked photo vibe)
+        const juce::Colour tint1 = juce::Colour::fromFloatRGBA (0.55f, 0.80f, 1.0f, 0.55f * shaped);
+        g.setColour (tint1);
         g.fillAll();
 
-        // 3) Dark vignette / frame – makes it feel cooked & boxed in
-        const int frameThickness = juce::jmax (2, (int) std::round (4.0f * shaped));
-        g.setColour (juce::Colours::black.withAlpha (0.25f * shaped));
+        const juce::Colour tint2 = juce::Colour::fromFloatRGBA (0.45f, 0.55f, 0.95f, 0.35f * shaped);
+        g.setColour (tint2);
+        g.fillAll();
+
+        // 3) Dark frame – makes it feel boxed-in & over-processed
+        const int frameThickness = juce::jmax (2, (int) std::round (6.0f + 18.0f * shaped));
+        g.setColour (juce::Colours::black.withAlpha (0.30f * shaped));
         g.drawRect (getLocalBounds(), frameThickness);
 
-        // Inner vignette: darken edges a bit more
-        juce::Rectangle<int> inner = getLocalBounds().reduced (frameThickness * 2);
-        g.setColour (juce::Colours::black.withAlpha (0.18f * shaped));
+        // 4) Inner vignette: crushed blacks towards the center
+        juce::Rectangle<int> inner = getLocalBounds().reduced ((int) std::round (10.0f + 40.0f * shaped));
+        g.setColour (juce::Colours::black.withAlpha (0.55f * shaped));
         g.fillRect (inner);
+
+        // 5) Vertical smear bands – like digital burn/overexposure streaks
+        juce::Random& r = juce::Random::getSystemRandom();
+        const int bandCount = (int) (20 * shaped);
+        for (int i = 0; i < bandCount; ++i)
+        {
+            const int bandX   = r.nextInt (w);
+            const int bandW   = juce::jmax (1, r.nextInt (4));
+            const float alpha = 0.15f * shaped;
+
+            juce::Colour bandColour = juce::Colour::fromFloatRGBA (0.9f, 0.95f, 1.0f, alpha);
+            g.setColour (bandColour);
+            g.fillRect (bandX, 0, bandW, h);
+        }
+
+        // 6) Noise speckles – gritty meme texture
+        const int noiseCount = (int) (220 * shaped);
+        for (int i = 0; i < noiseCount; ++i)
+        {
+            const int px = r.nextInt (w);
+            const int py = r.nextInt (h);
+            const int size = 1 + r.nextInt (2);
+
+            const float choice = r.nextFloat();
+            if (choice < 0.5f)
+                g.setColour (juce::Colours::white.withAlpha (0.20f * shaped));
+            else
+                g.setColour (juce::Colours::black.withAlpha (0.20f * shaped));
+
+            g.fillRect (px, py, size, size);
+        }
     }
 }
 
