@@ -26,11 +26,51 @@ FruityClipAudioProcessor::createParameterLayout()
         "silkAmount", "Silk Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
-    // MODE – 0 = clip, 1 = limit
+    // MODE – 0 = clipper, 1 = limiter
     params.push_back (std::make_unique<juce::AudioParameterBool>(
-        "mode", "Mode", false));
+        "useLimiter", "Use Limiter", false));
 
     return { params.begin(), params.end() };
+}
+
+//==============================================================
+// Fruity-ish soft clip curve
+// threshold: 0..1, where lower = earlier / softer onset
+//==============================================================
+static float fruitySoftClipSample (float x, float threshold)
+{
+    const float ax = std::abs (x);
+    const float sign = (x >= 0.0f ? 1.0f : -1.0f);
+
+    if (ax <= threshold)
+        return x;
+
+    // Normalise to [0..1] above threshold
+    const float t = (ax - threshold) / (1.0f - threshold); // 0..1
+
+    const float shaped = threshold + (1.0f - (1.0f - t) * (1.0f - t)) * (1.0f - threshold);
+
+    return sign * shaped;
+}
+
+//==============================================================
+// Silk curve – gentle transformer-ish colour
+//==============================================================
+static float silkCurveFull (float x)
+{
+    const float x2 = x * x;
+    const float x3 = x2 * x;
+    const float x5 = x3 * x2;
+
+    // Gentle odd harmonics
+    constexpr float a3 = 0.15f;
+    constexpr float a5 = 0.02f;
+
+    float y = x + a3 * x3 + a5 * x5;
+
+    // Soft limiter on the very top to keep it sane
+    y = std::tanh (y * 1.3f);
+    return y;
 }
 
 //==============================================================
@@ -49,16 +89,12 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
 #endif
       parameters (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
-    inputGainParam = parameters.getRawParameterValue ("inputGain");
-    satParam       = parameters.getRawParameterValue ("satAmount");
-    silkParam      = parameters.getRawParameterValue ("silkAmount");
-    modeParam      = parameters.getRawParameterValue ("mode");
 }
 
 FruityClipAudioProcessor::~FruityClipAudioProcessor() {}
 
 //==============================================================
-// Basic AudioProcessor info
+// Metadata
 //==============================================================
 const juce::String FruityClipAudioProcessor::getName() const
 {
@@ -97,6 +133,9 @@ double FruityClipAudioProcessor::getTailLengthSeconds() const
     return 0.0;
 }
 
+//==============================================================
+// Programs (we don't really use them)
+//==============================================================
 int FruityClipAudioProcessor::getNumPrograms()
 {
     return 1;
@@ -107,252 +146,17 @@ int FruityClipAudioProcessor::getCurrentProgram()
     return 0;
 }
 
-void FruityClipAudioProcessor::setCurrentProgram (int) {}
+void FruityClipAudioProcessor::setCurrentProgram (int)
+{
+}
 
 const juce::String FruityClipAudioProcessor::getProgramName (int)
 {
     return {};
 }
 
-void FruityClipAudioProcessor::changeProgramName (int, const juce::String&) {}
-
-//==============================================================
-// Prepare / Release
-//==============================================================
-void FruityClipAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void FruityClipAudioProcessor::changeProgramName (int, const juce::String&)
 {
-    juce::ignoreUnused (samplesPerBlock);
-
-    currentSampleRate = sampleRate;
-    inverseSampleRate = (sampleRate > 0.0 ? 1.0 / sampleRate : 0.0);
-
-    rmsAccumulatorL = 0.0f;
-    rmsAccumulatorR = 0.0f;
-    rmsSampleCount  = 0;
-
-    guiBurnLevel.store (0.0f);
-}
-
-void FruityClipAudioProcessor::releaseResources() {}
-
-//==============================================================
-// Channel config
-//==============================================================
-bool FruityClipAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
-{
-   #if JucePlugin_IsMidiEffect
-    juce::ignoreUnused (layouts);
-    return true;
-   #else
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
-        return false;
-
-   #if ! JucePlugin_IsSynth
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
-        return false;
-   #endif
-
-    return true;
-   #endif
-}
-
-//==============================================================
-// Soft-clip helper – "Fruity-ish"
-//==============================================================
-static float fruitySoftClipSample (float x, float thresholdLinear)
-{
-    const float t = thresholdLinear;
-
-    if (std::fabs (x) <= t)
-        return x;
-
-    const float sign = (x >= 0.0f ? 1.0f : -1.0f);
-    const float mag  = std::fabs (x);
-
-    // Map [t..1] --> [t..1] with a soft curve
-    const float over    = juce::jlimit (0.0f, 1.0f, (mag - t) / (1.0f - t));
-    const float curved  = t + (1.0f - t) * (1.0f - std::exp (-4.0f * over));
-    const float clipped = juce::jlimit (t, 1.0f, curved);
-
-    return sign * clipped;
-}
-
-//==============================================================
-// Silk curve helper
-//==============================================================
-static float silkCurveFull (float x)
-{
-    const float drive = 1.5f;
-    const float y     = std::tanh (x * drive);
-    return y;
-}
-
-//==============================================================
-// Process block
-//==============================================================
-void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
-                                             juce::MidiBuffer& midiMessages)
-{
-    juce::ignoreUnused (midiMessages);
-
-    const int numChannels = buffer.getNumChannels();
-    const int numSamples  = buffer.getNumSamples();
-
-    if (numChannels == 0 || numSamples == 0)
-        return;
-
-    const float inputGainDb = inputGainParam->load();
-    const float satAmount   = satParam->load();
-    const float silkAmount  = silkParam->load();
-    const bool  isLimitMode = (*modeParam > 0.5f);
-
-    const float silkAmountRaw = silkAmount;
-    const float silkAmountSmoothed = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
-
-    // User gain (left finger) – **never touched by SAT**
-    const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
-
-    //==========================================================
-    // STATIC SAT "UNITY" TRIM (post-SAT)
-    // "for every bit of SAT up, push this much down"
-    //==========================================================
-    // At SAT = 1.0, pull down by about 2 dB (tweak to taste).
-    constexpr float maxSatTrimDb = -2.0f;
-
-    // Keep it essentially linear so it feels natural as you turn SAT.
-    const float satCurve    = satAmount;
-    const float satTrimDb   = maxSatTrimDb * satCurve;
-    const float satTrimGain = juce::Decibels::decibelsToGain (satTrimDb);
-
-    const float silkBlend = silkAmount * silkAmount; // keep first half subtle
-
-    const float thresholdLinear = 0.707f;
-
-    // Post-gain scaling for Fruity-null behaviour
-    const float g = 1.0f;
-
-    float peakAbs = 0.0f;
-
-    if (! isLimitMode)
-    {
-        //======================================================
-        // CLIP MODE
-        //======================================================
-        for (int ch = 0; ch < numChannels; ++ch)
-        {
-            float* samples = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
-            {
-                float y = samples[i] * inputGain;
-
-                // 1) SILK (pre-clip transformer-ish colour)
-                if (silkBlend > 0.0f)
-                {
-                    const float silkFull = silkCurveFull (y);
-                    y = y + silkBlend * (silkFull - y);
-                }
-
-                // 2) SATURATION (Fruity-ish soft clip)
-                if (satAmount > 0.0f)
-                {
-                    const float currentThreshold = juce::jmap (satAmount, 1.0f, thresholdLinear);
-                    y = fruitySoftClipSample (y, currentThreshold);
-                }
-
-                // 3) Fixed post-SAT trim so it doesn't just get stupid loud
-                y *= satTrimGain;
-
-                // 4) Post-gain (Fruity-null alignment)
-                y *= g;
-
-                // 5) Hard ceiling at 0 dBFS
-                if (y >  1.0f) y =  1.0f;
-                if (y < -1.0f) y = -1.0f;
-
-                samples[i] = y;
-
-                const float absVal = std::fabs (y);
-                if (absVal > peakAbs)
-                    peakAbs = absVal;
-
-                const float absL = (ch == 0) ? absVal : 0.0f;
-                const float absR = (ch == 1) ? absVal : 0.0f;
-
-                rmsAccumulatorL += absL * absL;
-                rmsAccumulatorR += absR * absR;
-            }
-        }
-    }
-    else
-    {
-        //======================================================
-        // LIMIT MODE – brickwall, 0 lookahead, no SAT
-        //======================================================
-        const float limitThreshold = 1.0f;
-
-        for (int ch = 0; ch < numChannels; ++ch)
-        {
-            float* samples = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
-            {
-                float y = samples[i] * inputGain;
-
-                if (silkBlend > 0.0f)
-                {
-                    const float silkFull = silkCurveFull (y);
-                    y = y + silkBlend * (silkFull - y);
-                }
-
-                if (y >  limitThreshold) y =  limitThreshold;
-                if (y < -limitThreshold) y = -limitThreshold;
-
-                y *= g;
-
-                samples[i] = y;
-
-                const float absVal = std::fabs (y);
-                if (absVal > peakAbs)
-                    peakAbs = absVal;
-
-                const float absL = (ch == 0) ? absVal : 0.0f;
-                const float absR = (ch == 1) ? absVal : 0.0f;
-
-                rmsAccumulatorL += absL * absL;
-                rmsAccumulatorR += absR * absR;
-            }
-        }
-    }
-
-    rmsSampleCount += numSamples;
-
-    const float decayRatePerSecond = 6.0f;
-    const float decay = std::exp (-decayRatePerSecond * (float) numSamples * (float) inverseSampleRate);
-
-    const float peakForGui = peakAbs;
-    float currentBurn      = guiBurnLevel.load();
-    float targetBurn       = juce::jlimit (0.0f, 1.0f, peakForGui);
-
-    const float smoothing = 0.15f;
-    currentBurn = currentBurn + smoothing * (targetBurn - currentBurn);
-    currentBurn *= decay;
-
-    guiBurnLevel.store (currentBurn);
-}
-
-//==============================================================
-// Editor
-//==============================================================
-bool FruityClipAudioProcessor::hasEditor() const
-{
-    return true;
-}
-
-juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
-{
-    return new FruityClipAudioProcessorEditor (*this);
 }
 
 //==============================================================
@@ -371,6 +175,215 @@ void FruityClipAudioProcessor::setStateInformation (const void* data, int sizeIn
         if (xml->hasTagName (parameters.state.getType()))
             parameters.replaceState (juce::ValueTree::fromXml (*xml));
     }
+}
+
+//==============================================================
+// Prepare / Release
+//==============================================================
+void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesPerBlock)
+{
+    juce::ignoreUnused (samplesPerBlock);
+
+    sampleRate = (newSampleRate > 0.0 ? newSampleRate : 44100.0);
+    limiterGain = 1.0f;
+
+    // ~50 ms release for limiter
+    const float releaseTimeSec = 0.050f;
+    limiterReleaseCo = std::exp (-1.0f / (releaseTimeSec * (float) sampleRate));
+}
+
+void FruityClipAudioProcessor::releaseResources() {}
+
+bool FruityClipAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+    auto main = layouts.getMainOutputChannelSet();
+    return main == juce::AudioChannelSet::stereo()
+        || main == juce::AudioChannelSet::mono();
+}
+
+//==============================================================
+// Limiter sample processor (0 lookahead, zero latency)
+//==============================================================
+float FruityClipAudioProcessor::processLimiterSample (float x)
+{
+    const float ax    = std::abs (x);
+    const float limit = 1.0f;
+
+    float desiredGain = 1.0f;
+    if (ax > limit && ax > 0.0f)
+        desiredGain = limit / ax;
+
+    // Instant attack, exponential release
+    if (desiredGain < limiterGain)
+    {
+        limiterGain = desiredGain;
+    }
+    else
+    {
+        limiterGain = limiterGain + (1.0f - limiterReleaseCo) * (desiredGain - limiterGain);
+    }
+
+    return x * limiterGain;
+}
+
+//==============================================================
+// ProcessBlock
+//==============================================================
+void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
+                                             juce::MidiBuffer& midiMessages)
+{
+    juce::ignoreUnused (midiMessages);
+
+    const int numChannels = buffer.getNumChannels();
+    const int numSamples  = buffer.getNumSamples();
+
+    if (numChannels == 0 || numSamples == 0)
+        return;
+
+    // Peak for GUI "burn"
+    float blockMax = 0.0f;
+
+    // Grab parameters
+    auto* gainParam = parameters.getRawParameterValue ("inputGain");
+    auto* satParam  = parameters.getRawParameterValue ("satAmount");
+    auto* silkParam = parameters.getRawParameterValue ("silkAmount");
+    auto* modeParam = parameters.getRawParameterValue ("useLimiter");
+
+    const float inputGainDb   = gainParam  ? gainParam->load()   : 0.0f;
+    const float satAmountRaw  = satParam   ? satParam->load()    : 0.0f;
+    const float silkAmountRaw = silkParam  ? silkParam->load()   : 0.0f;
+    const bool  useLimiter    = modeParam  ? (modeParam->load() >= 0.5f) : false;
+
+    const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
+    const float silkAmount = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
+
+    // User gain (left finger) – **never touched by SAT**
+    const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
+
+    //==========================================================
+    // STATIC SAT "UNITY" TRIM (post-SAT)
+    // "for every bit of SAT up, push this much down"
+    //==========================================================
+    // At SAT = 1.0, pull down by about 4 dB (tweak to taste).
+    constexpr float maxSatTrimDb = -2.0f;
+    const float satCurve         = satAmount; // linear; change to satAmount*satAmount if you want
+    const float satTrimDb        = maxSatTrimDb * satCurve;
+    const float satTrimGain      = juce::Decibels::decibelsToGain (satTrimDb);
+
+    const float silkBlend = silkAmount * silkAmount; // keep first half subtle
+    const float g         = postGain;                // Fruity-null alignment
+
+    float localBlockMax = 0.0f; // For GUI burn (post processing)
+
+    if (useLimiter)
+    {
+        //======================================================
+        // LIMITER MODE
+        // - Ignores SAT (SATAmount still stored but not used)
+        // - Uses 0-lookahead hard limiting with soft-ish behaviour
+        //======================================================
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float* samples = buffer.getWritePointer (ch);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float y = samples[i] * inputGain;
+
+                // 1) SILK (pre-dynamics, gentle colour)
+                if (silkBlend > 0.0f)
+                {
+                    const float silkFull = silkCurveFull (y);
+                    y = y + silkBlend * (silkFull - y);
+                }
+
+                // 2) Limiter (0 lookahead)
+                y = processLimiterSample (y);
+
+                // 3) Alignment + final hard safety
+                y *= g;
+
+                if (y >  1.0f) y =  1.0f;
+                if (y < -1.0f) y = -1.0f;
+
+                const float absY = std::abs (y);
+                if (absY > localBlockMax)
+                    localBlockMax = absY;
+
+                samples[i] = y;
+            }
+        }
+    }
+    else
+    {
+        //======================================================
+        // CLIPPER MODE
+        //======================================================
+        const float thresholdAtMaxSat = thresholdLinear;
+
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float* samples = buffer.getWritePointer (ch);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float y = samples[i] * inputGain;
+
+                // 1) SILK (pre-clip colour)
+                if (silkBlend > 0.0f)
+                {
+                    const float silkFull = silkCurveFull (y);
+                    y = y + silkBlend * (silkFull - y);
+                }
+
+                // 2) SATURATION (Fruity-ish soft clip)
+                if (satAmount > 0.0f)
+                {
+                    // Threshold moves as SAT increases
+                    const float currentThreshold = juce::jmap (satAmount, 1.0f, thresholdAtMaxSat);
+                    y = fruitySoftClipSample (y, currentThreshold);
+                }
+
+                // 3) Fixed post-SAT trim so it doesn't just get stupid loud
+                y *= satTrimGain;
+
+                // 4) Post-gain (Fruity-null alignment)
+                y *= g;
+
+                // 5) Hard ceiling at 0 dBFS
+                if (y >  1.0f) y =  1.0f;
+                if (y < -1.0f) y = -1.0f;
+
+                const float absY = std::abs (y);
+                if (absY > localBlockMax)
+                    localBlockMax = absY;
+
+                samples[i] = y;
+            }
+        }
+    }
+
+    //==========================================================
+    // Update GUI burn meter (0..1)
+    //==========================================================
+    blockMax = localBlockMax;
+
+    const float current = guiBurn.load();
+    const float target  = juce::jlimit (0.0f, 1.0f, blockMax);
+
+    // Simple smoothing
+    const float smoothing = 0.15f;
+    float newValue = current + smoothing * (target - current);
+
+    guiBurn.store (newValue);
+}
+
+//==============================================================
+// Editor
+//==============================================================
+juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
+{
+    return new FruityClipAudioProcessorEditor (*this);
 }
 
 //==============================================================
