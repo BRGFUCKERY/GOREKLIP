@@ -170,17 +170,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
     const float silkAmount = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
 
-    // User gain (left finger) – **never touched** by SAT logic
+    // User gain (left finger) – **never touched by SAT**
     const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
 
     //==========================================================
-    // STATIC SAT "UNITY" TRIM
-    // For "every dB of SAT", pull down a fixed amount after the clip stage.
-    // No time-varying shit, no RMS analysis, no parameter movement.
+    // STATIC SAT "UNITY" TRIM (post-SAT)
+    // "for every bit of SAT up, push this much down"
     //==========================================================
-    // At SAT = 1.0, we pull down by ~4 dB (tweak this to taste).
+    // At SAT = 1.0, pull down by about 4 dB (tweak to taste).
     constexpr float maxSatTrimDb = -4.0f;
-    const float satCurve         = satAmount;        // linear; use satAmount*satAmount for slower start
+    const float satCurve         = satAmount; // linear; change to satAmount*satAmount if you want
     const float satTrimDb        = maxSatTrimDb * satCurve;
     const float satTrimGain      = juce::Decibels::decibelsToGain (satTrimDb);
 
@@ -194,7 +193,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         //======================================================
         // LIMIT MODE:
         //   GAIN -> SILK -> LIMITER -> POSTGAIN -> HARD CLIP
-        //   (SAT knob ignored / disabled in GUI)
+        //   (SAT ignored / disabled in GUI)
         //======================================================
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -309,4 +308,32 @@ double FruityClipAudioProcessor::getTailLengthSeconds() const     { return 0.0; 
 int FruityClipAudioProcessor::getNumPrograms()                    { return 1; }
 int FruityClipAudioProcessor::getCurrentProgram()                 { return 0; }
 void FruityClipAudioProcessor::setCurrentProgram (int)            {}
-const juce::String FruityClipAud
+const juce::String FruityClipAudioProcessor::getProgramName (int) { return {}; }
+void FruityClipAudioProcessor::changeProgramName (int, const juce::String&) {}
+
+//==============================================================
+// State
+//==============================================================
+void FruityClipAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    auto state = parameters.copyState();
+    if (auto xml = state.createXml())
+        copyXmlToBinary (*xml, destData);
+}
+
+void FruityClipAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    {
+        if (xml->hasTagName (parameters.state.getType()))
+            parameters.replaceState (juce::ValueTree::fromXml (*xml));
+    }
+}
+
+//==============================================================
+// Entry point
+//==============================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FruityClipAudioProcessor();
+}
