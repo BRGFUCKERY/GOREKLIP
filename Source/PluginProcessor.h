@@ -57,6 +57,9 @@ public:
     // Value used by the GUI for the "burn" animation (0..1)
     float getGuiBurn() const noexcept { return guiBurn.load(); }
 
+    // (Optional) expose auto-trim for debug/visualising later
+    float getSatCompDb() const noexcept { return satCompDb.load(); }
+
 private:
     //==========================================================
     // Parameters
@@ -66,7 +69,7 @@ private:
     //==========================================================
     // DSP State
     //==========================================================
-    // Soft-clip threshold at SAT = 1.0 (~ -6 dB)
+    // Soft-clip threshold for SAT at max (~ -6 dB)
     float thresholdLinear = 0.0f;
     // Post-gain that makes us "null" Fruity
     float postGain        = 1.0f;
@@ -76,7 +79,10 @@ private:
     float  limiterGain      = 1.0f;
     float  limiterReleaseCo = 0.0f;
 
-    // GUI meter smoothed state
+    // Auto input trim for SAT (in dB), adjusted dynamically to keep loudness near-unity
+    std::atomic<float> satCompDb { 0.0f };
+
+    // GUI meter smoothed state (0..1)
     std::atomic<float> guiBurn { 0.0f };
 
     // Parameter state
