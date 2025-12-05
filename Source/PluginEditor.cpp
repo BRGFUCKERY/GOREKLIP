@@ -1,6 +1,8 @@
 #include "BinaryData.h"
 #include "PluginEditor.h"
 
+#include <cmath>
+
 //==============================================================
 // Custom Middle-Finger Knob LookAndFeel
 //==============================================================
@@ -47,17 +49,18 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
     }
     else if (gainSlider != nullptr && satSlider != nullptr && &slider == gainSlider)
     {
-        // GAIN FINGER: display effective (user gain + SAT auto-trim)
+        // GAIN FINGER: display effective (user gain + SAT auto-trim visual)
         const float gainDb = (float) slider.getValue();     // -12..+12
         const float sat    = (float) satSlider->getValue(); // 0..1
 
-        // Same curve as computeSatAutoTrimDb(): 0 -> 0 dB, 1 -> -6 dB
-        const float satCompDb   = -6.0f * (sat * sat);
-        const float effectiveDb = gainDb + satCompDb;
-
+        // Mirror the max range used in the processor (-18..+6), but visualised inside slider range
         const auto& range = slider.getRange();
-        const float minDb = (float) range.getStart();
-        const float maxDb = (float) range.getEnd();
+        const float minDb = (float) range.getStart(); // -12
+        const float maxDb = (float) range.getEnd();   // +12
+
+        // Assume auto-trim might be up to about -6 dB at heavy SAT
+        const float satCompDb  = -6.0f * (sat * sat);
+        const float effectiveDb = gainDb + satCompDb;
 
         float norm = (effectiveDb - minDb) / (maxDb - minDb);
         norm = juce::jlimit (0.0f, 1.0f, norm);
@@ -246,16 +249,31 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
                      cropHeight);            // source height
     }
 
-    // BURN OVERLAY – more smashed = more washed-out / burnt
+    // BURN OVERLAY – more smashed = more washed-out / burnt TikTok meme
     if (lastBurn > 0.01f)
     {
-        // Slight white wash
-        g.setColour (juce::Colours::white.withAlpha (0.18f * lastBurn));
+        // Emphasise the top end so most of the drama is when you're really slamming
+        const float b     = juce::jlimit (0.0f, 1.0f, lastBurn);
+        const float shaped = std::pow (b, 0.6f); // 0.6 -> quicker ramp near the top
+
+        // 1) Heavy white wash – almost overexposed at full burn
+        g.setColour (juce::Colours::white.withAlpha (0.40f * shaped));
         g.fillAll();
 
-        // Subtle dark frame to feel "burnt"
-        g.setColour (juce::Colours::black.withAlpha (0.10f * lastBurn));
-        g.drawRect (getLocalBounds(), 2);
+        // 2) Cold blue-ish tint overlay
+        const juce::Colour tint = juce::Colour::fromFloatRGBA (0.75f, 0.82f, 1.0f, 0.30f * shaped);
+        g.setColour (tint);
+        g.fillAll();
+
+        // 3) Dark vignette / frame – makes it feel cooked & boxed in
+        const int frameThickness = juce::jmax (2, (int) std::round (4.0f * shaped));
+        g.setColour (juce::Colours::black.withAlpha (0.25f * shaped));
+        g.drawRect (getLocalBounds(), frameThickness);
+
+        // Inner vignette: darken edges a bit more
+        juce::Rectangle<int> inner = getLocalBounds().reduced (frameThickness * 2);
+        g.setColour (juce::Colours::black.withAlpha (0.18f * shaped));
+        g.fillRect (inner);
     }
 }
 
