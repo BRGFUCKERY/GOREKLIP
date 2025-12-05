@@ -1,142 +1,194 @@
+#include "BinaryData.h"
 #include "PluginEditor.h"
-#include "PluginProcessor.h"
 
-// include the generated BinaryData header from your JUCE binary data target
-#include "juce_binarydata_FRUITYCLIPData/JuceLibraryCode/BinaryData.h"
-
-//==============================================================================
-
-FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
-    : AudioProcessorEditor (&p),
-      processorRef (p)
+//==============================================================
+// Custom Middle-Finger Knob LookAndFeel
+//==============================================================
+void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
+                                                int x, int y, int width, int height,
+                                                float sliderPosProportional,
+                                                float rotaryStartAngle,
+                                                float rotaryEndAngle,
+                                                juce::Slider& slider)
 {
-    // -------------------------------------------------------------------------
-    // Window size roughly matching your screenshot
-    // -------------------------------------------------------------------------
-    setResizable (false, false);
-    setSize (768, 940);
+    if (! knobImage.isValid())
+        return;
 
-    // -------------------------------------------------------------------------
-    // IMAGES
-    // File names: bg.png, finger.png, gorekliper_logo.png
-    // JUCE turns them into: bg_png, finger_png, gorekliper_logo_png
-    // -------------------------------------------------------------------------
-    backgroundImage = juce::ImageCache::getFromMemory (
+    juce::Graphics::ScopedSaveState save (g);
+
+    auto bounds   = juce::Rectangle<float> ((float)x, (float)y, (float)width, (float)height);
+    auto knobArea = bounds.reduced (width * 0.05f, height * 0.05f);
+
+    const float imgW = (float) knobImage.getWidth();
+    const float imgH = (float) knobImage.getHeight();
+    const float scale = std::min (knobArea.getWidth() / imgW,
+                                  knobArea.getHeight() / imgH);
+
+    juce::Rectangle<float> imgRect (0, 0, imgW * scale, imgH * scale);
+    imgRect.setCentre (knobArea.getCentre());
+
+    // NEW: WIDE ROTATION RANGE (~7 o'clock to ~5 o'clock)
+    const float minAngle = juce::degreesToRadians (-135.0f);
+    const float maxAngle = juce::degreesToRadians ( 135.0f);
+    const float angle    = minAngle + (maxAngle - minAngle) * sliderPosProportional;
+
+    juce::AffineTransform t;
+    t = t.rotated (angle, imgRect.getCentreX(), imgRect.getCentreY());
+    g.addTransform (t);
+
+    g.drawImage (knobImage,
+                 imgRect.getX(), imgRect.getY(),
+                 imgRect.getWidth(), imgRect.getHeight(),
+                 0, 0, knobImage.getWidth(), knobImage.getHeight());
+}
+
+//==============================================================
+// EDITOR CONSTRUCTOR
+//==============================================================
+FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
+    : AudioProcessorEditor (&p), processor (p)
+{
+    // Load background
+    bgImage = juce::ImageCache::getFromMemory (
         BinaryData::bg_png,
         BinaryData::bg_pngSize);
 
-    fingerImage = juce::ImageCache::getFromMemory (
-        BinaryData::finger_png,
-        BinaryData::finger_pngSize);
-
+    // Load huge GOREKLIPER logo
     logoImage = juce::ImageCache::getFromMemory (
         BinaryData::gorekliper_logo_png,
         BinaryData::gorekliper_logo_pngSize);
 
-    // -------------------------------------------------------------------------
-    // SILK SLIDER
-    // -------------------------------------------------------------------------
+    // Load finger knob image
+    juce::Image fingerImage = juce::ImageCache::getFromMemory (
+        BinaryData::finger_png,
+        BinaryData::finger_pngSize);
+
+    fingerLnf.setKnobImage (fingerImage);
+
+    if (bgImage.isValid())
+        setSize ((int)(bgImage.getWidth() * bgScale),
+                 (int)(bgImage.getHeight() * bgScale));
+    else
+        setSize (600, 400);
+
+    // ----------------------
+    // SLIDERS
+    // ----------------------
+    auto setupKnob = [] (juce::Slider& s)
+    {
+        s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        s.setRange (0.0, 1.0, 0.0001);
+        s.setMouseDragSensitivity (250);
+    };
+
+    setupKnob (silkSlider);
+    setupKnob (satSlider);
+
+    silkSlider.setLookAndFeel (&fingerLnf);
+    satSlider.setLookAndFeel  (&fingerLnf);
+
     addAndMakeVisible (silkSlider);
-    silkSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    silkSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-
-    // 7 o'clock -> 5 o'clock sweep
-    silkSlider.setRotaryParameters (2.356f, -0.785f, true);
-
-    // your processor has "parameters" (AudioProcessorValueTreeState)
-    silkAttachment = std::make_unique<
-        juce::AudioProcessorValueTreeState::SliderAttachment> (
-            processorRef.parameters, "SILK", silkSlider);
-
-    // -------------------------------------------------------------------------
-    // SAT SLIDER
-    // -------------------------------------------------------------------------
     addAndMakeVisible (satSlider);
-    satSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    satSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
 
-    // 7 o'clock -> 5 o'clock sweep
-    satSlider.setRotaryParameters (2.356f, -0.785f, true);
+    // ----------------------
+    // LABELS
+    // ----------------------
+    auto setupLabel = [] (juce::Label& lbl, const juce::String& text)
+    {
+        lbl.setText (text, juce::dontSendNotification);
+        lbl.setJustificationType (juce::Justification::centred);
+        lbl.setColour (juce::Label::textColourId, juce::Colours::white);
+        lbl.setFont (juce::Font (16.0f, juce::Font::bold));
+    };
 
-    satAttachment = std::make_unique<
-        juce::AudioProcessorValueTreeState::SliderAttachment> (
-            processorRef.parameters, "SAT", satSlider);
+    setupLabel (silkLabel, "SILK");
+    setupLabel (satLabel,  "SAT");
+
+    addAndMakeVisible (silkLabel);
+    addAndMakeVisible (satLabel);
+
+    // ----------------------
+    // PARAMETER ATTACHMENTS
+    // ----------------------
+    auto& apvts = processor.getParametersState();
+
+    satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "satAmount",  satSlider);
+
+    silkAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "silkAmount", silkSlider);
 }
 
-FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor() = default;
+FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
+{
+    silkSlider.setLookAndFeel (nullptr);
+    satSlider.setLookAndFeel  (nullptr);
+}
 
-//==============================================================================
-
+//==============================================================
+// PAINT
+//==============================================================
 void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
-    auto w = bounds.getWidth();
-    auto h = bounds.getHeight();
+    const int w = getWidth();
+    const int h = getHeight();
 
-    // -------------------------------------------------------------------------
-    // BACKGROUND (bg.png)
-    // -------------------------------------------------------------------------
-    if (backgroundImage.isValid())
-        g.drawImage (backgroundImage, bounds);
+    if (bgImage.isValid())
+        g.drawImageWithin (bgImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     else
         g.fillAll (juce::Colours::black);
 
-    // -------------------------------------------------------------------------
-    // FINGER IMAGE OVERLAY (finger.png) – scaled, centered a bit lower
-    // -------------------------------------------------------------------------
-    if (fingerImage.isValid())
-    {
-        const float fingerWidth  = w * 0.80f;
-        const float fingerHeight = fingerWidth * (fingerImage.getHeight() / (float) fingerImage.getWidth());
-
-        const float fingerX = (w - fingerWidth) * 0.5f;
-        const float fingerY = h * 0.20f; // sits under the logo area
-
-        juce::Rectangle<float> fingerArea (fingerX, fingerY, fingerWidth, fingerHeight);
-        g.drawImage (fingerImage, fingerArea);
-    }
-
-    // -------------------------------------------------------------------------
-    // HUGE METAL LOGO (gorekliper_logo.png, ≈ 60% width at the top)
-    // -------------------------------------------------------------------------
+    // BIG LOGO
     if (logoImage.isValid())
     {
-        const float logoWidth  = w * 0.60f;          // 60% of total width
-        const float logoHeight = logoWidth * 0.25f;  // tweak if aspect looks off
+        const float targetW = w * 0.90f;   // MASSIVE
+        const float scale   = targetW / logoImage.getWidth();
 
-        const float logoX = (w - logoWidth) * 0.5f;  // center
-        const float logoY = h * 0.08f;               // a little down from top
+        const int drawW = (int)(logoImage.getWidth() * scale);
+        const int drawH = (int)(logoImage.getHeight() * scale);
 
-        juce::Rectangle<float> logoArea (logoX, logoY, logoWidth, logoHeight);
-        g.drawImage (logoImage, logoArea);
+        const int x = (w - drawW) / 2;
+        const int y = h * 0.03f;   // near top
+
+        g.drawImage (logoImage, x, y, drawW, drawH, 0, 0,
+                     logoImage.getWidth(), logoImage.getHeight());
     }
 }
 
-//==============================================================================
-
+//==============================================================
+// LAYOUT
+//==============================================================
 void FruityClipAudioProcessorEditor::resized()
 {
     auto bounds = getLocalBounds();
 
-    const int width  = bounds.getWidth();
-    const int height = bounds.getHeight();
+    const int w = getWidth();
+    const int h = getHeight();
 
-    // -------------------------------------------------------------------------
-    // Big knobs layout
-    //  - ~3× size (relative to height)
-    //  - closer together
-    //  - moved up so they start where the old ones ended
-    // -------------------------------------------------------------------------
-    const int knobDiameter = (int) (height * 0.30f); // ~30% of height
-    const int knobY        = (int) (height * 0.55f); // lifted up
+    const int logoSpace = (int)(h * 0.33f); // keep top for huge logo
+    bounds.removeFromTop (logoSpace);
 
-    const int spacingBetweenKnobs = (int) (width * 0.06f); // small gap
-    const int centerX             = width / 2;
+    // BIG, HIGHER, CLOSER KNOBS
+    const int knobSize = juce::jmax (80, h * 0.30f);
+    const int spacing  = w * 0.06f;
 
-    const int totalKnobsWidth = knobDiameter * 2 + spacingBetweenKnobs;
-    const int firstKnobX      = centerX - (totalKnobsWidth / 2);
-    const int secondKnobX     = firstKnobX + knobDiameter + spacingBetweenKnobs;
+    const int totalW   = knobSize * 2 + spacing;
+    const int startX   = (w - totalW) / 2;
+    const int knobY    = bounds.getY() + (bounds.getHeight() - knobSize) * 0.3f;
 
-    silkSlider.setBounds (firstKnobX,  knobY, knobDiameter, knobDiameter);
-    satSlider .setBounds (secondKnobX, knobY, knobDiameter, knobDiameter);
+    silkSlider.setBounds (startX, knobY, knobSize, knobSize);
+    satSlider .setBounds (startX + knobSize + spacing, knobY, knobSize, knobSize);
+
+    const int labelH = 20;
+
+    silkLabel.setBounds (silkSlider.getX(),
+                         silkSlider.getBottom() + 4,
+                         silkSlider.getWidth(),
+                         labelH);
+
+    satLabel.setBounds (satSlider.getX(),
+                        satSlider.getBottom() + 4,
+                        satSlider.getWidth(),
+                        labelH);
 }
