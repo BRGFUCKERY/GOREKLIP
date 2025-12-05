@@ -170,13 +170,22 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
     const float silkAmount = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
 
-    // Current auto input-trim in dB (SAT unity helper)
-    float satCompDbLocal = satCompDb.load();
+    //==========================================================
+    // STATIC SAT AUTO-TRIM (no adaptive loudness)
+    //==========================================================
+    // Choose how much input we pull back at full SAT (in dB, negative)
+    constexpr float maxSatTrimDb = -4.5f;     // tweak this to taste
+
+    // Make the trim ramp quicker toward the top (0..1 -> 0..1)
+    const float satCurve = satAmount * satAmount;   // quadratic for smoother start
+
+    // Final static input-trim in dB based purely on SAT
+    float satCompDbLocal = maxSatTrimDb * satCurve;
 
     // User gain (your left finger) – used directly in LIMIT mode
     const float inputGainLimiter = juce::Decibels::decibelsToGain (inputGainDb);
 
-    // In CLIP/SAT mode, user gain + auto-trim
+    // In CLIP/SAT mode, user gain + static auto-trim
     const float inputGainClip = juce::Decibels::decibelsToGain (inputGainDb + satCompDbLocal);
 
     const float silkBlend = silkAmount * silkAmount; // keep first half subtle
@@ -184,199 +193,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     float blockMax = 0.0f; // For GUI burn (post processing)
 
-    // For auto-unity loudness (CLIP/SAT mode)
-    double sumInSq        = 0.0;
-    double sumOutSq       = 0.0;
-    int    loudnessSamples = 0;
-
     if (useLimiter)
     {
         //======================================================
-        // LIMIT MODE:
-        //   GAIN -> SILK -> LIMITER -> POSTGAIN -> HARD CLIP
-        //======================================================
-        for (int ch = 0; ch < numChannels; ++ch)
-        {
-            float* samples = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
-            {
-                float y = samples[i] * inputGainLimiter;
-
-                // 1) SILK (pre-dynamics, gentle color)
-                if (silkBlend > 0.0f)
-                {
-                    const float silkFull = silkCurveFull (y);
-                    y = y + silkBlend * (silkFull - y);
-                }
-
-                // 2) Limiter (0 lookahead)
-                y = processLimiterSample (y);
-
-                // 3) Alignment + final hard safety
-                y *= g;
-
-                if (y >  1.0f) y =  1.0f;
-                if (y < -1.0f) y = -1.0f;
-
-                const float a = std::abs (y);
-                if (a > blockMax)
-                    blockMax = a;
-
-                samples[i] = y;
-            }
-        }
-
-        // In limiter mode, gently drift auto-trim back toward 0 dB over time
-        satCompDbLocal *= 0.99f;
-    }
-    else
-    {
-        //======================================================
-        // CLIP / SAT MODE:
-        // (Gain + SAT auto-trim) -> SILK -> SAT -> POSTGAIN -> HARD CLIP
-        //======================================================
-        for (int ch = 0; ch < numChannels; ++ch)
-        {
-            float* samples = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
-            {
-                // Total input gain BEFORE SAT (user + auto-trim)
-                float y = samples[i] * inputGainClip;
-
-                // 1) SILK (pre-clip transformer-ish colour)
-                if (silkBlend > 0.0f)
-                {
-                    const float silkFull = silkCurveFull (y);
-                    y = y + silkBlend * (silkFull - y);
-                }
-
-                // Snapshot BEFORE SAT for loudness-in
-                const float beforeSat = y;
-
-                // 2) SATURATION (Fruity-ish soft clip)
-                if (satAmount > 0.0f)
-                {
-                    // Threshold moves as SAT increases
-                    const float currentThreshold = juce::jmap (satAmount, 1.0f, thresholdLinear);
-                    y = fruitySoftClipSample (y, currentThreshold);
-                }
-
-                // Snapshot AFTER SAT (but BEFORE postGain) for loudness-out
-                const float afterSat = y;
-
-                // 3) Post-gain (Fruity-null alignment)
-                y *= g;
-
-                // 4) Hard ceiling at 0 dBFS
-                if (y >  1.0f) y =  1.0f;
-                if (y < -1.0f) y = -1.0f;
-
-                const float absY = std::abs (y);
-                if (absY > blockMax)
-                    blockMax = absY;
-
-                // Accumulate RMS in/out for auto-unity
-                sumInSq  += (double) beforeSat * (double) beforeSat;
-                sumOutSq += (double) afterSat  * (double) afterSat;
-                ++loudnessSamples;
-
-                samples[i] = y;
-            }
-        }
-
-        //======================================================
-        // AUTO-UNITY LOOP (zero latency, next-block update)
-        //======================================================
-        if (loudnessSamples > 0 && sumInSq > 0.0 && sumOutSq > 0.0)
-        {
-            const double meanIn  = sumInSq  / (double) loudnessSamples;
-            const double meanOut = sumOutSq / (double) loudnessSamples;
-
-            const float rmsIn  = (float) std::sqrt (meanIn);
-            const float rmsOut = (float) std::sqrt (meanOut);
-
-            // Avoid log of zero / ultra-quiet edge cases
-            const float eps   = 1.0e-9f;
-            const float inDb  = 20.0f * std::log10 (std::max (rmsIn,  eps));
-            const float outDb = 20.0f * std::log10 (std::max (rmsOut, eps));
-            const float delta = outDb - inDb; // how many dB SAT added (>0) or removed (<0)
-
-            // We want roughly: 1 dB added by SAT -> 1 dB more negative input trim.
-            const float targetFactor = 1.0f;   // 1:1 mapping
-            const float adapt        = 0.3f;   // 0..1: how fast to move (30% of delta per block)
-
-            const float desiredChange = -targetFactor * delta;  // opposite direction of SAT loudness
-            satCompDbLocal += adapt * desiredChange;
-
-            // Clamp so it doesn't go nuts
-            satCompDbLocal = juce::jlimit (-18.0f, 6.0f, satCompDbLocal);
-        }
-    }
-
-    //==========================================================
-    // Update GUI burn meter (0..1), smoothed a bit
-    //==========================================================
-    const float targetBurn = juce::jlimit (0.0f, 1.0f, (blockMax - 0.6f) / 0.4f); // > -4 dBFS starts burning
-    const float previous   = guiBurn.load();
-    const float smoothed   = 0.85f * previous + 0.15f * targetBurn;
-
-    guiBurn.store (smoothed);
-
-    // Store updated SAT auto-trim for next block
-    satCompDb.store (satCompDbLocal);
-}
-
-//==============================================================
-// Editor
-//==============================================================
-juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
-{
-    return new FruityClipAudioProcessorEditor (*this);
-}
-
-//==============================================================
-// Metadata
-//==============================================================
-const juce::String FruityClipAudioProcessor::getName() const      { return "GOREKLIPER"; }
-bool FruityClipAudioProcessor::acceptsMidi() const                { return false; }
-bool FruityClipAudioProcessor::producesMidi() const               { return false; }
-bool FruityClipAudioProcessor::isMidiEffect() const               { return false; }
-double FruityClipAudioProcessor::getTailLengthSeconds() const     { return 0.0; }
-
-//==============================================================
-// Programs
-//==============================================================
-int FruityClipAudioProcessor::getNumPrograms()                    { return 1; }
-int FruityClipAudioProcessor::getCurrentProgram()                 { return 0; }
-void FruityClipAudioProcessor::setCurrentProgram (int)            {}
-const juce::String FruityClipAudioProcessor::getProgramName (int) { return {}; }
-void FruityClipAudioProcessor::changeProgramName (int, const juce::String&) {}
-
-//==============================================================
-// State
-//==============================================================
-void FruityClipAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
-{
-    auto state = parameters.copyState();
-    if (auto xml = state.createXml())
-        copyXmlToBinary (*xml, destData);
-}
-
-void FruityClipAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
-{
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
-    {
-        if (xml->hasTagName (parameters.state.getType()))
-            parameters.replaceState (juce::ValueTree::fromXml (*xml));
-    }
-}
-
-//==============================================================
-// Entry point
-//==============================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FruityClipAudioProcessor();
-}
+        /
