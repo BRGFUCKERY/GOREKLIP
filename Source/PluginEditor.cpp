@@ -27,7 +27,7 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
     juce::Rectangle<float> imgRect (0, 0, imgW * scale, imgH * scale);
     imgRect.setCentre (knobArea.getCentre());
 
-    // NEW: WIDE ROTATION RANGE (~7 o'clock to ~5 o'clock)
+    // WIDE ROTATION RANGE (~7 o'clock to ~5 o'clock)
     const float minAngle = juce::degreesToRadians (-135.0f);
     const float maxAngle = juce::degreesToRadians ( 135.0f);
     const float angle    = minAngle + (maxAngle - minAngle) * sliderPosProportional;
@@ -53,7 +53,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::bg_png,
         BinaryData::bg_pngSize);
 
-    // Load huge GOREKLIPER logo
+    // Load GOREKLIPER logo
     logoImage = juce::ImageCache::getFromMemory (
         BinaryData::gorekliper_logo_png,
         BinaryData::gorekliper_logo_pngSize);
@@ -139,20 +139,20 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     else
         g.fillAll (juce::Colours::black);
 
-    // BIG LOGO
+    // BIG LOGO - slightly higher so it's above the eye
     if (logoImage.isValid())
     {
-        const float targetW = w * 0.90f;   // MASSIVE
+        const float targetW = w * 0.85f;            // a bit smaller than before
         const float scale   = targetW / logoImage.getWidth();
 
         const int drawW = (int)(logoImage.getWidth() * scale);
         const int drawH = (int)(logoImage.getHeight() * scale);
 
         const int x = (w - drawW) / 2;
-        const int y = (int)(h * 0.03f);   // near top
+        const int y = (int)(h * 0.01f);             // closer to top = above her eye
 
-        g.drawImage (logoImage, x, y, drawW, drawH, 0, 0,
-                     logoImage.getWidth(), logoImage.getHeight());
+        g.drawImage (logoImage, x, y, drawW, drawH,
+                     0, 0, logoImage.getWidth(), logoImage.getHeight());
     }
 }
 
@@ -166,16 +166,19 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    const int logoSpace = (int)(h * 0.33f); // keep top for huge logo
+    // Slightly less reserved for logo so we can drop knobs a bit
+    const int logoSpace = (int)(h * 0.30f);
     bounds.removeFromTop (logoSpace);
 
-    // BIG, HIGHER, CLOSER KNOBS
-    const int knobSize = juce::jmax (80, (int)(h * 0.30f));  // <- FIXED
+    // SMALLER + LOWER KNOBS
+    const int knobSize = juce::jmax (70, (int)(h * 0.22f));   // smaller than before
     const int spacing  = (int)(w * 0.06f);
 
     const int totalW   = knobSize * 2 + spacing;
     const int startX   = (w - totalW) / 2;
-    const int knobY    = bounds.getY() + (int)((bounds.getHeight() - knobSize) * 0.3f);
+
+    // move them lower (0.6 pushes toward bottom of remaining space)
+    const int knobY    = bounds.getY() + (int)((bounds.getHeight() - knobSize) * 0.6f);
 
     silkSlider.setBounds (startX, knobY, knobSize, knobSize);
     satSlider .setBounds (startX + knobSize + spacing, knobY, knobSize, knobSize);
