@@ -47,9 +47,6 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 
     float angle = 0.0f;
 
-    auto* editor = dynamic_cast<FruityClipAudioProcessorEditor*> (slider.getParentComponent());
-    auto* modeSlider = editor ? &editor->modeSlider : nullptr;
-
     if (modeSlider != nullptr && &slider == modeSlider)
     {
         // MODE FINGER: two positions only
@@ -93,8 +90,8 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     // Load finger knob image
     juce::Image knobImg = juce::ImageCache::getFromMemory (
-        BinaryData::middle_finger_knob_png,
-        BinaryData::middle_finger_knob_pngSize);
+        BinaryData::finger_png,
+        BinaryData::finger_pngSize);
 
     fingerLnf.setKnobImage (knobImg);
 
@@ -121,6 +118,8 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     silkSlider.setLookAndFeel (&fingerLnf);
     satSlider.setLookAndFeel  (&fingerLnf);
     modeSlider.setLookAndFeel (&fingerLnf);
+
+    fingerLnf.setControlledSliders (&gainSlider, &modeSlider, &satSlider);
 
     addAndMakeVisible (gainSlider);
     addAndMakeVisible (silkSlider);
