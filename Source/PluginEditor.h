@@ -47,14 +47,20 @@ private:
     // LookAndFeel + knobs
     MiddleFingerLookAndFeel fingerLnf;
 
+    juce::Slider gainSlider;
     juce::Slider silkSlider;
     juce::Slider satSlider;
 
+    juce::Label  gainLabel;
     juce::Label  silkLabel;
     juce::Label  satLabel;
 
+    juce::ToggleButton limitButton; // LIMIT mode toggle
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> silkAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> limitAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessorEditor)
 };
