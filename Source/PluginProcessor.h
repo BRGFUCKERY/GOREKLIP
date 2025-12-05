@@ -1,53 +1,59 @@
 #pragma once
+
 #include "JuceHeader.h"
 
 class FruityClipAudioProcessor : public juce::AudioProcessor
 {
 public:
     FruityClipAudioProcessor();
-    ~FruityClipAudioProcessor() override {}
+    ~FruityClipAudioProcessor() override;
 
-    //==============================================================================
-    void prepareToPlay (double /*sampleRate*/, int /*samplesPerBlock*/) override {}
-    void releaseResources() override {}
+    //==========================================================
+    // Core AudioProcessor overrides
+    //==========================================================
+    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+    void releaseResources() override;
 
-    bool isBusesLayoutSupported (const BusesLayout& layouts) const override
-    {
-        return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo()
-            || layouts.getMainOutputChannelSet() == juce::AudioChannelSet::mono();
-    }
+    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
 
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
-    //==============================================================================
+    //==========================================================
+    // Editor
+    //==========================================================
     juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override { return true; }
+    bool hasEditor() const override;
 
-    const juce::String getName() const override { return "FRUITYCLIP"; }
+    //==========================================================
+    // Metadata
+    //==========================================================
+    const juce::String getName() const override;
+    bool acceptsMidi() const override;
+    bool producesMidi() const override;
+    bool isMidiEffect() const override;
+    double getTailLengthSeconds() const override;
 
-    bool acceptsMidi()  const override { return false; }
-    bool producesMidi() const override { return false; }
-    bool isMidiEffect() const override { return false; }
+    //==========================================================
+    // Programs (we just use 1)
+    //==========================================================
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram (int index) override;
+    const juce::String getProgramName (int index) override;
+    void changeProgramName (int index, const juce::String& newName) override;
 
-    double getTailLengthSeconds() const override { return 0.0; }
-
-    //==============================================================================
-    int getNumPrograms() override               { return 1; }
-    int getCurrentProgram() override            { return 0; }
-    void setCurrentProgram (int) override       {}
-    const juce::String getProgramName (int) override { return {}; }
-    void changeProgramName (int, const juce::String&) override {}
-
-    //==============================================================================
+    //==========================================================
+    // State
+    //==========================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getParametersState() { return parameters; }
 
 private:
-    // === These match your original Fruity-null behavior ===
-    float thresholdLinear; // saturation knee (~ -6 dB when satAmount = 1)
-    float postGain;        // Fruity-matching output gain
+    // DSP state
+    float thresholdLinear = 0.0f;
+    float postGain        = 1.0f;
 
     juce::AudioProcessorValueTreeState parameters;
 
