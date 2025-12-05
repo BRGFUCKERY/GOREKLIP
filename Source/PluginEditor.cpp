@@ -11,6 +11,8 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
                                                 float rotaryEndAngle,
                                                 juce::Slider& slider)
 {
+    juce::ignoreUnused (rotaryStartAngle, rotaryEndAngle, slider);
+
     if (! knobImage.isValid())
         return;
 
@@ -21,10 +23,10 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 
     const float imgW = (float) knobImage.getWidth();
     const float imgH = (float) knobImage.getHeight();
-    const float scale = std::min (knobArea.getWidth() / imgW,
+    const float scale = std::min (knobArea.getWidth()  / imgW,
                                   knobArea.getHeight() / imgH);
 
-    juce::Rectangle<float> imgRect (0, 0, imgW * scale, imgH * scale);
+    juce::Rectangle<float> imgRect (0.0f, 0.0f, imgW * scale, imgH * scale);
     imgRect.setCentre (knobArea.getCentre());
 
     // WIDE ROTATION RANGE (~7 o'clock to ~5 o'clock)
@@ -139,19 +141,20 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     else
         g.fillAll (juce::Colours::black);
 
-    // BIG LOGO - slightly higher so it's above the eye
+    // BIG LOGO - glued to the top edge
     if (logoImage.isValid())
     {
-        const float targetW = w * 0.85f;            // a bit smaller than before
+        const float targetW = w * 0.90f;                  // very wide
         const float scale   = targetW / logoImage.getWidth();
 
-        const int drawW = (int)(logoImage.getWidth() * scale);
+        const int drawW = (int)(logoImage.getWidth()  * scale);
         const int drawH = (int)(logoImage.getHeight() * scale);
 
         const int x = (w - drawW) / 2;
-        const int y = (int)(h * 0.01f);             // closer to top = above her eye
+        const int y = 0;                                  // flush with top
 
-        g.drawImage (logoImage, x, y, drawW, drawH,
+        g.drawImage (logoImage,
+                     x, y, drawW, drawH,
                      0, 0, logoImage.getWidth(), logoImage.getHeight());
     }
 }
@@ -166,19 +169,21 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    // Slightly less reserved for logo so we can drop knobs a bit
-    const int logoSpace = (int)(h * 0.30f);
+    // Reserve just a small band for the logo visually (~20%),
+    // leaving a big negative-space middle.
+    const int logoSpace = (int)(h * 0.20f);
     bounds.removeFromTop (logoSpace);
 
-    // SMALLER + LOWER KNOBS
-    const int knobSize = juce::jmax (70, (int)(h * 0.22f));   // smaller than before
+    // C-layout: knobs smaller & way lower near the bottom.
+    const int knobSize = juce::jmax (60, (int)(h * 0.18f)); // smaller, subtle
     const int spacing  = (int)(w * 0.06f);
 
     const int totalW   = knobSize * 2 + spacing;
     const int startX   = (w - totalW) / 2;
 
-    // move them lower (0.6 pushes toward bottom of remaining space)
-    const int knobY    = bounds.getY() + (int)((bounds.getHeight() - knobSize) * 0.6f);
+    // Push knobs near the bottom of the whole editor (brutal negative space)
+    const int bottomMargin = (int)(h * 0.04f);
+    const int knobY        = h - knobSize - bottomMargin;
 
     silkSlider.setBounds (startX, knobY, knobSize, knobSize);
     satSlider .setBounds (startX + knobSize + spacing, knobY, knobSize, knobSize);
@@ -186,12 +191,12 @@ void FruityClipAudioProcessorEditor::resized()
     const int labelH = 20;
 
     silkLabel.setBounds (silkSlider.getX(),
-                         silkSlider.getBottom() + 4,
+                         silkSlider.getBottom() + 2,
                          silkSlider.getWidth(),
                          labelH);
 
     satLabel.setBounds (satSlider.getX(),
-                        satSlider.getBottom() + 4,
+                        satSlider.getBottom() + 2,
                         satSlider.getWidth(),
                         labelH);
 }
