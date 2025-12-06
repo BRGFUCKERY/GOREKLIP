@@ -172,10 +172,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float silkAmount = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
 
     //==========================================================
-    // SAT "auto gain" – NUKED:
-    // We keep it at 0 dB so SAT never gets quieter when pushed.
+    // SAT "auto gain" – NUKED (0 dB). Pushing SAT never gets quieter.
     //==========================================================
-    const float satCompDb = 0.0f;  // full aggression, no pre-trim
+    const float satCompDb = 0.0f;
 
     // User gain (your left finger) – used directly in LIMIT mode
     const float inputGainLimiter = juce::Decibels::decibelsToGain (inputGainDb);
@@ -231,7 +230,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     {
         //======================================================
         // CLIP / SAT MODE:
-        // (Gain + SAT pre-trim [now 0]) -> SILK -> SAT -> POSTGAIN -> HARD CLIP
+        // (Gain + SAT pre-trim [0 dB]) -> SILK -> SAT -> POSTGAIN -> HARD CLIP
         //======================================================
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -275,8 +274,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     //==========================================================
     // Update GUI burn meter (0..1), smoothed a bit
+    // Make it a bit more sensitive so GUI actually moves
     //==========================================================
-    const float targetBurn = juce::jlimit (0.0f, 1.0f, (blockMax - 0.6f) / 0.4f); // > -4 dBFS starts burning
+    const float targetBurn = juce::jlimit (0.0f, 1.0f, (blockMax - 0.5f) / 0.5f);
     const float previous   = guiBurn.load();
     const float smoothed   = 0.85f * previous + 0.15f * targetBurn;
 
