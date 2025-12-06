@@ -227,10 +227,10 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
         }
     }
-    else
+       else
     {
         //======================================================
-        // NEW CLIP / SAT MODE:
+        // CLIP / SAT MODE:
         // (Gain) -> SILK -> SAT (with tiny auto-trim) -> POSTGAIN -> HARD CLIP
         //======================================================
         for (int ch = 0; ch < numChannels; ++ch)
@@ -257,8 +257,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // ------------------------------------------------
                 if (satAmount > 0.0f)
                 {
-                    // Tiny SAT auto-trim (max about -1 dB)
-                    const float satTrimDb = -1.0f * satAmount;   // 0 .. -1 dB
+                    // Tiny SAT auto-trim (max about -1.5 dB)
+                    const float satTrimDb = -1.5f * satAmount;   // 0 .. -1.5 dB
                     const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
                     y *= satTrim;
 
@@ -297,6 +297,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
         }
     }
+
 
     //==========================================================
     // Update GUI burn meter (0..1)
