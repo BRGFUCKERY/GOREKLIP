@@ -1,3 +1,4 @@
+// PluginProcessor.cpp
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
@@ -139,6 +140,13 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     const float sr = (float) sampleRate;
     const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / sr);
     ottAlpha = juce::jlimit (0.0f, 1.0f, alpha);
+
+    // Envelope smoothing for high-band dynamics (≈ 10 ms)
+    {
+        const float envTauSec = 0.010f;
+        const float envA = std::exp (-1.0f / (envTauSec * sr));
+        ottEnvAlpha = juce::jlimit (0.0f, 1.0f, envA);
+    }
 
     lastOttGain = 1.0f;
 
@@ -290,7 +298,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (int i = 0; i < numSamples; ++i)
             {
                 float y = samples[i] * inputGain;
-
                 samples[i] = y;
             }
         }
@@ -310,26 +317,66 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
             for (int i = 0; i < numSamples; ++i)
             {
-                // INPUT GAIN
+                // 1) INPUT GAIN
                 float y = x[i] * inputGain;
 
                 // Original (pre-OTT) energy
                 sumSqOriginal += (double) (y * y);
 
                 // 2) OTT high-band only (0–150 dry, >150 processed)
-                // One-pole lowpass for 0–150 Hz
+                //    Low band stays intact, high band gets dynamic OTT.
                 ott.low = ottAlpha * ott.low + (1.0f - ottAlpha) * y;
                 const float lowDry = ott.low;
                 const float hiDry  = y - lowDry;
 
-                // Simple "OTT-ish" processing on high band
-                float hiProc = hiDry * (1.0f + 2.5f * ottAmount);
+                // 3) High-band envelope for upward + downward action
+                const float absHi = std::abs (hiDry);
+                ott.env = ottEnvAlpha * ott.env + (1.0f - ottEnvAlpha) * absHi;
+                const float env = ott.env;
+
+                // Reference level for high band (~ -20 dB region)
+                constexpr float refLevel = 0.10f; // tweakable
+
+                // Normalised level around reference
+                float lev = env / (refLevel + 1.0e-6f);
+
+                // 4) Dynamic gain:
+                //    - lev < 1  => upward (boost quiet highs)
+                //    - lev > 1  => downward (tame loud highs)
+                float dynGain = 1.0f;
+
+                if (lev < 1.0f)
+                {
+                    // Upward region
+                    float t = 1.0f - lev;                        // 0..1
+                    t = juce::jlimit (0.0f, 1.0f, t);
+                    const float maxUp = 2.0f;                    // up to +6 dB
+                    dynGain += t * (maxUp - 1.0f) * ottAmount;
+                }
+                else
+                {
+                    // Downward region
+                    float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
+                    const float minGain = 0.5f;                  // down to -6 dB
+                    dynGain -= t * (1.0f - minGain) * ottAmount;
+                }
+
+                // 5) Static tilt (reduced vs old version)
+                const float staticBoost = 1.0f + 1.0f * ottAmount; // was 1 + 2.5 * amt
+
+                // Apply combined static + dynamic gain to high band
+                float hiProc = hiDry * staticBoost * dynGain;
+
+                // 6) Soft non-linearity to stop craziness
                 hiProc = std::tanh (hiProc);
 
+                // 7) Parallel blend
                 const float hiMix = hiDry + ottAmount * (hiProc - hiDry);
 
+                // 8) Recombine with untouched low band
                 y = lowDry + hiMix;
 
+                // Energy after OTT for RMS gain-matching
                 sumSqOtt += (double) (y * y);
 
                 x[i] = y;
