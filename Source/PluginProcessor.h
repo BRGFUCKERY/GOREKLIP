@@ -21,11 +21,14 @@ public:
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     //==========================================================
-    // Editor / metadata
+    // Editor
     //==========================================================
     juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override                      { return true; }
+    bool hasEditor() const override { return true; }
 
+    //==========================================================
+    // Metadata
+    //==========================================================
     const juce::String getName() const override;
     bool acceptsMidi() const override;
     bool producesMidi() const override;
@@ -33,7 +36,7 @@ public:
     double getTailLengthSeconds() const override;
 
     //==========================================================
-    // Programs (we just use one)
+    // Programs
     //==========================================================
     int getNumPrograms() override;
     int getCurrentProgram() override;
@@ -48,70 +51,80 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     //==========================================================
-    // Helpers for editor
+    // Helpers for the editor
     //==========================================================
     juce::AudioProcessorValueTreeState& getParametersState() { return parameters; }
 
-    float getGuiBurn() const noexcept      { return guiBurn.load(); }
-    float getGuiLufs() const noexcept      { return guiLufs.load(); }
+    // 0..1 burn value for the background/white logo
+    float getGuiBurn() const { return guiBurn.load(); }
+
+    // K-weighted momentary loudness (LUFS-style)
+    float getGuiLufs() const { return guiLufs.load(); }
 
 private:
     //==========================================================
-    // Parameter layout
+    // Internal helpers
     //==========================================================
-    juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    // Fruity-ish soft clip
+    static float fruitySoftClipSample (float x, float threshold);
+
+    // Neve 5060-style "Silk" curve
+    static float silkCurveFull (float x);
+
+    // Limiter sample processor
+    float processLimiterSample (float x);
+
+    // Oversampling config helper
+    void updateOversampling (int osIndex, int numChannels);
 
     //==========================================================
-    // Soft clip curve (Fruity-ish)
-    //==========================================================
-    float fruitySoftClipSample (float x, float threshold);
-
-    //==========================================================
-    // K-weighting + LUFS
+    // K-weighted LUFS meter state
     //==========================================================
     struct KFilterState
     {
-        float z1a = 0.0f, z2a = 0.0f;
-        float z1b = 0.0f, z2b = 0.0f;
+        float z1a = 0.0f;
+        float z2a = 0.0f;
+        float z1b = 0.0f;
+        float z2b = 0.0f;
     };
 
     void resetKFilterState (int numChannels);
 
     std::vector<KFilterState> kFilterStates;
-    float                     lufsMeanSquare = 1.0e-6f; // running mean-square of K-weighted signal
+    float lufsMeanSquare = 1.0e-6f;  // keep > 0 to avoid log(0)
 
     //==========================================================
-    // OTT split (simple)
+    // OTT high-pass split state (0–150 Hz dry, >150 Hz OTT)
     //==========================================================
-    struct OttState
+    struct OttHPState
     {
-        float lowZ = 0.0f;   // one-pole lowpass state
+        float low = 0.0f; // running lowpass state for low band
     };
 
     void resetOttState (int numChannels);
 
-    std::vector<OttState> ottStates;
-    float                 ottAlpha    = 0.0f;  // one-pole alpha for 150 Hz split
-    float                 lastOttGain = 1.0f;  // simple smoothing
+    std::vector<OttHPState> ottStates;
+    float ottAlpha    = 0.0f;   // one-pole LP factor for 150 Hz split
+    float lastOttGain = 1.0f;   // smoothed unity gain-match factor
 
     //==========================================================
-    // Internal processing state
+    // Internal state
     //==========================================================
-    double sampleRate   = 44100.0;
-    float  limiterGain  = 1.0f;
-    float  limiterReleaseCo = 0.999f;
+    double sampleRate      = 44100.0;
+    float  postGain        = 0.99999385f;  // Fruity-null alignment
+    float  thresholdLinear = 0.5f;         // updated in ctor
 
-    float thresholdLinear = 0.5f;     // clip threshold (linear, 0..1)
-    float modeBlend       = 0.0f;     // 0=clipper, 1=limiter
-    float ottAmount       = 0.0f;     // 0..1 for OTT split
-    float satAmount       = 0.0f;     // 0..1 saturator
-    float silkAmount      = 0.0f;     // 0..1 "silk" tilt
+    // Limiter
+    float limiterGain      = 1.0f;
+    float limiterReleaseCo = 0.0f;
 
-    //==========================================================
-    // Per-sample GUI meters (atomic for thread safety)
-    //==========================================================
-    std::atomic<float> guiBurn { 0.0f };   // 0..1
-    std::atomic<float> guiLufs { -80.0f }; // short-term-ish LUFS for GUI
+    // GUI burn value (0..1)
+    std::atomic<float> guiBurn { 0.0f };
+
+    // GUI LUFS value
+    std::atomic<float> guiLufs { -60.0f };
 
     // Parameter state (includes oversampleMode)
     juce::AudioProcessorValueTreeState parameters;
@@ -123,8 +136,5 @@ private:
     int currentOversampleIndex = 0;   // 0:x1, 1:x2, 2:x4, 3:x8, 4:x16
     int maxBlockSize           = 0;   // for oversampler->initProcessing
 
-    void updateOversampling (int osIndex, int numChannels);
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
 };
-
