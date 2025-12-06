@@ -60,9 +60,9 @@ private:
 
     // Background & logo
     juce::Image bgImage;
-    juce::Image slamImage;   // "slammed" background
+    juce::Image slamImage;       // "slammed" background
     juce::Image logoImage;
-    juce::Image logoWhiteImage; // precomputed white version of logo (same alpha)
+    juce::Image logoWhiteImage;  // precomputed white version of logo (same alpha)
     const float bgScale = 0.35f; // scale for bg.png
 
     // LookAndFeel + knobs
@@ -81,7 +81,7 @@ private:
     juce::Label  satLabel;
     juce::Label  modeLabel;
 
-    // Super-fast LUFS-ish meter (text, above CLIP/LIM finger)
+    // LUFS text above CLIPPER/LIMITER finger
     juce::Label  lufsLabel;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
