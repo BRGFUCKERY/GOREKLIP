@@ -154,7 +154,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         lbl.setJustificationType (juce::Justification::centred);
         lbl.setColour (juce::Label::textColourId, juce::Colours::white);
 
-        // Use FontOptions correctly: style is a String ("Bold"), not Font::bold
         juce::FontOptions opts (16.0f);
         opts = opts.withStyle ("Bold");
         lbl.setFont (juce::Font (opts));
@@ -229,7 +228,7 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Map burn into 0..1 and shape it so the slam comes in more towards the top
     const float burnRaw    = juce::jlimit (0.0f, 1.0f, lastBurn);
-    const float burnShaped = std::pow (burnRaw, 0.6f);
+    const float burnShaped = std::pow (burnRaw, 0.35f); // more aggressive visual slam
 
     // Base background
     if (bgImage.isValid())
@@ -320,12 +319,7 @@ void FruityClipAudioProcessorEditor::resized()
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
-    const float newBurn = processor.getGuiBurn();
-
-    // Only repaint if it actually changed a bit
-    if (std::abs (newBurn - lastBurn) > 0.01f)
-    {
-        lastBurn = newBurn;
-        repaint();
-    }
+    // NUKED: always repaint so background crossfade follows audio in real-time
+    lastBurn = processor.getGuiBurn();
+    repaint();
 }
