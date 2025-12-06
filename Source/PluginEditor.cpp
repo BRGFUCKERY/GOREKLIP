@@ -53,13 +53,12 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
         const float gainDb = (float) slider.getValue();     // -12..+12
         const float sat    = (float) satSlider->getValue(); // 0..1
 
-        // Mirror the max range used in the processor (-18..+6), but visualised inside slider range
         const auto& range = slider.getRange();
         const float minDb = (float) range.getStart(); // -12
         const float maxDb = (float) range.getEnd();   // +12
 
-        // Assume auto-trim might be up to about -6 dB at heavy SAT
-        const float satCompDb  = -6.0f * (sat * sat);
+        // Visual assumption: auto-trim is up to about -2 dB at heavy SAT
+        const float satCompDb  = -2.0f * (sat * sat);
         const float effectiveDb = gainDb + satCompDb;
 
         float norm = (effectiveDb - minDb) / (maxDb - minDb);
@@ -93,6 +92,11 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     bgImage = juce::ImageCache::getFromMemory (
         BinaryData::bg_png,
         BinaryData::bg_pngSize);
+
+    // Load SLAM background
+    slamImage = juce::ImageCache::getFromMemory (
+        BinaryData::slam_jpg,
+        BinaryData::slam_jpgSize);
 
     // Load GOREKLIPER logo
     logoImage = juce::ImageCache::getFromMemory (
@@ -200,7 +204,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // Now the LNF knows which slider is which
     fingerLnf.setControlledSliders (&gainSlider, &modeSlider, &satSlider);
 
-    // Start GUI update timer (for burn animation)
+    // Start GUI update timer (for burn animation / crossfade)
     startTimerHz (30);
 }
 
@@ -221,10 +225,23 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     const int w = getWidth();
     const int h = getHeight();
 
+    // Map burn into 0..1 and shape it so the slam comes in more towards the top
+    const float burnRaw    = juce::jlimit (0.0f, 1.0f, lastBurn);
+    const float burnShaped = std::pow (burnRaw, 0.6f);
+
+    // Base background
     if (bgImage.isValid())
         g.drawImageWithin (bgImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     else
         g.fillAll (juce::Colours::black);
+
+    // Crossfade into "slam" background when you're really hitting it
+    if (slamImage.isValid() && burnShaped > 0.01f)
+    {
+        juce::Graphics::ScopedSaveState save (g);
+        g.setOpacity (burnShaped);
+        g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+    }
 
     // LOGO - crop invisible padding so the visible part touches the top
     if (logoImage.isValid())
@@ -247,33 +264,6 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
                      0, cropY,               // source x, y (start 20% down)
                      logoImage.getWidth(),
                      cropHeight);            // source height
-    }
-
-    // BURN OVERLAY – more smashed = more washed-out / burnt TikTok meme
-    if (lastBurn > 0.01f)
-    {
-        // Emphasise the top end so most of the drama is when you're really slamming
-        const float b     = juce::jlimit (0.0f, 1.0f, lastBurn);
-        const float shaped = std::pow (b, 0.6f); // 0.6 -> quicker ramp near the top
-
-        // 1) Heavy white wash – almost overexposed at full burn
-        g.setColour (juce::Colours::white.withAlpha (0.40f * shaped));
-        g.fillAll();
-
-        // 2) Cold blue-ish tint overlay
-        const juce::Colour tint = juce::Colour::fromFloatRGBA (0.75f, 0.82f, 1.0f, 0.30f * shaped);
-        g.setColour (tint);
-        g.fillAll();
-
-        // 3) Dark vignette / frame – makes it feel cooked & boxed in
-        const int frameThickness = juce::jmax (2, (int) std::round (4.0f * shaped));
-        g.setColour (juce::Colours::black.withAlpha (0.25f * shaped));
-        g.drawRect (getLocalBounds(), frameThickness);
-
-        // Inner vignette: darken edges a bit more
-        juce::Rectangle<int> inner = getLocalBounds().reduced (frameThickness * 2);
-        g.setColour (juce::Colours::black.withAlpha (0.18f * shaped));
-        g.fillRect (inner);
     }
 }
 
