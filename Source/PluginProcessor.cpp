@@ -194,7 +194,10 @@ void FruityClipAudioProcessor::resetOttState (int numChannels)
 
     ottStates.resize ((size_t) numChannels);
     for (auto& st : ottStates)
+    {
         st.low = 0.0f;
+        st.env = 0.0f;
+    }
 }
 
 //==============================================================
