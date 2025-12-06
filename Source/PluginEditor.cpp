@@ -219,11 +219,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
-    {
-        juce::FontOptions opts (14.0f);
-        opts = opts.withStyle ("Bold");
-        oversampleBox.setFont (juce::Font (opts));
-    }
+    // NOTE: older JUCE ComboBox has no setFont(), so we skip that call here.
 
     addAndMakeVisible (oversampleBox);
 
