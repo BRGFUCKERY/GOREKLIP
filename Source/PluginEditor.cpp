@@ -49,7 +49,7 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
     }
     else if (gainSlider != nullptr && &slider == gainSlider)
     {
-        // GAIN FINGER: show ONLY the real gain param (no auto-gain / SAT comp)
+        // GAIN FINGER: show ONLY the real gain param
         const auto& range = slider.getRange();
         const float minDb = (float) range.getStart(); // -12
         const float maxDb = (float) range.getEnd();   // +12
@@ -88,7 +88,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::bg_png,
         BinaryData::bg_pngSize);
 
-    // SLAM background directly from BinaryData
+    // SLAM background
     slamImage = juce::ImageCache::getFromMemory (
         BinaryData::slam_jpg,
         BinaryData::slam_jpgSize);
@@ -98,7 +98,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::gorekliper_logo_png,
         BinaryData::gorekliper_logo_pngSize);
 
-    // Precompute a white version of the logo (same alpha, white RGB)
+    // Precompute a white version of the logo (same alpha)
     if (logoImage.isValid())
     {
         logoWhiteImage = logoImage.createCopy();
@@ -192,16 +192,40 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
 
-    // LUFS label – same white bold font style, a bit smaller
+    // LUFS label – same white bold font style, a bit bigger
     lufsLabel.setJustificationType (juce::Justification::centred);
     lufsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     {
-        juce::FontOptions opts (14.0f);
+        // original 14.0f -> about +10% = 15.4f
+        juce::FontOptions opts (15.4f);
         opts = opts.withStyle ("Bold");
         lufsLabel.setFont (juce::Font (opts));
     }
     lufsLabel.setText ("-- LUFS", juce::dontSendNotification);
     addAndMakeVisible (lufsLabel);
+
+    // ----------------------
+    // OVERSAMPLE DROPDOWN (top-right, tiny, white "x1" etc.)
+    // ----------------------
+    oversampleBox.addItem ("x1", 1);
+    oversampleBox.addItem ("x2", 2);
+    oversampleBox.addItem ("x4", 3);
+    oversampleBox.addItem ("x8", 4);
+    oversampleBox.setSelectedId (1, juce::dontSendNotification); // default x1
+
+    oversampleBox.setJustificationType (juce::Justification::centred);
+    oversampleBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
+    oversampleBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
+
+    {
+        juce::FontOptions opts (14.0f);
+        opts = opts.withStyle ("Bold");
+        oversampleBox.setFont (juce::Font (opts));
+    }
+
+    addAndMakeVisible (oversampleBox);
 
     // ----------------------
     // PARAMETER ATTACHMENTS
@@ -222,6 +246,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "useLimiter", modeSlider);
+
+    oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+                        apvts, "oversampleMode", oversampleBox);
 
     // Initial state from param
     if (auto* modeParam = apvts.getRawParameterValue ("useLimiter"))
@@ -341,6 +368,14 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
+    // OVERSAMPLE BOX – tiny top-right
+    const int osW = juce::jmax (40, w / 10);
+    const int osH = juce::jmax (16, h / 20);
+    const int osX = w - osW - 6;
+    const int osY = 6;
+
+    oversampleBox.setBounds (osX, osY, osW, osH);
+
     // 5 knobs in a row
     const int knobSize = juce::jmin (w / 7, h / 3);
     const int spacing  = knobSize / 3;
@@ -407,9 +442,9 @@ void FruityClipAudioProcessorEditor::timerCallback()
 
     juce::String text;
     if (lufs <= -59.0f)
-        text = "-- LUFS";               // silence / tails
+        text = "-- LUFS";                      // silence / tails
     else
-        text = juce::String (lufs, 1) + " LUFS";
+        text = juce::String (lufs, 2) + " LUFS";  // two decimals, e.g. -3.12 LUFS
 
     lufsLabel.setText (text, juce::dontSendNotification);
 
