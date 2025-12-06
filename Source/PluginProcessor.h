@@ -58,7 +58,7 @@ public:
     // 0..1 burn value for the background/white logo
     float getGuiBurn() const { return guiBurn.load(); }
 
-    // K-weighted momentary loudness (LUFS-ish, negative dB values)
+    // Momentary LUFS-style number for GUI
     float getGuiLufs() const { return guiLufs.load(); }
 
 private:
@@ -81,22 +81,29 @@ private:
     //==========================================================
     struct KFilterState
     {
-        // Stage 1 (shelving)
         float z1a = 0.0f;
         float z2a = 0.0f;
-
-        // Stage 2 (high-pass / RLB)
         float z1b = 0.0f;
         float z2b = 0.0f;
     };
 
     void resetKFilterState (int numChannels);
 
-    // K-filter states, one per channel
     std::vector<KFilterState> kFilterStates;
+    float lufsMeanSquare = 1.0e-6f;  // keep > 0
 
-    // Single-pole “mean-square” integration for momentary loudness
-    float lufsMeanSquare = 1.0e-6f;   // keep > 0 to avoid log(0)
+    //==========================================================
+    // OTT high-pass split state (0–150 Hz dry, >150 Hz OTT)
+    //==========================================================
+    struct OttHPState
+    {
+        float low = 0.0f; // running lowpass state
+    };
+
+    void resetOttState (int numChannels);
+
+    std::vector<OttHPState> ottStates;
+    float ottAlpha = 0.0f; // one-pole LP factor based on 150 Hz
 
     //==========================================================
     // Internal state
@@ -109,10 +116,13 @@ private:
     float limiterGain      = 1.0f;
     float limiterReleaseCo = 0.0f;
 
+    // OTT gain-match smoothing
+    float lastOttGain = 1.0f;
+
     // GUI meter smoothed state (0..1)
     std::atomic<float> guiBurn { 0.0f };
 
-    // K-weighted momentary LUFS (roughly matches other meters)
+    // GUI LUFS (K-weighted momentary)
     std::atomic<float> guiLufs { -60.0f };
 
     // Parameter state
