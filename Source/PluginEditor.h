@@ -62,6 +62,7 @@ private:
     juce::Image bgImage;
     juce::Image slamImage;   // "slammed" background
     juce::Image logoImage;
+    juce::Image logoWhiteImage; // precomputed white version of logo (same alpha)
     const float bgScale = 0.35f; // scale for bg.png
 
     // LookAndFeel + knobs
