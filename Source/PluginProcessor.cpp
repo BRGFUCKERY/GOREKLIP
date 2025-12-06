@@ -264,7 +264,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // STATIC SAT "UNITY" TRIM (post-SAT)
     // "for every bit of SAT up, push this much down"
     //==========================================================
-    // At SAT = 1.0, pull down by about 4 dB (tweak to taste).
+    // At SAT = 1.0, pull down by about 2 dB (tweak to taste).
     constexpr float maxSatTrimDb = -2.0f;
     const float satCurve         = satAmount; // linear; change to satAmount*satAmount if you want
     const float satTrimDb        = maxSatTrimDb * satCurve;
