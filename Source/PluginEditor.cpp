@@ -303,4 +303,138 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
         juce::Graphics::ScopedSaveState save (g);
 
         g.setOpacity (burnShaped);
-        g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement
+        g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+    }
+
+    // 3) Logo – normal at low slam, fades to white as you pin it
+    if (logoImage.isValid())
+    {
+        const float targetW = w * 0.80f;
+        const float scale   = targetW / logoImage.getWidth();
+
+        const int drawW = (int) (logoImage.getWidth()  * scale);
+        const int drawH = (int) (logoImage.getHeight() * scale);
+
+        const int x = (w - drawW) / 2;
+        const int y = 0; // absolutely top
+
+        // Crop top 20% of source logo (remove invisible padding)
+        const int cropY      = (int) (logoImage.getHeight() * 0.20f); // remove top 20%
+        const int cropHeight = logoImage.getHeight() - cropY;         // keep lower 80%
+
+        // 3a) Draw original logo, fading out as burn increases
+        {
+            juce::Graphics::ScopedSaveState save (g);
+            const float baseOpacity = 1.0f - burnShaped;
+            g.setOpacity (baseOpacity);
+            g.drawImage (logoImage,
+                         x, y, drawW, drawH,
+                         0, cropY,
+                         logoImage.getWidth(),
+                         cropHeight);
+        }
+
+        // 3b) Draw white logo overlay, fading in with burn
+        if (logoWhiteImage.isValid() && burnShaped > 0.0f)
+        {
+            juce::Graphics::ScopedSaveState save (g);
+            g.setOpacity (burnShaped);
+            g.drawImage (logoWhiteImage,
+                         x, y, drawW, drawH,
+                         0, cropY,
+                         logoWhiteImage.getWidth(),
+                         cropHeight);
+        }
+    }
+}
+
+//==============================================================
+// LAYOUT
+//==============================================================
+void FruityClipAudioProcessorEditor::resized()
+{
+    const int w = getWidth();
+    const int h = getHeight();
+
+    // OVERSAMPLE BOX – tiny top-right
+    const int osW = juce::jmax (40, w / 10);
+    const int osH = juce::jmax (16, h / 20);
+    const int osX = w - osW - 6;
+    const int osY = 6;
+
+    oversampleBox.setBounds (osX, osY, osW, osH);
+
+    // 5 knobs in a row
+    const int knobSize = juce::jmin (w / 7, h / 3);
+    const int spacing  = knobSize / 3;
+
+    const int totalW   = knobSize * 5 + spacing * 4;
+    const int startX   = (w - totalW) / 2;
+
+    const int bottomMargin = (int)(h * 0.05f);
+    const int knobY        = h - knobSize - bottomMargin;
+
+    gainSlider.setBounds (startX + 0 * (knobSize + spacing), knobY, knobSize, knobSize);
+    silkSlider.setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
+    ottSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
+    satSlider .setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
+    modeSlider.setBounds (startX + 4 * (knobSize + spacing), knobY, knobSize, knobSize);
+
+    const int labelH = 20;
+
+    gainLabel.setBounds (gainSlider.getX(),
+                         gainSlider.getBottom() + 2,
+                         gainSlider.getWidth(),
+                         labelH);
+
+    silkLabel.setBounds (silkSlider.getX(),
+                         silkSlider.getBottom() + 2,
+                         silkSlider.getWidth(),
+                         labelH);
+
+    ottLabel.setBounds (ottSlider.getX(),
+                        ottSlider.getBottom() + 2,
+                        ottSlider.getWidth(),
+                        labelH);
+
+    satLabel.setBounds (satSlider.getX(),
+                        satSlider.getBottom() + 2,
+                        satSlider.getWidth(),
+                        labelH);
+
+    modeLabel.setBounds (modeSlider.getX(),
+                         modeSlider.getBottom() + 2,
+                         modeSlider.getWidth(),
+                         labelH);
+
+    // LUFS label – directly above the CLIPPER/LIMITER finger
+    const int lufsHeight = 18;
+    const int lufsY      = modeSlider.getY() - lufsHeight - 4;
+
+    lufsLabel.setBounds (modeSlider.getX(),
+                         lufsY,
+                         modeSlider.getWidth(),
+                         lufsHeight);
+}
+
+//==============================================================
+// TIMER – pull burn + LUFS value from processor
+//==============================================================
+void FruityClipAudioProcessorEditor::timerCallback()
+{
+    // Burn value for background/logo
+    lastBurn = processor.getGuiBurn();
+
+    // K-weighted loudness (momentary LUFS-ish)
+    const float lufs = processor.getGuiLufs();
+
+    juce::String text;
+    if (lufs <= -59.0f)
+        text = "-- LUFS";
+    else
+        text = juce::String (lufs, 2) + " LUFS";
+
+    lufsLabel.setText (text, juce::dontSendNotification);
+
+    repaint();
+}
