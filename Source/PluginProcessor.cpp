@@ -16,8 +16,6 @@ FruityClipAudioProcessor::createParameterLayout()
         "inputGain", "Input Gain",
         juce::NormalisableRange<float> (-12.0f, 12.0f, 0.01f), 0.0f));
 
-
-
     // OTT – 0..1 (150 Hz+ only, parallel, unity gain)
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
         "ottAmount", "OTT Amount",
@@ -60,30 +58,6 @@ float FruityClipAudioProcessor::fruitySoftClipSample (float x, float threshold)
     const float shaped = threshold + (1.0f - (1.0f - t) * (1.0f - t)) * (1.0f - threshold);
 
     return sign * shaped;
-}
-
-//==============================================================
-// Subtle Neve 5060-style Silk curve
-//==============================================================
-float FruityClipAudioProcessor::silkCurveFull (float x)
-{
-    const float x2 = x * x;
-    const float x3 = x2 * x;
-    const float x5 = x3 * x2;
-
-    // Gentle odd harmonics
-    constexpr float a3 = 0.15f;
-    constexpr float a5 = 0.02f;
-
-    float y = x + a3 * x3 + a5 * x5;
-
-    // Normalise so |1| in -> |1| out
-    constexpr float y1   = 1.0f + a3 * 1.0f + a5 * 1.0f;
-    constexpr float norm = 1.0f / y1;
-
-    y *= norm;
-
-    return juce::jlimit (-1.2f, 1.2f, y);
 }
 
 //==============================================================
@@ -267,24 +241,20 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         resetOttState (numChannels);
 
     auto* gainParam   = parameters.getRawParameterValue ("inputGain");
-    auto* silkParam   = parameters.getRawParameterValue ("silkAmount");
     auto* ottParam    = parameters.getRawParameterValue ("ottAmount");
     auto* satParam    = parameters.getRawParameterValue ("satAmount");
     auto* modeParam   = parameters.getRawParameterValue ("useLimiter");
     auto* osModeParam = parameters.getRawParameterValue ("oversampleMode");
 
     const float inputGainDb   = gainParam   ? gainParam->load()   : 0.0f;
-    const float silkAmountRaw = silkParam   ? silkParam->load()   : 0.0f;
     const float ottAmountRaw  = ottParam    ? ottParam->load()    : 0.0f;
     const float satAmountRaw  = satParam    ? satParam->load()    : 0.0f;
     const bool  useLimiter    = modeParam   ? (modeParam->load() >= 0.5f) : false;
     const int   osIndexParam  = osModeParam ? (int) osModeParam->load()   : 0;
 
-    const float silkAmount = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
     const float ottAmount  = juce::jlimit (0.0f, 1.0f, ottAmountRaw);
     const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
 
-    const float silkBlend = silkAmount * silkAmount; // keep first half subtle
     const float g         = postGain;                // Fruity-null alignment
     const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
 
@@ -301,14 +271,14 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     //==========================================================
-    // PRE-CHAIN: GAIN + SILK + OTT (always at base rate)
+    // PRE-CHAIN: GAIN + OTT (always at base rate)
     //==========================================================
     double sumSqOriginal = 0.0;
     double sumSqOtt      = 0.0;
 
     if (ottAmount <= 0.0f)
     {
-        // OTT fully bypassed: apply only INPUT GAIN + SILK in place,
+        // OTT fully bypassed: apply only INPUT GAIN in place,
         // and force OTT gain to unity so knob = true bypass.
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -318,13 +288,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             {
                 float y = samples[i] * inputGain;
 
-                // SILK
-                if (silkBlend > 0.0f)
-                {
-                    const float silkFull = silkCurveFull (y);
-                    y = y + silkBlend * (silkFull - y);
-                }
-
                 samples[i] = y;
             }
         }
@@ -333,7 +296,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
     else
     {
-        // OTT active: do SILK + OTT on a temp buffer and RMS gain-match
+        // OTT active: do OTT on a temp buffer and RMS gain-match
         juce::AudioBuffer<float> preChain (numChannels, numSamples);
         preChain.makeCopyOf (buffer);
 
@@ -346,13 +309,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             {
                 // INPUT GAIN
                 float y = x[i] * inputGain;
-
-                // 1) SILK (pre-clip transformer-ish colour)
-                if (silkBlend > 0.0f)
-                {
-                    const float silkFull = silkCurveFull (y);
-                    y = y + silkBlend * (silkFull - y);
-                }
 
                 // Original (pre-OTT) energy
                 sumSqOriginal += (double) (y * y);
@@ -634,146 +590,4 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     //==========================================================
     float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
     normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
-    normPeak = std::pow (normPeak, 2.5f);          // make mid-range calmer
-
-    const float previousBurn = guiBurn.load();
-    const float smoothedBurn = 0.25f * previousBurn + 0.75f * normPeak;
-    guiBurn.store (smoothedBurn);
-
-        //==========================================================
-    // Short-term LUFS (~3 s window, like "short term" meters)
-    //   + signal gating envelope (for hiding the meter)
-    //==========================================================
-    if (sampleRate <= 0.0)
-        sampleRate = 44100.0f;
-
-    const float blockDurationSec = (float) numSamples / (float) sampleRate;
-
-    // Exponential integrator approximating a 3 s short-term window
-    const float tauShortSec = 3.0f; // ITU short-term ≈ 3 s
-    float alphaMs = 0.0f;
-    if (tauShortSec > 0.0f)
-        alphaMs = 1.0f - std::exp (-blockDurationSec / tauShortSec);
-    alphaMs = juce::jlimit (0.0f, 1.0f, alphaMs);
-
-    float blockMs = 0.0f;
-    if (totalSamplesK > 0 && sumSquaresK > 0.0)
-        blockMs = (float) (sumSquaresK / (double) totalSamplesK);
-
-    if (! std::isfinite (blockMs) || blockMs < 0.0f)
-        blockMs = 0.0f;
-
-    // Update short-term mean-square
-    if (blockMs <= 0.0f)
-    {
-        // decay towards silence
-        lufsMeanSquare *= (1.0f - alphaMs);
-    }
-    else
-    {
-        lufsMeanSquare = (1.0f - alphaMs) * lufsMeanSquare + alphaMs * blockMs;
-    }
-
-    if (lufsMeanSquare < 1.0e-12f)
-        lufsMeanSquare = 1.0e-12f;
-
-    // ITU-style: L = -0.691 + 10 * log10(z)
-    float lufs = -0.691f + 10.0f * std::log10 (lufsMeanSquare);
-    if (! std::isfinite (lufs))
-        lufs = -60.0f;
-
-    // --- Calibration offset to sit on top of MiniMeters short-term ---
-    constexpr float lufsCalibrationOffset = 3.0f; // tweak if needed
-    lufs += lufsCalibrationOffset;
-
-    // clamp to a sane display range
-    lufs = juce::jlimit (-60.0f, 6.0f, lufs);
-
-    // --- Use the calibrated block energy for gate logic ---
-    float blockLufs = -60.0f;
-    if (blockMs > 0.0f)
-    {
-        float tmp = -0.691f + 10.0f * std::log10 (blockMs);
-        if (std::isfinite (tmp))
-            blockLufs = juce::jlimit (-80.0f, 6.0f, tmp + lufsCalibrationOffset);
-    }
-
-    // Treat as "has signal" if:
-    //   - block short-term LUFS above ~ -60
-    //   OR
-    //   - raw peak above ~ -40 dBFS (0.01 linear)
-    const bool hasSignalNow =
-        (blockLufs > -60.0f) ||
-        (blockMax > 0.01f);
-
-    // Smooth gate envelope so LUFS label doesn't flicker
-    const float prevEnv   = guiSignalEnv.load();
-    const float gateAlpha = 0.25f;
-    const float targetEnv = hasSignalNow ? 1.0f : 0.0f;
-    const float newEnv    = (1.0f - gateAlpha) * prevEnv + gateAlpha * targetEnv;
-    guiSignalEnv.store (newEnv);
-
-    //==========================================================
-    // GUI LUFS readout – slower bar so it feels like a ST meter
-    //==========================================================
-    const float prevLufs   = guiLufs.load();
-    const float lufsAlpha  = 0.40f;  // was 0.8 / 0.9 – this is much slower
-    const float lufsSmooth = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
-
-    guiLufs.store (lufsSmooth);
-}
-
-
-
-//==============================================================
-// Editor
-//==============================================================
-juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
-{
-    return new FruityClipAudioProcessorEditor (*this);
-}
-
-//==============================================================
-// Metadata
-//==============================================================
-const juce::String FruityClipAudioProcessor::getName() const      { return "GOREKLIPER"; }
-bool FruityClipAudioProcessor::acceptsMidi() const                { return false; }
-bool FruityClipAudioProcessor::producesMidi() const               { return false; }
-bool FruityClipAudioProcessor::isMidiEffect() const               { return false; }
-double FruityClipAudioProcessor::getTailLengthSeconds() const     { return 0.0; }
-
-//==============================================================
-// Programs
-//==============================================================
-int FruityClipAudioProcessor::getNumPrograms()                    { return 1; }
-int FruityClipAudioProcessor::getCurrentProgram()                 { return 0; }
-void FruityClipAudioProcessor::setCurrentProgram (int)            {}
-const juce::String FruityClipAudioProcessor::getProgramName (int) { return {}; }
-void FruityClipAudioProcessor::changeProgramName (int, const juce::String&) {}
-
-//==============================================================
-// State
-//==============================================================
-void FruityClipAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
-{
-    auto state = parameters.copyState();
-    if (auto xml = state.createXml())
-        copyXmlToBinary (*xml, destData);
-}
-
-void FruityClipAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
-{
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
-    {
-        if (xml->hasTagName (parameters.state.getType()))
-            parameters.replaceState (juce::ValueTree::fromXml (*xml));
-    }
-}
-
-//==============================================================
-// Entry point
-//==============================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FruityClipAudioProcessor();
-}
+    normPeak = std::pow (normPeak,
