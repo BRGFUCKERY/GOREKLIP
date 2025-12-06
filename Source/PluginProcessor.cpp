@@ -643,20 +643,20 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float smoothedBurn = 0.25f * previousBurn + 0.75f * normPeak;
     guiBurn.store (smoothedBurn);
 
-    //==========================================================
-    // Momentary LUFS (~200 ms, slightly faster than spec)
+        //==========================================================
+    // Short-term LUFS (~3 s window, like "short term" meters)
     //   + signal gating envelope (for hiding the meter)
     //==========================================================
     if (sampleRate <= 0.0)
-        sampleRate = 44100.0;
+        sampleRate = 44100.0f;
 
     const float blockDurationSec = (float) numSamples / (float) sampleRate;
 
-    // Exponential integrator towards a 200 ms window
-    const float tauMomentSec = 0.20f; // 0.2 s -> a bit faster / more "TikTok"
+    // Exponential integrator approximating a 3 s short-term window
+    const float tauShortSec = 3.0f; // ITU short-term ≈ 3 s
     float alphaMs = 0.0f;
-    if (tauMomentSec > 0.0f)
-        alphaMs = 1.0f - std::exp (-blockDurationSec / tauMomentSec);
+    if (tauShortSec > 0.0f)
+        alphaMs = 1.0f - std::exp (-blockDurationSec / tauShortSec);
     alphaMs = juce::jlimit (0.0f, 1.0f, alphaMs);
 
     float blockMs = 0.0f;
@@ -666,7 +666,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     if (! std::isfinite (blockMs) || blockMs < 0.0f)
         blockMs = 0.0f;
 
-    // Update momentary mean-square
+    // Update short-term mean-square
     if (blockMs <= 0.0f)
     {
         // decay towards silence
@@ -685,14 +685,14 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     if (! std::isfinite (lufs))
         lufs = -60.0f;
 
-    // --- Calibration offset to sit on top of MiniMeters / LUFS Machine ---
-    constexpr float lufsCalibrationOffset = 3.5f; // fine-tune around 3–4 dB
+    // --- Calibration offset to sit on top of MiniMeters short-term ---
+    constexpr float lufsCalibrationOffset = 3.5f; // tweak if needed
     lufs += lufsCalibrationOffset;
 
     // clamp to a sane display range
     lufs = juce::jlimit (-60.0f, 6.0f, lufs);
 
-    // --- Use the *uncalibrated* block energy for gate logic, then add offset ---
+    // --- Use the calibrated block energy for gate logic ---
     float blockLufs = -60.0f;
     if (blockMs > 0.0f)
     {
@@ -702,7 +702,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     // Treat as "has signal" if:
-    //   - block momentary LUFS above ~ -60
+    //   - block short-term LUFS above ~ -60
     //   OR
     //   - raw peak above ~ -40 dBFS (0.01 linear)
     const bool hasSignalNow =
@@ -711,20 +711,21 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     // Smooth gate envelope so LUFS label doesn't flicker
     const float prevEnv   = guiSignalEnv.load();
-    const float gateAlpha = 0.25f; // higher = snappier gate
+    const float gateAlpha = 0.25f;
     const float targetEnv = hasSignalNow ? 1.0f : 0.0f;
     const float newEnv    = (1.0f - gateAlpha) * prevEnv + gateAlpha * targetEnv;
     guiSignalEnv.store (newEnv);
 
     //==========================================================
-    // GUI LUFS readout – almost raw (fast ballistics)
+    // GUI LUFS readout – slower bar so it feels like a ST meter
     //==========================================================
     const float prevLufs   = guiLufs.load();
-    const float lufsAlpha  = 0.90f;  // 0.9 = very fast, but not glitchy
+    const float lufsAlpha  = 0.40f;  // was 0.8 / 0.9 – this is much slower
     const float lufsSmooth = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
 
     guiLufs.store (lufsSmooth);
 }
+
 
 
 //==============================================================
