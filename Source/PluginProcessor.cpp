@@ -686,7 +686,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         lufs = -60.0f;
 
     // --- Calibration offset to sit on top of MiniMeters short-term ---
-    constexpr float lufsCalibrationOffset = 3.5f; // tweak if needed
+    constexpr float lufsCalibrationOffset = 3.0f; // tweak if needed
     lufs += lufsCalibrationOffset;
 
     // clamp to a sane display range
