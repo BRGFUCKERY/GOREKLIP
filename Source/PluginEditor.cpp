@@ -371,7 +371,7 @@ void FruityClipAudioProcessorEditor::resized()
     const int totalW   = knobSize * 5 + spacing * 4;
     const int startX   = (w - totalW) / 2;
 
-    const int bottomMargin = (int)(h * 0.05f);
+    const int bottomMargin = (int) (h * 0.05f);
     const int knobY        = h - knobSize - bottomMargin;
 
     gainSlider.setBounds (startX + 0 * (knobSize + spacing), knobY, knobSize, knobSize);
@@ -385,3 +385,34 @@ void FruityClipAudioProcessorEditor::resized()
     gainLabel.setBounds (gainSlider.getX(),
                          gainSlider.getBottom() + 2,
                          gainSlider.getWidth(),
+                         labelH);
+
+    silkLabel.setBounds (silkSlider.getX(),
+                         silkSlider.getBottom() + 2,
+                         silkSlider.getWidth(),
+                         labelH);
+
+    ottLabel.setBounds (ottSlider.getX(),
+                        ottSlider.getBottom() + 2,
+                        ottSlider.getWidth(),
+                        labelH);
+
+    satLabel.setBounds (satSlider.getX(),
+                        satSlider.getBottom() + 2,
+                        satSlider.getWidth(),
+                        labelH);
+
+    modeLabel.setBounds (modeSlider.getX(),
+                         modeSlider.getBottom() + 2,
+                         modeSlider.getWidth(),
+                         labelH);
+
+    // LUFS label – directly above the CLIPPER/LIMITER finger
+    const int lufsHeight = 18;
+    const int lufsY      = modeSlider.getY() - lufsHeight - 4;
+
+    lufsLabel.setBounds (modeSlider.getX(),
+                         lufsY,
+                         modeSlider.getWidth(),
+                         lufsHeight);
+}
