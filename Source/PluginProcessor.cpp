@@ -172,16 +172,15 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float silkAmount = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
 
     //==========================================================
-    // Manual SAT "auto gain" – simple static curve:
-    // more SAT -> a bit less level INTO the saturation stage.
-    // This does NOT touch the main gain param or move the finger.
+    // SAT "auto gain" – NUKED:
+    // We keep it at 0 dB so SAT never gets quieter when pushed.
     //==========================================================
-    const float satCompDb = -2.0f * satAmount * satAmount; // 0 dB at 0, about -2 dB at full
+    const float satCompDb = 0.0f;  // full aggression, no pre-trim
 
     // User gain (your left finger) – used directly in LIMIT mode
     const float inputGainLimiter = juce::Decibels::decibelsToGain (inputGainDb);
 
-    // In CLIP/SAT mode, user gain + fixed SAT compensation (pre-sat)
+    // In CLIP/SAT mode, user gain + static SAT compensation (pre-sat)
     const float inputGainClip    = juce::Decibels::decibelsToGain (inputGainDb + satCompDb);
 
     const float silkBlend = silkAmount * silkAmount; // keep first half subtle
@@ -232,7 +231,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     {
         //======================================================
         // CLIP / SAT MODE:
-        // (Gain + static SAT pre-trim) -> SILK -> SAT -> POSTGAIN -> HARD CLIP
+        // (Gain + SAT pre-trim [now 0]) -> SILK -> SAT -> POSTGAIN -> HARD CLIP
         //======================================================
         for (int ch = 0; ch < numChannels; ++ch)
         {
