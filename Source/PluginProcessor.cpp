@@ -644,60 +644,61 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     guiBurn.store (smoothedBurn);
 
     //==========================================================
-    // Real-ish K-weighted “momentary LUFS” (~400 ms)
+    // Momentary LUFS (~200 ms, slightly faster than spec)
     //   + signal gating envelope (for hiding the meter)
     //==========================================================
     if (sampleRate <= 0.0)
         sampleRate = 44100.0;
 
     const float blockDurationSec = (float) numSamples / (float) sampleRate;
-    const float targetWindowSec  = 0.400f; // momentary window
 
-    float alpha = 0.0f;
-    if (targetWindowSec > 0.0f)
-        alpha = blockDurationSec / targetWindowSec;
-    alpha = juce::jlimit (0.0f, 1.0f, alpha);
+    // Exponential integrator towards a 200 ms window
+    const float tauMomentSec = 0.20f; // 0.2 s -> a bit faster / more "TikTok"
+    float alphaMs = 0.0f;
+    if (tauMomentSec > 0.0f)
+        alphaMs = 1.0f - std::exp (-blockDurationSec / tauMomentSec);
+    alphaMs = juce::jlimit (0.0f, 1.0f, alphaMs);
 
     float blockMs = 0.0f;
     if (totalSamplesK > 0 && sumSquaresK > 0.0)
         blockMs = (float) (sumSquaresK / (double) totalSamplesK);
 
-    if (blockMs > 0.0f)
+    if (! std::isfinite (blockMs) || blockMs < 0.0f)
+        blockMs = 0.0f;
+
+    // Update momentary mean-square
+    if (blockMs <= 0.0f)
     {
-        // Update 400ms mean-square integrator
-        if (std::isfinite (blockMs) && blockMs > 0.0f)
-        {
-            lufsMeanSquare = (1.0f - alpha) * lufsMeanSquare + alpha * blockMs;
-        }
+        // decay towards silence
+        lufsMeanSquare *= (1.0f - alphaMs);
     }
     else
     {
-        // Decay towards silence when no energy
-        lufsMeanSquare *= (1.0f - alpha);
-        if (lufsMeanSquare < 1.0e-10f)
-            lufsMeanSquare = 1.0e-10f;
+        lufsMeanSquare = (1.0f - alphaMs) * lufsMeanSquare + alphaMs * blockMs;
     }
 
-    // Convert integrator to LUFS-style value
-    float lufs = -60.0f;
-    if (lufsMeanSquare > 0.0f)
-    {
-        // ITU-style: L = -0.691 + 10 * log10(z)
-        lufs = -0.691f + 10.0f * std::log10 (lufsMeanSquare);
-        if (! std::isfinite (lufs))
-            lufs = -60.0f;
-    }
+    if (lufsMeanSquare < 1.0e-12f)
+        lufsMeanSquare = 1.0e-12f;
+
+    // ITU-style: L = -0.691 + 10 * log10(z)
+    float lufs = -0.691f + 10.0f * std::log10 (lufsMeanSquare);
+    if (! std::isfinite (lufs))
+        lufs = -60.0f;
+
+    // --- Calibration offset to sit on top of MiniMeters / LUFS Machine ---
+    constexpr float lufsCalibrationOffset = 3.5f; // fine-tune around 3–4 dB
+    lufs += lufsCalibrationOffset;
 
     // clamp to a sane display range
-    lufs = juce::jlimit (-60.0f, 3.0f, lufs);
+    lufs = juce::jlimit (-60.0f, 6.0f, lufs);
 
-    // --- Simple "commercial" signal gate for the GUI ---
+    // --- Use the *uncalibrated* block energy for gate logic, then add offset ---
     float blockLufs = -60.0f;
     if (blockMs > 0.0f)
     {
-        float tmpLufs = -0.691f + 10.0f * std::log10 (blockMs);
-        if (std::isfinite (tmpLufs))
-            blockLufs = juce::jlimit (-80.0f, 3.0f, tmpLufs);
+        float tmp = -0.691f + 10.0f * std::log10 (blockMs);
+        if (std::isfinite (tmp))
+            blockLufs = juce::jlimit (-80.0f, 6.0f, tmp + lufsCalibrationOffset);
     }
 
     // Treat as "has signal" if:
@@ -716,14 +717,15 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     guiSignalEnv.store (newEnv);
 
     //==========================================================
-    // Extra smoothing for GUI LUFS readout (faster ballistics)
+    // GUI LUFS readout – almost raw (fast ballistics)
     //==========================================================
     const float prevLufs   = guiLufs.load();
-    const float lufsAlpha  = 0.60f;  // ~2× faster than 0.3
+    const float lufsAlpha  = 0.90f;  // 0.9 = very fast, but not glitchy
     const float lufsSmooth = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
 
     guiLufs.store (lufsSmooth);
 }
+
 
 //==============================================================
 // Editor
