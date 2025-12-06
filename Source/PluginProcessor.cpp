@@ -82,7 +82,7 @@ FruityClipAudioProcessor::~FruityClipAudioProcessor() = default;
 //==============================================================
 void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 {
-    // osIndex: 0=x1, 1=x2, 2=x4, 3=x8, 4=x16
+    // osIndex: 0=x1, 1=x2, 2=x4, 3:x8, 4:x16
     currentOversampleIndex = juce::jlimit (0, 4, osIndex);
 
     int numStages = 0; // factor = 2^stages
@@ -585,14 +585,149 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
     }
 
+    //==========================================================
+    // Update GUI burn meter (0..1) from blockMax
+    //==========================================================
+    float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
+    normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
+    normPeak = std::pow (normPeak, 2.5f);          // make mid-range calmer
 
-//==========================================================
-// Update GUI burn meter (0..1) from blockMax
-//==========================================================
-float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
-normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
-normPeak = std::pow (normPeak, 2.5f);          // make mid-range calmer
+    const float previousBurn = guiBurn.load();
+    const float smoothedBurn = 0.25f * previousBurn + 0.75f * normPeak;
+    guiBurn.store (smoothedBurn);
 
-const float previousBurn = guiBurn.load();
-const float smoothedBurn = 0.25f * previousBurn + 0.75f * normPeak;
-guiBurn.store (smoothedBurn);
+    //==========================================================
+    // Short-term LUFS (~3 s window, like "short term" meters)
+    //   + signal gating envelope (for hiding the meter)
+    //==========================================================
+    if (sampleRate <= 0.0)
+        sampleRate = 44100.0f;
+
+    const float blockDurationSec = (float) numSamples / (float) sampleRate;
+
+    // Exponential integrator approximating a 3 s short-term window
+    const float tauShortSec = 3.0f; // ITU short-term ≈ 3 s
+    float alphaMs = 0.0f;
+    if (tauShortSec > 0.0f)
+        alphaMs = 1.0f - std::exp (-blockDurationSec / tauShortSec);
+    alphaMs = juce::jlimit (0.0f, 1.0f, alphaMs);
+
+    float blockMs = 0.0f;
+    if (totalSamplesK > 0 && sumSquaresK > 0.0)
+        blockMs = (float) (sumSquaresK / (double) totalSamplesK);
+
+    if (! std::isfinite (blockMs) || blockMs < 0.0f)
+        blockMs = 0.0f;
+
+    // Update short-term mean-square
+    if (blockMs <= 0.0f)
+    {
+        // decay towards silence
+        lufsMeanSquare *= (1.0f - alphaMs);
+    }
+    else
+    {
+        lufsMeanSquare = (1.0f - alphaMs) * lufsMeanSquare + alphaMs * blockMs;
+    }
+
+    if (lufsMeanSquare < 1.0e-12f)
+        lufsMeanSquare = 1.0e-12f;
+
+    // ITU-style: L = -0.691 + 10 * log10(z)
+    float lufs = -0.691f + 10.0f * std::log10 (lufsMeanSquare);
+    if (! std::isfinite (lufs))
+        lufs = -60.0f;
+
+    // --- Calibration offset to sit on top of MiniMeters short-term ---
+    constexpr float lufsCalibrationOffset = 3.0f; // tweak if needed
+    lufs += lufsCalibrationOffset;
+
+    // clamp to a sane display range
+    lufs = juce::jlimit (-60.0f, 6.0f, lufs);
+
+    // --- Use the calibrated block energy for gate logic ---
+    float blockLufs = -60.0f;
+    if (blockMs > 0.0f)
+    {
+        float tmp = -0.691f + 10.0f * std::log10 (blockMs);
+        if (std::isfinite (tmp))
+            blockLufs = juce::jlimit (-80.0f, 6.0f, tmp + lufsCalibrationOffset);
+    }
+
+    // Treat as "has signal" if:
+    //   - block short-term LUFS above ~ -60
+    //   OR
+    //   - raw peak above ~ -40 dBFS (0.01 linear)
+    const bool hasSignalNow =
+        (blockLufs > -60.0f) ||
+        (blockMax > 0.01f);
+
+    // Smooth gate envelope so LUFS label doesn't flicker
+    const float prevEnv   = guiSignalEnv.load();
+    const float gateAlpha = 0.25f;
+    const float targetEnv = hasSignalNow ? 1.0f : 0.0f;
+    const float newEnv    = (1.0f - gateAlpha) * prevEnv + gateAlpha * targetEnv;
+    guiSignalEnv.store (newEnv);
+
+    //==========================================================
+    // GUI LUFS readout – slower bar so it feels like a ST meter
+    //==========================================================
+    const float prevLufs   = guiLufs.load();
+    const float lufsAlpha  = 0.40f;  // slower now
+    const float lufsSmooth = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
+
+    guiLufs.store (lufsSmooth);
+}
+
+//==============================================================
+// Editor
+//==============================================================
+juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
+{
+    return new FruityClipAudioProcessorEditor (*this);
+}
+
+//==============================================================
+// Metadata
+//==============================================================
+const juce::String FruityClipAudioProcessor::getName() const      { return "GOREKLIPER"; }
+bool FruityClipAudioProcessor::acceptsMidi() const                { return false; }
+bool FruityClipAudioProcessor::producesMidi() const               { return false; }
+bool FruityClipAudioProcessor::isMidiEffect() const               { return false; }
+double FruityClipAudioProcessor::getTailLengthSeconds() const     { return 0.0; }
+
+//==============================================================
+// Programs
+//==============================================================
+int FruityClipAudioProcessor::getNumPrograms()                    { return 1; }
+int FruityClipAudioProcessor::getCurrentProgram()                 { return 0; }
+void FruityClipAudioProcessor::setCurrentProgram (int)            {}
+const juce::String FruityClipAudioProcessor::getProgramName (int) { return {}; }
+void FruityClipAudioProcessor::changeProgramName (int, const juce::String&) {}
+
+//==============================================================
+// State
+//==============================================================
+void FruityClipAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    auto state = parameters.copyState();
+    if (auto xml = state.createXml())
+        copyXmlToBinary (*xml, destData);
+}
+
+void FruityClipAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    {
+        if (xml->hasTagName (parameters.state.getType()))
+            parameters.replaceState (juce::ValueTree::fromXml (*xml));
+    }
+}
+
+//==============================================================
+// Entry point
+//==============================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FruityClipAudioProcessor();
+}
