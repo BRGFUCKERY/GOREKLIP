@@ -49,7 +49,7 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
     }
     else if (gainSlider != nullptr && &slider == gainSlider)
     {
-        // GAIN FINGER: show ONLY the real gain param (no auto-gain / SAT compensation)
+        // GAIN FINGER: show ONLY the real gain param (no auto-gain / SAT comp)
         const auto& range = slider.getRange();
         const float minDb = (float) range.getStart(); // -12
         const float maxDb = (float) range.getEnd();   // +12
@@ -88,10 +88,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::bg_png,
         BinaryData::bg_pngSize);
 
-    // Load SLAM background (assets/slam.jpg -> BinaryData::slam_jpg)
-    slamImage = juce::ImageCache::getFromMemory (
-        BinaryData::slam_jpg,
-        BinaryData::slam_jpgSize);
+    // Load SLAM background by *name* (slam.jpg).
+    // This is safe even if the symbol name in BinaryData is different.
+    {
+        int slamSize = 0;
+        if (const void* slamData = BinaryData::getNamedResource ("slam.jpg", slamSize))
+            slamImage = juce::ImageCache::getFromMemory (slamData, slamSize);
+        // If slamData == nullptr, slamImage stays invalid and we just won't crossfade.
+    }
 
     // Load GOREKLIPER logo
     logoImage = juce::ImageCache::getFromMemory (
@@ -150,7 +154,10 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         lbl.setText (text, juce::dontSendNotification);
         lbl.setJustificationType (juce::Justification::centred);
         lbl.setColour (juce::Label::textColourId, juce::Colours::white);
-        lbl.setFont (juce::Font (16.0f, juce::Font::bold));
+
+        juce::FontOptions opts (16.0f);
+        opts = opts.withStyle (juce::Font::bold);
+        lbl.setFont (juce::Font (opts));
     };
 
     setupLabel (gainLabel, "GAIN");
