@@ -35,7 +35,7 @@ public:
     double getTailLengthSeconds() const override;
 
     //==========================================================
-    // Programs (we don't really use them)
+    // Programs
     //==========================================================
     int getNumPrograms() override;
     int getCurrentProgram() override;
@@ -50,46 +50,42 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     //==========================================================
-    // Accessors
+    // Helpers for the editor
     //==========================================================
     juce::AudioProcessorValueTreeState& getParametersState() { return parameters; }
-
-    // Value used by the GUI for the "burn" animation (0..1)
-    float getGuiBurn() const noexcept { return guiBurn.load(); }
-
-    // (Optional) expose auto-trim for debug/visualising later
-    float getSatCompDb() const noexcept { return satCompDb.load(); }
+    float getGuiBurn() const { return guiBurn.load(); }
 
 private:
     //==========================================================
-    // Parameters
+    // Internal helpers
     //==========================================================
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    //==========================================================
-    // DSP State
-    //==========================================================
-    // Soft-clip threshold for SAT at max (~ -6 dB)
-    float thresholdLinear = 0.0f;
-    // Post-gain that makes us "null" Fruity
-    float postGain        = 1.0f;
+    // Fruity-ish soft clip
+    static float fruitySoftClipSample (float x, float threshold);
 
-    // Limiter state
-    double sampleRate       = 44100.0;
-    float  limiterGain      = 1.0f;
-    float  limiterReleaseCo = 0.0f;
+    // Neve 5060-style "Silk" curve
+    static float silkCurveFull (float x);
 
-    // Auto input trim for SAT (in dB), adjusted dynamically to keep loudness near-unity
-    std::atomic<float> satCompDb { 0.0f };
+    // Limiter sample processor
+    float processLimiterSample (float x);
+
+    //==========================================================
+    // Internal state
+    //==========================================================
+    double sampleRate      = 44100.0;
+    float  postGain        = 0.99999385f;  // Fruity-null alignment
+    float  thresholdLinear = 0.5f;         // updated in ctor
+
+    // Limiter
+    float limiterGain      = 1.0f;
+    float limiterReleaseCo = 0.0f;
 
     // GUI meter smoothed state (0..1)
     std::atomic<float> guiBurn { 0.0f };
 
     // Parameter state
     juce::AudioProcessorValueTreeState parameters;
-
-    // Helpers
-    float processLimiterSample (float x);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
 };
