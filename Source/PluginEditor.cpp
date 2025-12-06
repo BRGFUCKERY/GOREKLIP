@@ -89,7 +89,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::bg_pngSize);
 
     // Load SLAM background by *name* (slam.jpg).
-    // This is safe even if the symbol name in BinaryData is different.
     {
         int slamSize = 0;
         if (const void* slamData = BinaryData::getNamedResource ("slam.jpg", slamSize))
@@ -155,8 +154,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         lbl.setJustificationType (juce::Justification::centred);
         lbl.setColour (juce::Label::textColourId, juce::Colours::white);
 
+        // Use FontOptions correctly: style is a String ("Bold"), not Font::bold
         juce::FontOptions opts (16.0f);
-        opts = opts.withStyle (juce::Font::bold);
+        opts = opts.withStyle ("Bold");
         lbl.setFont (juce::Font (opts));
     };
 
