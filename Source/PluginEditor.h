@@ -16,6 +16,12 @@ public:
         knobImage = img;
     }
 
+    void setGainAndModeSliders (juce::Slider* gain, juce::Slider* mode)
+    {
+        gainSlider = gain;
+        modeSlider = mode;
+    }
+
     void drawRotarySlider (juce::Graphics& g,
                            int x, int y, int width, int height,
                            float sliderPosProportional,
@@ -24,82 +30,80 @@ public:
                            juce::Slider& slider) override;
 
 private:
-    juce::Image knobImage;
+    juce::Image  knobImage;
+    juce::Slider* gainSlider = nullptr;
+    juce::Slider* modeSlider = nullptr;
 };
 
 //==============================================================
-//  Main editor
+//  Editor
 //==============================================================
-class FruityClipAudioProcessorEditor  : public juce::AudioProcessorEditor,
-                                        private juce::Timer
+class FruityClipAudioProcessorEditor
+    : public juce::AudioProcessorEditor,
+      private juce::Timer
 {
 public:
-    explicit FruityClipAudioProcessorEditor (FruityClipAudioProcessor&);
+    FruityClipAudioProcessorEditor (FruityClipAudioProcessor&);
     ~FruityClipAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
+    enum class LookMode
+    {
+        LufsMeter,
+        FuckedMeter,
+        StaticFlat,
+        StaticCooked
+    };
+
     FruityClipAudioProcessor& processor;
 
-    // Background and slam images
-    juce::Image backgroundImage;
-    juce::Image slamImage;
-
-    // Logo: original + white version
+    // Background & logo
+    juce::Image bgImage;
+    juce::Image slamImage;       // "slammed" background
     juce::Image logoImage;
-    juce::Image logoWhiteImage;
+    juce::Image logoWhiteImage;  // precomputed white version of logo (same alpha)
+    const float bgScale = 0.35f; // scale for bg.png so plugin stays wide
 
-    // Middle-finger knobs
-    MiddleFingerLookAndFeel middleFingerLnf;
+    // LookAndFeel + knobs
+    MiddleFingerLookAndFeel fingerLnf;
 
+    // 4 knobs: GAIN, OTT, SAT, MODE (no more SILK)
     juce::Slider gainSlider;
-    juce::Slider silkSlider;
     juce::Slider ottSlider;
     juce::Slider satSlider;
     juce::Slider modeSlider;
 
-    juce::Label gainLabel;
-    juce::Label silkLabel;
-    juce::Label ottLabel;
-    juce::Label satLabel;
-    juce::Label modeLabel;
+    juce::Label  gainLabel;
+    juce::Label  ottLabel;
+    juce::Label  satLabel;
+    juce::Label  modeLabel;
 
-    // LUFS label
-    juce::Label lufsLabel;
+    // LUFS text above CLIPPER/LIMITER finger
+    juce::Label  lufsLabel;
 
-    // Oversample dropdown
+    // Oversample mode (x1/x2/x4/x8/x16) – tiny top-right dropdown
     juce::ComboBox oversampleBox;
+
+    // LOOK menu (top-left): LUFS METER / FUCKED / STATIC / STATIC COOKED / ABOUT
+    juce::TextButton lookMenuButton;
 
     // Attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   silkAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
 
-    //==========================================================
-    // LOOK / VISUAL MODES
-    //==========================================================
-    enum class LookMode
-    {
-        LufsMeter = 0,   // background burn from LUFS
-        FuckedMeter,     // background burn from peak "slam" (original)
-        Static,          // static clean background
-        StaticCooked     // static fully burnt background
-    };
+    // GUI state
+    float    lastBurn = 0.0f;             // 0..1 for background burn
+    LookMode lookMode = LookMode::LufsMeter;
 
-    LookMode        lookMode      = LookMode::LufsMeter; // default
-    juce::TextButton lookMenuButton;                     // top-left menu button
-
-    // GUI burn value (cached from processor)
-    float lastBurn = 0.0f;
-
-    // Timer for GUI updates
+    // Helpers
     void timerCallback() override;
+    static float mapLufsToBurn (float lufs);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessorEditor)
 };
-
