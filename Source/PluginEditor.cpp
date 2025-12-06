@@ -63,7 +63,7 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
     }
     else
     {
-        // Normal knobs (SILK, OTT, SAT)
+        // Normal knobs (OTT, SAT)
         angle = minAngle + (maxAngle - minAngle) * sliderPosProportional;
     }
 
@@ -149,19 +149,16 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     gainSlider.setMouseDragSensitivity (250);
     gainSlider.setRange (-12.0, 12.0, 0.01);
 
-    setupKnob01 (silkSlider);
     setupKnob01 (ottSlider);
     setupKnob01 (satSlider);
     setupKnob01 (modeSlider); // MODE finger – param is bool, but we use 0..1
 
     gainSlider.setLookAndFeel (&fingerLnf);
-    silkSlider.setLookAndFeel (&fingerLnf);
     ottSlider .setLookAndFeel (&fingerLnf);
     satSlider .setLookAndFeel (&fingerLnf);
     modeSlider.setLookAndFeel (&fingerLnf);
 
     addAndMakeVisible (gainSlider);
-    addAndMakeVisible (silkSlider);
     addAndMakeVisible (ottSlider);
     addAndMakeVisible (satSlider);
     addAndMakeVisible (modeSlider);
@@ -181,13 +178,11 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     };
 
     setupLabel (gainLabel, "GAIN");
-    setupLabel (silkLabel, "SILK");
     setupLabel (ottLabel,  "OTT");
     setupLabel (satLabel,  "SAT");
     setupLabel (modeLabel, "CLIPPER"); // will switch to LIMITER in runtime
 
     addAndMakeVisible (gainLabel);
-    addAndMakeVisible (silkLabel);
     addAndMakeVisible (ottLabel);
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
@@ -229,9 +224,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     gainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "inputGain", gainSlider);
 
-    silkAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                        apvts, "silkAmount", silkSlider);
-
     ottAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "ottAmount", ottSlider);
 
@@ -271,7 +263,6 @@ FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
 {
     stopTimer();
     gainSlider.setLookAndFeel (nullptr);
-    silkSlider.setLookAndFeel (nullptr);
     ottSlider .setLookAndFeel (nullptr);
     satSlider .setLookAndFeel (nullptr);
     modeSlider.setLookAndFeel (nullptr);
@@ -364,32 +355,26 @@ void FruityClipAudioProcessorEditor::resized()
 
     oversampleBox.setBounds (osX, osY, osW, osH);
 
-    // 5 knobs in a row
+    // 4 knobs in a row (GAIN, OTT, SAT, MODE)
     const int knobSize = juce::jmin (w / 7, h / 3);
     const int spacing  = knobSize / 3;
 
-    const int totalW   = knobSize * 5 + spacing * 4;
+    const int totalW   = knobSize * 4 + spacing * 3;
     const int startX   = (w - totalW) / 2;
 
     const int bottomMargin = (int) (h * 0.05f);
     const int knobY        = h - knobSize - bottomMargin;
 
     gainSlider.setBounds (startX + 0 * (knobSize + spacing), knobY, knobSize, knobSize);
-    silkSlider.setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
-    ottSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
-    satSlider .setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
-    modeSlider.setBounds (startX + 4 * (knobSize + spacing), knobY, knobSize, knobSize);
+    ottSlider .setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
+    satSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
+    modeSlider.setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
 
     const int labelH = 20;
 
     gainLabel.setBounds (gainSlider.getX(),
                          gainSlider.getBottom() + 2,
                          gainSlider.getWidth(),
-                         labelH);
-
-    silkLabel.setBounds (silkSlider.getX(),
-                         silkSlider.getBottom() + 2,
-                         silkSlider.getWidth(),
                          labelH);
 
     ottLabel.setBounds (ottSlider.getX(),
