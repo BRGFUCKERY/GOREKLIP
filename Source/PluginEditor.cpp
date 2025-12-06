@@ -357,7 +357,7 @@ void FruityClipAudioProcessorEditor::resized()
 
     // 4 knobs in a row (GAIN, OTT, SAT, MODE)
     const int knobSize = juce::jmin (w / 7, h / 3);
-    const int spacing  = knobSize / 3;
+    const int spacing  = knobSize / 2;
 
     const int totalW   = knobSize * 4 + spacing * 3;
     const int startX   = (w - totalW) / 2;
