@@ -73,9 +73,6 @@ private:
     // Fruity-ish soft clip
     static float fruitySoftClipSample (float x, float threshold);
 
-    // Neve 5060-style "Silk" curve
-    static float silkCurveFull (float x);
-
     // Limiter sample processor
     float processLimiterSample (float x);
 
