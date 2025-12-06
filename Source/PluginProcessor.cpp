@@ -310,8 +310,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             const float desiredChange = -targetFactor * delta;  // opposite direction of SAT loudness
             satCompDbLocal += adapt * desiredChange;
 
-            // Clamp so it doesn't go nuts
-            satCompDbLocal = juce::jlimit (-18.0f, 6.0f, satCompDbLocal);
+            // Clamp so it doesn't go nuts; **now only up to about -2 dB duck**
+            satCompDbLocal = juce::jlimit (-2.0f, 6.0f, satCompDbLocal);
         }
     }
 
