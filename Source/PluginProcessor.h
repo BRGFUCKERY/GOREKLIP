@@ -53,7 +53,12 @@ public:
     // Helpers for the editor
     //==========================================================
     juce::AudioProcessorValueTreeState& getParametersState() { return parameters; }
+
+    // 0..1 burn value for the background/white logo
     float getGuiBurn() const { return guiBurn.load(); }
+
+    // Super-fast LUFS-ish meter (in dB, ~LUFS/dBFS style)
+    float getGuiLufs() const { return guiLufs.load(); }
 
 private:
     //==========================================================
@@ -83,6 +88,10 @@ private:
 
     // GUI meter smoothed state (0..1)
     std::atomic<float> guiBurn { 0.0f };
+
+    // Super-fast loudness indicator (rough LUFS/dBFS)
+    // Negative values, typically -6..-3 when you’re nuking it
+    std::atomic<float> guiLufs { -60.0f };
 
     // Parameter state
     juce::AudioProcessorValueTreeState parameters;
