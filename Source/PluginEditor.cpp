@@ -98,6 +98,27 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::gorekliper_logo_png,
         BinaryData::gorekliper_logo_pngSize);
 
+    // Precompute a white version of the logo (same alpha, white RGB)
+    if (logoImage.isValid())
+    {
+        logoWhiteImage = logoImage.createCopy();
+
+        juce::Image::BitmapData data (logoWhiteImage, juce::Image::BitmapData::readWrite);
+        for (int y = 0; y < data.height; ++y)
+        {
+            for (int x = 0; x < data.width; ++x)
+            {
+                auto c = data.getPixelColour (x, y);
+                auto a = c.getAlpha();
+                if (a > 0)
+                {
+                    data.setPixelColour (x, y,
+                                         juce::Colour::fromRGBA (255, 255, 255, a));
+                }
+            }
+        }
+    }
+
     // Load finger knob image
     juce::Image fingerImage = juce::ImageCache::getFromMemory (
         BinaryData::finger_png,
@@ -226,7 +247,7 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     // Map burn into 0..1
     const float burnRaw = juce::jlimit (0.0f, 1.0f, lastBurn);
 
-    // Make visual slam come in later – you really have to hit it
+    // Visual slam comes in later – you really have to hit it
     const float burnShaped = std::pow (burnRaw, 2.0f);
 
     // ------------------------------------------------
@@ -249,27 +270,7 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     }
 
     // ------------------------------------------------
-    // 3) Green / purple burnt overlay
-    // ------------------------------------------------
-    if (burnShaped > 0.02f)
-    {
-        const float overlayAlpha = 0.45f * burnShaped; // max ~45% tint
-
-        juce::Colour c1 = juce::Colour::fromFloatRGBA (0.2f, 0.95f, 0.5f, overlayAlpha);  // toxic green
-        juce::Colour c2 = juce::Colour::fromFloatRGBA (0.65f, 0.10f, 0.75f, overlayAlpha); // purple
-
-        juce::ColourGradient grad (c1,
-                                   0.0f, 0.0f,
-                                   c2,
-                                   (float) w, (float) h,
-                                   false);
-
-        g.setGradientFill (grad);
-        g.fillRect (0, 0, w, h);
-    }
-
-    // ------------------------------------------------
-    // 4) Logo – normal at low slam, goes white as you pin it
+    // 3) Logo – normal at low slam, fades to white as you pin it
     // ------------------------------------------------
     if (logoImage.isValid())
     {
@@ -286,13 +287,11 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
         const int cropY      = (int) (logoImage.getHeight() * 0.20f); // remove top 20%
         const int cropHeight = logoImage.getHeight() - cropY;         // keep lower 80%
 
-        // 4a) Draw original logo (fades out as we slam)
-        const float baseLogoOpacity = 1.0f - burnShaped;
-        if (baseLogoOpacity > 0.0f)
+        // 3a) Draw original logo, fading out as burn increases
         {
             juce::Graphics::ScopedSaveState save (g);
-            g.setOpacity (baseLogoOpacity);
-
+            const float baseOpacity = 1.0f - burnShaped;
+            g.setOpacity (baseOpacity);
             g.drawImage (logoImage,
                          x, y, drawW, drawH,      // destination
                          0, cropY,                // source x, y
@@ -300,20 +299,19 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
                          cropHeight);             // source height
         }
 
-        // 4b) White-out overlay tied to same burn curve
-        if (burnShaped > 0.0f)
+        // 3b) Draw white logo overlay, fading in with burn
+        if (logoWhiteImage.isValid() && burnShaped > 0.0f)
         {
             juce::Graphics::ScopedSaveState save (g);
-
-            // Just white-fill the logo area – this washes the logo to white
-            // and slightly burns the background around it.
             g.setOpacity (burnShaped);
-            g.setColour (juce::Colours::white);
-            g.fillRect (x, y, drawW, drawH);
+            g.drawImage (logoWhiteImage,
+                         x, y, drawW, drawH,      // destination
+                         0, cropY,                // source x, y
+                         logoWhiteImage.getWidth(),
+                         cropHeight);             // source height
         }
     }
 }
-
 
 //==============================================================
 // LAYOUT
