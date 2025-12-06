@@ -68,15 +68,13 @@ private:
     // LookAndFeel + knobs
     MiddleFingerLookAndFeel fingerLnf;
 
-    // 5 knobs: GAIN, SILK, OTT, SAT, MODE
+    // 4 knobs: GAIN, OTT, SAT, MODE
     juce::Slider gainSlider;
-    juce::Slider silkSlider;
     juce::Slider ottSlider;
     juce::Slider satSlider;
     juce::Slider modeSlider;
 
     juce::Label  gainLabel;
-    juce::Label  silkLabel;
     juce::Label  ottLabel;
     juce::Label  satLabel;
     juce::Label  modeLabel;
@@ -88,7 +86,6 @@ private:
     juce::ComboBox oversampleBox;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   silkAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
