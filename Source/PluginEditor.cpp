@@ -3,6 +3,27 @@
 
 #include <cmath>
 
+namespace
+{
+    // Map LUFS value to 0..1 burn amount for "LUFS METER" look
+    // -24 LUFS and quieter  -> ~0 burn
+    //  0 LUFS and louder    -> 1.0 burn
+    float mapLufsToBurn (float lufs)
+    {
+        if (! std::isfinite (lufs) || lufs <= -80.0f)
+            return 0.0f;
+
+        const float minLufs = -24.0f;
+        const float maxLufs =   0.0f;
+
+        float t = (lufs - minLufs) / (maxLufs - minLufs);
+        t = juce::jlimit (0.0f, 1.0f, t);
+
+        // Slight curve so mid-loudness doesn't instantly max the burn
+        return std::pow (t, 1.5f);
+    }
+}
+
 //==============================================================
 // Custom Middle-Finger Knob LookAndFeel
 //==============================================================
@@ -16,82 +37,66 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
     juce::ignoreUnused (rotaryStartAngle, rotaryEndAngle);
 
     if (! knobImage.isValid())
+    {
+        // Fallback: draw a simple circle if image is missing
+        const float radius = (float) juce::jmin (width, height) * 0.5f;
+        const float centreX = (float) x + (float) width  * 0.5f;
+        const float centreY = (float) y + (float) height * 0.5f;
+
+        g.setColour (juce::Colours::white.withAlpha (0.6f));
+        g.fillEllipse (centreX - radius, centreY - radius,
+                       radius * 2.0f, radius * 2.0f);
         return;
-
-    juce::Graphics::ScopedSaveState save (g);
-
-    auto bounds   = juce::Rectangle<float> ((float) x, (float) y,
-                                            (float) width, (float) height);
-    auto knobArea = bounds.reduced (width * 0.05f, height * 0.05f);
-
-    const float imgW  = (float) knobImage.getWidth();
-    const float imgH  = (float) knobImage.getHeight();
-    const float scale = std::min (knobArea.getWidth()  / imgW,
-                                  knobArea.getHeight() / imgH);
-
-    juce::Rectangle<float> imgRect (0.0f, 0.0f, imgW * scale, imgH * scale);
-    imgRect.setCentre (knobArea.getCentre());
-
-    // Default angle mapping: ~7 o'clock to ~5 o'clock
-    const float minAngle = juce::degreesToRadians (-135.0f);
-    const float maxAngle = juce::degreesToRadians ( 135.0f);
-
-    float angle = 0.0f;
-
-    if (modeSlider != nullptr && &slider == modeSlider)
-    {
-        // MODE FINGER: two positions only
-        const bool useLimiter = (slider.getValue() >= 0.5f);
-
-        // 12 o'clock (up) = CLIPPER, 6 o'clock (down) = LIMITER
-        const float angleDegrees = useLimiter ? 180.0f : 0.0f;
-        angle = juce::degreesToRadians (angleDegrees);
-    }
-    else if (gainSlider != nullptr && &slider == gainSlider)
-    {
-        // GAIN FINGER: show ONLY the real gain param
-        const auto& range = slider.getRange();
-        const float minDb = (float) range.getStart(); // -12
-        const float maxDb = (float) range.getEnd();   // +12
-
-        const float gainDb = (float) slider.getValue();
-
-        float norm = (gainDb - minDb) / (maxDb - minDb);
-        norm = juce::jlimit (0.0f, 1.0f, norm);
-
-        angle = minAngle + (maxAngle - minAngle) * norm;
-    }
-    else
-    {
-        // Normal knobs (SILK, OTT, SAT)
-        angle = minAngle + (maxAngle - minAngle) * sliderPosProportional;
     }
 
-    juce::AffineTransform t;
-    t = t.rotated (angle, imgRect.getCentreX(), imgRect.getCentreY());
-    g.addTransform (t);
+    const float angle = juce::jmap (sliderPosProportional, 0.0f, 1.0f,
+                                    -juce::MathConstants<float>::pi * 0.75f,
+                                     juce::MathConstants<float>::pi * 0.75f);
 
-    g.drawImage (knobImage,
-                 imgRect.getX(), imgRect.getY(),
-                 imgRect.getWidth(), imgRect.getHeight(),
-                 0, 0, knobImage.getWidth(), knobImage.getHeight());
+    juce::AffineTransform transform;
+    transform = transform.rotated (angle,
+                                   knobImage.getWidth()  * 0.5f,
+                                   knobImage.getHeight() * 0.5f);
+
+    juce::Image rotated = knobImage.createCopy();
+    {
+        juce::Graphics g2 (rotated);
+        g2.addTransform (transform.inverted());
+        g2.drawImageTransformed (knobImage, transform);
+    }
+
+    const float scale = (float) juce::jmin (width, height) /
+                        (float) juce::jmax (knobImage.getWidth(), knobImage.getHeight()) * 0.90f;
+
+    const int drawW = (int) (knobImage.getWidth()  * scale);
+    const int drawH = (int) (knobImage.getHeight() * scale);
+
+    const int centreX = x + width  / 2;
+    const int centreY = y + height / 2;
+
+    const int destX = centreX - drawW / 2;
+    const int destY = centreY - drawH / 2;
+
+    g.drawImage (rotated, destX, destY, drawW, drawH,
+                 0, 0, rotated.getWidth(), rotated.getHeight());
 }
 
 //==============================================================
-// Editor
+// Editor constructor
 //==============================================================
 FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    // Load background
-    bgImage = juce::ImageCache::getFromMemory (
+    setSize (600, 400);
+
+    // Load background image (bg.png) and slam image (slam.png)
+    backgroundImage = juce::ImageCache::getFromMemory (
         BinaryData::bg_png,
         BinaryData::bg_pngSize);
 
-    // SLAM background
     slamImage = juce::ImageCache::getFromMemory (
-        BinaryData::slam_jpg,
-        BinaryData::slam_jpgSize);
+        BinaryData::slam_png,
+        BinaryData::slam_pngSize);
 
     // Load GOREKLIPER logo
     logoImage = juce::ImageCache::getFromMemory (
@@ -124,41 +129,29 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::finger_png,
         BinaryData::finger_pngSize);
 
-    fingerLnf.setKnobImage (fingerImage);
+    middleFingerLnf.setKnobImage (fingerImage);
 
-    if (bgImage.isValid())
-        setSize ((int)(bgImage.getWidth() * bgScale),
-                 (int)(bgImage.getHeight() * bgScale));
-    else
-        setSize (600, 400);
+    gainSlider.setLookAndFeel (&middleFingerLnf);
+    silkSlider.setLookAndFeel (&middleFingerLnf);
+    ottSlider .setLookAndFeel (&middleFingerLnf);
+    satSlider .setLookAndFeel (&middleFingerLnf);
+    modeSlider.setLookAndFeel (&middleFingerLnf);
 
-    // ----------------------
-    // SLIDERS
-    // ----------------------
-    auto setupKnob01 = [] (juce::Slider& s)
+    auto setupKnob = [] (juce::Slider& s, juce::Label& lbl, const juce::String& text)
     {
         s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        s.setRange (0.0, 1.0, 0.0001);
-        s.setMouseDragSensitivity (250);
+
+        lbl.setText (text, juce::dontSendNotification);
+        lbl.setJustificationType (juce::Justification::centred);
+        lbl.setColour (juce::Label::textColourId, juce::Colours::white);
     };
 
-    // GAIN uses dB range
-    gainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    gainSlider.setMouseDragSensitivity (250);
-    gainSlider.setRange (-12.0, 12.0, 0.01);
-
-    setupKnob01 (silkSlider);
-    setupKnob01 (ottSlider);
-    setupKnob01 (satSlider);
-    setupKnob01 (modeSlider); // MODE finger – param is bool, but we use 0..1
-
-    gainSlider.setLookAndFeel (&fingerLnf);
-    silkSlider.setLookAndFeel (&fingerLnf);
-    ottSlider .setLookAndFeel (&fingerLnf);
-    satSlider .setLookAndFeel (&fingerLnf);
-    modeSlider.setLookAndFeel (&fingerLnf);
+    setupKnob (gainSlider, gainLabel, "INPUT");
+    setupKnob (silkSlider, silkLabel, "SILK");
+    setupKnob (ottSlider,  ottLabel,  "OTT");
+    setupKnob (satSlider,  satLabel,  "SAT");
+    setupKnob (modeSlider, modeLabel, "MODE");
 
     addAndMakeVisible (gainSlider);
     addAndMakeVisible (silkSlider);
@@ -166,33 +159,13 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     addAndMakeVisible (satSlider);
     addAndMakeVisible (modeSlider);
 
-    // ----------------------
-    // LABELS
-    // ----------------------
-    auto setupLabel = [] (juce::Label& lbl, const juce::String& text)
-    {
-        lbl.setText (text, juce::dontSendNotification);
-        lbl.setJustificationType (juce::Justification::centred);
-        lbl.setColour (juce::Label::textColourId, juce::Colours::white);
-
-        juce::FontOptions opts (16.0f);
-        opts = opts.withStyle ("Bold");
-        lbl.setFont (juce::Font (opts));
-    };
-
-    setupLabel (gainLabel, "GAIN");
-    setupLabel (silkLabel, "SILK");
-    setupLabel (ottLabel,  "OTT");
-    setupLabel (satLabel,  "SAT");
-    setupLabel (modeLabel, "CLIPPER"); // will switch to LIMITER in runtime
-
     addAndMakeVisible (gainLabel);
     addAndMakeVisible (silkLabel);
     addAndMakeVisible (ottLabel);
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
 
-    // LUFS label – same white bold font style, a bit bigger
+    // LUFS label
     lufsLabel.setJustificationType (juce::Justification::centred);
     lufsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     {
@@ -207,10 +180,11 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // ----------------------
     // OVERSAMPLE DROPDOWN (top-right, tiny, white "x1" etc.)
     // ----------------------
-    oversampleBox.addItem ("x1", 1);
-    oversampleBox.addItem ("x2", 2);
-    oversampleBox.addItem ("x4", 3);
-    oversampleBox.addItem ("x8", 4);
+    oversampleBox.addItem ("x1",  1);
+    oversampleBox.addItem ("x2",  2);
+    oversampleBox.addItem ("x4",  3);
+    oversampleBox.addItem ("x8",  4);
+    oversampleBox.addItem ("x16", 5);
     oversampleBox.setSelectedId (1, juce::dontSendNotification); // default x1
 
     oversampleBox.setJustificationType (juce::Justification::centred);
@@ -220,8 +194,54 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
     // NOTE: older JUCE ComboBox has no setFont(), so we skip that call here.
-
     addAndMakeVisible (oversampleBox);
+
+    // ----------------------
+    // LOOK / ABOUT MENU BUTTON (top-left)
+    // ----------------------
+    lookMenuButton.setButtonText ("≡");
+    lookMenuButton.setTooltip ("Look / About");
+
+    lookMenuButton.setColour (juce::TextButton::buttonColourId,    juce::Colours::transparentBlack);
+    lookMenuButton.setColour (juce::TextButton::buttonOnColourId,  juce::Colours::transparentBlack);
+    lookMenuButton.setColour (juce::TextButton::textColourOffId,   juce::Colours::white);
+    lookMenuButton.setColour (juce::TextButton::textColourOnId,    juce::Colours::white);
+
+    lookMenuButton.onClick = [this]
+    {
+        juce::PopupMenu menu;
+        menu.addItem (1,   "LOOK: LUFS METER",      true, lookMode == LookMode::LufsMeter);
+        menu.addItem (2,   "LOOK: FUCKED METER",    true, lookMode == LookMode::FuckedMeter);
+        menu.addItem (3,   "LOOK: STATIC",          true, lookMode == LookMode::Static);
+        menu.addItem (4,   "LOOK: STATIC COOKED",   true, lookMode == LookMode::StaticCooked);
+        menu.addSeparator();
+        menu.addItem (100, "ABOUT: GOREKLIP v1 BETA");
+
+        menu.showMenuAsync (
+            juce::PopupMenu::Options().withTargetComponent (&lookMenuButton),
+            [this] (int result)
+            {
+                switch (result)
+                {
+                    case 1:  lookMode = LookMode::LufsMeter;     break;
+                    case 2:  lookMode = LookMode::FuckedMeter;   break;
+                    case 3:  lookMode = LookMode::Static;        break;
+                    case 4:  lookMode = LookMode::StaticCooked;  break;
+
+                    case 100:
+                        juce::AlertWindow::showMessageBoxAsync (
+                            juce::AlertWindow::InfoIcon,
+                            "GOREKLIP",
+                            "GOREKLIP v1 BETA");
+                        break;
+
+                    default:
+                        break;
+                }
+            });
+    };
+
+    addAndMakeVisible (lookMenuButton);
 
     // ----------------------
     // PARAMETER ATTACHMENTS
@@ -234,11 +254,11 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     silkAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "silkAmount", silkSlider);
 
-    ottAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+    ottAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "ottAmount", ottSlider);
 
-    satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                        apvts, "satAmount",  satSlider);
+    satAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "satAmount", satSlider);
 
     modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "useLimiter", modeSlider);
@@ -246,32 +266,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "oversampleMode", oversampleBox);
 
-    // Initial state from param
-    if (auto* modeParam = apvts.getRawParameterValue ("useLimiter"))
-    {
-        const bool useLimiter = (modeParam->load() >= 0.5f);
-        satSlider.setEnabled (! useLimiter);
-        modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
-    }
-
-    // When MODE changes, update SAT enable + text
-    modeSlider.onValueChange = [this]
-    {
-        const bool useLimiter = (modeSlider.getValue() >= 0.5f);
-        satSlider.setEnabled (! useLimiter);
-        modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
-    };
-
-    // Now the LNF knows which slider is which for special angles
-    fingerLnf.setControlledSliders (&gainSlider, &modeSlider, &satSlider);
-
-    // Start GUI update timer (for burn animation / crossfade + LUFS text)
     startTimerHz (30);
 }
 
+//==============================================================
+// Destructor
+//==============================================================
 FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
 {
-    stopTimer();
     gainSlider.setLookAndFeel (nullptr);
     silkSlider.setLookAndFeel (nullptr);
     ottSlider .setLookAndFeel (nullptr);
@@ -280,34 +282,32 @@ FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
 }
 
 //==============================================================
-// PAINT
+// Paint
 //==============================================================
 void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
 {
+    g.fillAll (juce::Colours::black);
+
     const int w = getWidth();
     const int h = getHeight();
 
-    // Map burn into 0..1
-    const float burnRaw = juce::jlimit (0.0f, 1.0f, lastBurn);
-
-    // Visual slam comes in later – you really have to hit it
-    const float burnShaped = std::pow (burnRaw, 2.0f);
-
     // ------------------------------------------------
-    // 1) Base background
+    // 1) Background: original image + burn to slammed version
     // ------------------------------------------------
-    if (bgImage.isValid())
-        g.drawImageWithin (bgImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
-    else
-        g.fillAll (juce::Colours::black);
-
-    // ------------------------------------------------
-    // 2) Slam background with same burn curve
-    // ------------------------------------------------
-    if (slamImage.isValid() && burnShaped > 0.02f)
+    if (backgroundImage.isValid())
     {
-        juce::Graphics::ScopedSaveState save (g);
+        g.setOpacity (1.0f);
+        g.drawImageWithin (backgroundImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+    }
 
+    // Burn (0..1)
+    float burn = juce::jlimit (0.0f, 1.0f, lastBurn);
+
+    if (slamImage.isValid() && burn > 0.001f)
+    {
+        const float burnShaped = std::pow (burn, 1.5f);
+
+        juce::Graphics::ScopedSaveState save (g);
         g.setOpacity (burnShaped);
         g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     }
@@ -333,31 +333,27 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
         // 3a) Draw original logo, fading out as burn increases
         {
             juce::Graphics::ScopedSaveState save (g);
-            const float baseOpacity = 1.0f - burnShaped;
+            const float baseOpacity = 1.0f - burn;
             g.setOpacity (baseOpacity);
             g.drawImage (logoImage,
                          x, y, drawW, drawH,      // destination
-                         0, cropY,                // source x, y
-                         logoImage.getWidth(),
-                         cropHeight);             // source height
+                         0, cropY, logoImage.getWidth(), cropHeight); // source cropped
         }
 
-        // 3b) Draw white logo overlay, fading in with burn
-        if (logoWhiteImage.isValid() && burnShaped > 0.0f)
+        // 3b) Draw white logo on top, fading in as burn increases
+        if (logoWhiteImage.isValid())
         {
             juce::Graphics::ScopedSaveState save (g);
-            g.setOpacity (burnShaped);
+            g.setOpacity (burn);
             g.drawImage (logoWhiteImage,
-                         x, y, drawW, drawH,      // destination
-                         0, cropY,                // source x, y
-                         logoWhiteImage.getWidth(),
-                         cropHeight);             // source height
+                         x, y, drawW, drawH,
+                         0, cropY, logoWhiteImage.getWidth(), cropHeight);
         }
     }
 }
 
 //==============================================================
-// LAYOUT
+// Resized
 //==============================================================
 void FruityClipAudioProcessorEditor::resized()
 {
@@ -365,12 +361,20 @@ void FruityClipAudioProcessorEditor::resized()
     const int h = getHeight();
 
     // OVERSAMPLE BOX – tiny top-right
-    const int osW = juce::jmax (40, w / 10);
+    const int osW = juce::jmax (50, w / 8);
     const int osH = juce::jmax (16, h / 20);
     const int osX = w - osW - 6;
     const int osY = 6;
 
     oversampleBox.setBounds (osX, osY, osW, osH);
+
+    // LOOK / ABOUT button – top-left, same size as oversample box
+    const int menuW = osW;
+    const int menuH = osH;
+    const int menuX = 6;
+    const int menuY = 6;
+
+    lookMenuButton.setBounds (menuX, menuY, menuW, menuH);
 
     // 5 knobs in a row
     const int knobSize = juce::jmin (w / 7, h / 3);
@@ -430,19 +434,46 @@ void FruityClipAudioProcessorEditor::resized()
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
-    // Burn value for background/logo
-    lastBurn = processor.getGuiBurn();
+    const float peakBurn = processor.getGuiBurn();
+    const float lufs     = processor.getGuiLufs();
 
-    // K-weighted loudness (momentary LUFS-ish)
-    const float lufs = processor.getGuiLufs();
+    // Decide how the background should burn based on current LOOK mode
+    float burn = 0.0f;
 
+    switch (lookMode)
+    {
+        case LookMode::LufsMeter:
+            burn = mapLufsToBurn (lufs);
+            break;
+
+        case LookMode::FuckedMeter:
+            burn = peakBurn;  // original peak-driven slam visual
+            break;
+
+        case LookMode::Static:
+            burn = 0.0f;      // static clean background
+            break;
+
+        case LookMode::StaticCooked:
+            burn = 1.0f;      // static fully burnt background
+            break;
+
+        default:
+            burn = peakBurn;
+            break;
+    }
+
+    lastBurn = burn;
+
+    // LUFS label – hide / collapse on silence or very low levels
     juce::String text;
-    if (lufs <= -59.0f)
-        text = "-- LUFS";                      // silence / tails
+    if (! std::isfinite (lufs) || lufs <= -80.0f)
+        text = "--";
     else
-        text = juce::String (lufs, 2) + " LUFS";  // two decimals, e.g. -3.12 LUFS
+        text = juce::String (lufs, 2) + " LUFS";
 
     lufsLabel.setText (text, juce::dontSendNotification);
 
     repaint();
 }
+
