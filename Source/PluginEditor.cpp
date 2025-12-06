@@ -177,7 +177,11 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         label.setText (name, juce::dontSendNotification);
         label.setJustificationType (juce::Justification::centred);
         label.setColour (juce::Label::textColourId, juce::Colours::white);
-        label.setFont (juce::Font (12.0f, juce::Font::bold));
+
+        juce::FontOptions opts (12.0f);
+        opts = opts.withStyle ("Bold");
+        label.setFont (juce::Font (opts));
+
         addAndMakeVisible (label);
     };
 
@@ -201,7 +205,13 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     //==========================================================
     lufsLabel.setJustificationType (juce::Justification::centred);
     lufsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-    lufsLabel.setFont (juce::Font (12.0f, juce::Font::plain));
+
+    {
+        juce::FontOptions opts (12.0f);
+        opts = opts.withStyle ("Regular");
+        lufsLabel.setFont (juce::Font (opts));
+    }
+
     lufsLabel.setText ("--", juce::dontSendNotification);
     addAndMakeVisible (lufsLabel);
 
@@ -227,10 +237,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // LOOK MENU BUTTON (top-left)
     //==========================================================
     lookMenuButton.setButtonText ("LOOK");
-    lookMenuButton.setColour (juce::TextButton::buttonColourId,     juce::Colours::transparentBlack);
-    lookMenuButton.setColour (juce::TextButton::textColourOnId,     juce::Colours::white);
-    lookMenuButton.setColour (juce::TextButton::textColourOffId,    juce::Colours::white);
-    lookMenuButton.setColour (juce::TextButton::outlineColourId,    juce::Colours::transparentBlack);
+    lookMenuButton.setColour (juce::TextButton::buttonColourId,  juce::Colours::transparentBlack);
+    lookMenuButton.setColour (juce::TextButton::textColourOnId,  juce::Colours::white);
+    lookMenuButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     lookMenuButton.setTriggeredOnMouseDown (true);
 
     lookMenuButton.onClick = [this]()
@@ -268,12 +277,11 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     //==========================================================
     // Attach knobs to parameters
     //==========================================================
-    auto& apvts = processor.parameters;
+    auto& apvts = processor.getParametersState();
 
     gainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "inputGain",   gainSlider);
 
-    // SILK is gone from GUI – we keep OTT and SAT only
     ottAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
         apvts, "ottAmount",   ottSlider);
 
@@ -433,7 +441,7 @@ void FruityClipAudioProcessorEditor::resized()
 void FruityClipAudioProcessorEditor::timerCallback()
 {
     const float peakBurn = processor.getGuiBurn();  // 0..1 from processor slam logic
-    const float lufs     = processor.getGuiLufs();  // momentary LUFS-ish
+    const float lufs     = processor.getGuiLufs();  // short-term LUFS-ish
 
     float burn = 0.0f;
 
