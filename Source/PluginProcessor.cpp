@@ -172,7 +172,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float silkAmount = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
 
     //==========================================================
-    // SAT "auto gain" – NUKED (0 dB). Pushing SAT never gets quieter.
+    // SAT global "auto gain" – keep 0 dB baseline here.
+    // We'll do a tiny trim per-sample in clip mode.
     //==========================================================
     const float satCompDb = 0.0f;
 
@@ -229,8 +230,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     else
     {
         //======================================================
-        // CLIP / SAT MODE:
-        // (Gain + SAT pre-trim [0 dB]) -> SILK -> SAT -> POSTGAIN -> HARD CLIP
+        // NEW CLIP / SAT MODE:
+        // (Gain + tiny SAT trim) -> SILK -> SAT -> POSTGAIN -> HARD CLIP
         //======================================================
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -238,28 +239,53 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
             for (int i = 0; i < numSamples; ++i)
             {
-                // Total input gain BEFORE SAT (user + static pre-trim)
+                // 0) Total input gain BEFORE SAT (user + static pre-gain)
                 float y = samples[i] * inputGainClip;
 
-                // 1) SILK (pre-clip transformer-ish colour)
+                // ------------------------------------------------
+                // 1) Tiny SAT auto-trim (max about -2 dB)
+                // ------------------------------------------------
+                const float satTrimDb = -2.0f * satAmount;   // 0 .. -2 dB
+                const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
+                y *= satTrim;
+
+                // ------------------------------------------------
+                // 2) SILK (pre-clip transformer-ish colour)
+                // ------------------------------------------------
                 if (silkBlend > 0.0f)
                 {
                     const float silkFull = silkCurveFull (y);
                     y = y + silkBlend * (silkFull - y);
                 }
 
-                // 2) SATURATION (Fruity-ish soft clip)
+                // ------------------------------------------------
+                // 3) SATURATION – rounded, bass-thick TikTok curve
+                // ------------------------------------------------
                 if (satAmount > 0.0f)
                 {
                     // Threshold moves as SAT increases
-                    const float currentThreshold = juce::jmap (satAmount, 1.0f, thresholdLinear);
-                    y = fruitySoftClipSample (y, currentThreshold);
+                    // Later onset at low SAT, earlier at high SAT
+                    const float thr = juce::jmap (satAmount, 0.92f, thresholdLinear);
+
+                    // Rounded soft clip
+                    float y0 = fruitySoftClipSample (y, thr);
+
+                    // Bass lift – makes lows feel bigger without mud
+                    const float bassLift = 1.0f + 0.20f * satAmount;
+                    y0 *= bassLift;
+
+                    // Blend so early SAT is subtle, end is aggressive
+                    y = y + (satAmount * 0.88f) * (y0 - y);
                 }
 
-                // 3) Post-gain (Fruity-null alignment)
+                // ------------------------------------------------
+                // 4) Post-gain (Fruity-null alignment)
+                // ------------------------------------------------
                 y *= g;
 
-                // 4) Hard ceiling at 0 dBFS
+                // ------------------------------------------------
+                // 5) Hard ceiling at 0 dBFS
+                // ------------------------------------------------
                 if (y >  1.0f) y =  1.0f;
                 if (y < -1.0f) y = -1.0f;
 
@@ -274,11 +300,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     //==========================================================
     // Update GUI burn meter (0..1), smoothed a bit
-    // Make it a bit more sensitive so GUI actually moves
+    // Faster in both attack & decay so the slam feels responsive
     //==========================================================
     const float targetBurn = juce::jlimit (0.0f, 1.0f, (blockMax - 0.5f) / 0.5f);
     const float previous   = guiBurn.load();
-    const float smoothed   = 0.85f * previous + 0.15f * targetBurn;
+    const float smoothed   = 0.55f * previous + 0.45f * targetBurn;
 
     guiBurn.store (smoothed);
 }
