@@ -330,9 +330,10 @@ juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
 //==============================================================
 const juce::String FruityClipAudioProcessor::getName() const      { return "GOREKLIPER"; }
 bool FruityClipAudioProcessor::acceptsMidi() const                { return false; }
-bool FruceyClipAudioProcessor::producesMidi() const               { return false; }
+bool FruityClipAudioProcessor::producesMidi() const               { return false; }
 bool FruityClipAudioProcessor::isMidiEffect() const               { return false; }
 double FruityClipAudioProcessor::getTailLengthSeconds() const     { return 0.0; }
+
 
 //==============================================================
 // Programs
