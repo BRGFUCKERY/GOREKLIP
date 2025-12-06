@@ -76,6 +76,9 @@ private:
     // Limiter sample processor
     float processLimiterSample (float x);
 
+    // Oversampling config helper
+    void updateOversampling (int osIndex, int numChannels);
+
     //==========================================================
     // K-weighted LUFS meter state
     //==========================================================
@@ -103,8 +106,8 @@ private:
     void resetOttState (int numChannels);
 
     std::vector<OttHPState> ottStates;
-    float ottAlpha   = 0.0f;   // one-pole LP factor for 150 Hz split
-    float lastOttGain = 1.0f;  // smoothed unity gain-match factor
+    float ottAlpha    = 0.0f;   // one-pole LP factor for 150 Hz split
+    float lastOttGain = 1.0f;   // smoothed unity gain-match factor
 
     //==========================================================
     // Internal state
@@ -123,8 +126,15 @@ private:
     // GUI LUFS value
     std::atomic<float> guiLufs { -60.0f };
 
-    // Parameter state
+    // Parameter state (includes oversampleMode)
     juce::AudioProcessorValueTreeState parameters;
+
+    //==========================================================
+    // Oversampling
+    //==========================================================
+    std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
+    int currentOversampleIndex = 0;   // 0:x1, 1:x2, 2:x4, 3:x8
+    int maxBlockSize           = 0;   // for oversampler->initProcessing
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
 };
