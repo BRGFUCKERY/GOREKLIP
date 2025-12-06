@@ -300,22 +300,22 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
 
     //==========================================================
-    // Update GUI burn meter (0..1)
-    // Much LESS sensitive: only close to 0 dBFS goes full slam
-    // and decay is fairly quick so it doesn't stay burnt forever.
-    //==========================================================
-    float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
-    normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
+// Update GUI burn meter (0..1)
+// Much LESS sensitive: only close to 0 dBFS goes full slam
+//==========================================================
+float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
+normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
 
-    // Extra curve so mid-range feels relaxed, only real brickwall goes full 1.0
-    normPeak = std::pow (normPeak, 2.5f);
+// Extra curve so mid-range feels chill, only brickwall goes full 1.0
+normPeak = std::pow (normPeak, 2.5f);
 
-    const float targetBurn = normPeak;
+const float targetBurn = normPeak;
 
-    const float previous = guiBurn.load();
-    const float smoothed = 0.25f * previous + 0.75f * targetBurn;
+const float previous = guiBurn.load();
+const float smoothed = 0.25f * previous + 0.75f * targetBurn;
 
-    guiBurn.store (smoothed);
+guiBurn.store (smoothed);
+
 }
 
 //==============================================================
