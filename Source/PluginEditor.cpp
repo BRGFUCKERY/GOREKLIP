@@ -89,14 +89,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 {
     setSize (600, 400);
 
-    // Load background image (bg.png) and slam image (slam.png)
+    // Load background image (bg.png) and slam image (slam.jpg)
     backgroundImage = juce::ImageCache::getFromMemory (
         BinaryData::bg_png,
         BinaryData::bg_pngSize);
 
     slamImage = juce::ImageCache::getFromMemory (
-        BinaryData::slam_png,
-        BinaryData::slam_pngSize);
+        BinaryData::slam_jpg,
+        BinaryData::slam_jpgSize);
 
     // Load GOREKLIPER logo
     logoImage = juce::ImageCache::getFromMemory (
