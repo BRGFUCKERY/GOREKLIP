@@ -62,24 +62,32 @@ private:
     juce::Image bgImage;
     juce::Image slamImage;   // "slammed" background
     juce::Image logoImage;
+    juce::Image logoWhiteImage; // precomputed white version of logo (same alpha)
     const float bgScale = 0.35f; // scale for bg.png
 
     // LookAndFeel + knobs
     MiddleFingerLookAndFeel fingerLnf;
 
-    juce::Slider gainSlider; // left finger: GAIN
-    juce::Slider silkSlider; // second: SILK
-    juce::Slider satSlider;  // third: SAT
-    juce::Slider modeSlider; // fourth: CLIPPER/LIMITER
+    // 5 knobs now: GAIN, SILK, OTT, SAT, MODE
+    juce::Slider gainSlider;
+    juce::Slider silkSlider;
+    juce::Slider ottSlider;
+    juce::Slider satSlider;
+    juce::Slider modeSlider;
 
     juce::Label  gainLabel;
     juce::Label  silkLabel;
+    juce::Label  ottLabel;
     juce::Label  satLabel;
     juce::Label  modeLabel;
 
+    // Super-fast LUFS-ish meter (text, above CLIP/LIM finger)
+    juce::Label  lufsLabel;
+
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> silkAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> ottAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> modeAttachment;
 
     // GUI burn value (cached from processor)
