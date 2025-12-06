@@ -188,6 +188,10 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     float blockMax = 0.0f; // For GUI burn (post processing)
 
+    // For super-fast LUFS-ish meter: per-block RMS over all channels
+    double sumSquares   = 0.0;
+    const int totalSamples = numSamples * juce::jmax (1, numChannels);
+
     if (useLimiter)
     {
         //======================================================
@@ -222,6 +226,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 const float a = std::abs (y);
                 if (a > blockMax)
                     blockMax = a;
+
+                // RMS accumulation
+                sumSquares += (double) (y * y);
 
                 samples[i] = y;
             }
@@ -293,6 +300,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (absY > blockMax)
                     blockMax = absY;
 
+                // RMS accumulation
+                sumSquares += (double) (y * y);
+
                 samples[i] = y;
             }
         }
@@ -310,10 +320,41 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     const float targetBurn = normPeak;
 
-    const float previous = guiBurn.load();
-    const float smoothed = 0.25f * previous + 0.75f * targetBurn;
+    const float previousBurn = guiBurn.load();
+    const float smoothedBurn = 0.25f * previousBurn + 0.75f * targetBurn;
 
-    guiBurn.store (smoothed);
+    guiBurn.store (smoothedBurn);
+
+    //==========================================================
+    // Super-fast LUFS-ish meter (block RMS -> dBFS/LUFS-ish)
+    //==========================================================
+    if (totalSamples > 0)
+    {
+        const double meanSquare = sumSquares / (double) totalSamples;
+
+        if (meanSquare <= 0.0)
+        {
+            // When silent, gently decay towards -60 dB
+            const float prevLufs = guiLufs.load();
+            const float newLufs  = 0.9f * prevLufs + 0.1f * (-60.0f);
+            guiLufs.store (newLufs);
+        }
+        else
+        {
+            // dBFS style: 0 dB = full scale
+            float lufs = 10.0f * std::log10 ((float) meanSquare);
+            lufs = juce::jlimit (-60.0f, 0.0f, lufs);
+
+            const float prevLufs = guiLufs.load();
+
+            // Super fast – heavily weighted towards current block
+            const float alpha = 0.7f;
+            const float smoothedLufs =
+                (1.0f - alpha) * prevLufs + alpha * lufs;
+
+            guiLufs.store (smoothedLufs);
+        }
+    }
 }
 
 //==============================================================
