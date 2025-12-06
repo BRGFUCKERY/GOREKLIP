@@ -61,6 +61,9 @@ public:
     // K-weighted momentary loudness (LUFS-style)
     float getGuiLufs() const { return guiLufs.load(); }
 
+    // True if we currently have enough signal to show LUFS
+    bool getGuiHasSignal() const { return guiSignalEnv.load() > 0.2f; }
+
 private:
     //==========================================================
     // Internal helpers
@@ -125,6 +128,9 @@ private:
 
     // GUI LUFS value
     std::atomic<float> guiLufs { -60.0f };
+
+    // GUI signal envelope (0..1) for gating the LUFS display
+    std::atomic<float> guiSignalEnv { 0.0f };
 
     // Parameter state (includes oversampleMode)
     juce::AudioProcessorValueTreeState parameters;
