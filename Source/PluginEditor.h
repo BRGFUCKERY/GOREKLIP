@@ -78,6 +78,9 @@ private:
     juce::Label  satLabel;
     juce::Label  modeLabel;
 
+    // Super-fast LUFS-ish meter (text, above CLIP/LIM finger)
+    juce::Label  lufsLabel;
+
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> silkAttachment;
