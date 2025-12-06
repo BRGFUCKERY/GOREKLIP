@@ -200,7 +200,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         opts = opts.withStyle ("Bold");
         lufsLabel.setFont (juce::Font (opts));
     }
-    lufsLabel.setText ("-- LUFS", juce::dontSendNotification);
+    lufsLabel.setText ("-60.00 LUFS", juce::dontSendNotification);
     addAndMakeVisible (lufsLabel);
 
     // ----------------------
@@ -385,56 +385,3 @@ void FruityClipAudioProcessorEditor::resized()
     gainLabel.setBounds (gainSlider.getX(),
                          gainSlider.getBottom() + 2,
                          gainSlider.getWidth(),
-                         labelH);
-
-    silkLabel.setBounds (silkSlider.getX(),
-                         silkSlider.getBottom() + 2,
-                         silkSlider.getWidth(),
-                         labelH);
-
-    ottLabel.setBounds (ottSlider.getX(),
-                        ottSlider.getBottom() + 2,
-                        ottSlider.getWidth(),
-                        labelH);
-
-    satLabel.setBounds (satSlider.getX(),
-                        satSlider.getBottom() + 2,
-                        satSlider.getWidth(),
-                        labelH);
-
-    modeLabel.setBounds (modeSlider.getX(),
-                         modeSlider.getBottom() + 2,
-                         modeSlider.getWidth(),
-                         labelH);
-
-    // LUFS label – directly above the CLIPPER/LIMITER finger
-    const int lufsHeight = 18;
-    const int lufsY      = modeSlider.getY() - lufsHeight - 4;
-
-    lufsLabel.setBounds (modeSlider.getX(),
-                         lufsY,
-                         modeSlider.getWidth(),
-                         lufsHeight);
-}
-
-//==============================================================
-// TIMER – pull burn + LUFS value from processor
-//==============================================================
-void FruityClipAudioProcessorEditor::timerCallback()
-{
-    // Burn value for background/logo
-    lastBurn = processor.getGuiBurn();
-
-    // K-weighted loudness (momentary LUFS-ish)
-    const float lufs = processor.getGuiLufs();
-
-    juce::String text;
-    if (lufs <= -59.0f)
-        text = "-- LUFS";
-    else
-        text = juce::String (lufs, 2) + " LUFS";
-
-    lufsLabel.setText (text, juce::dontSendNotification);
-
-    repaint();
-}
