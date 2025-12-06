@@ -88,7 +88,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::bg_png,
         BinaryData::bg_pngSize);
 
-    // ✅ Load SLAM background directly from BinaryData
+    // SLAM background directly from BinaryData
     slamImage = juce::ImageCache::getFromMemory (
         BinaryData::slam_jpg,
         BinaryData::slam_jpgSize);
@@ -223,11 +223,11 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     const int w = getWidth();
     const int h = getHeight();
 
-    // Map burn into 0..1 and shape it so the slam comes in closer to max
-    const float burnRaw    = juce::jlimit (0.0f, 1.0f, lastBurn);
+    // Map burn into 0..1
+    const float burnRaw = juce::jlimit (0.0f, 1.0f, lastBurn);
 
-    // Slower build – doesn’t go 0→100 instantly
-    const float burnShaped = std::pow (burnRaw, 1.35f);
+    // Make it come in EVEN later – more headroom before full black
+    const float burnShaped = std::pow (burnRaw, 2.0f);
 
     // Base background
     if (bgImage.isValid())
@@ -236,13 +236,12 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
         g.fillAll (juce::Colours::black);
 
     // Crossfade into "slam" background when you're really hitting it
-    if (slamImage.isValid() && burnShaped > 0.01f)
+    if (slamImage.isValid() && burnShaped > 0.02f)
     {
         juce::Graphics::ScopedSaveState save (g);
 
-        // Cap opacity + add a little curve so it feels organic
-        const float vis       = juce::jmin (burnShaped, 0.90f);
-        const float shapedVis = std::pow (vis, 0.65f);
+        // Direct 0..1 opacity from shaped burn
+        const float shapedVis = burnShaped;
 
         g.setOpacity (shapedVis);
         g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
