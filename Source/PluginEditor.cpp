@@ -322,7 +322,19 @@ void FruityClipAudioProcessorEditor::resized()
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
-    // Always repaint so background crossfade actually follows audio
+    // Burn value for background/logo
     lastBurn = processor.getGuiBurn();
+
+    // K-weighted loudness (momentary LUFS-ish)
+    const float lufs = processor.getGuiLufs();
+
+    juce::String text;
+    if (lufs <= -59.0f)
+        text = "-- LUFS";               // no more weird infinity glyph
+    else
+        text = juce::String (lufs, 1) + " LUFS";
+
+    lufsLabel.setText (text, juce::dontSendNotification);
+
     repaint();
 }
