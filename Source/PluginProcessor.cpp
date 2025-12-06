@@ -21,7 +21,7 @@ FruityClipAudioProcessor::createParameterLayout()
         "silkAmount", "Silk Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
-    // OTT – 0..1
+    // OTT – 0..1 (150 Hz+ only, parallel, unity gain)
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
         "ottAmount", "OTT Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
@@ -106,7 +106,7 @@ FruityClipAudioProcessor::~FruityClipAudioProcessor() = default;
 //==============================================================
 void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int /*samplesPerBlock*/)
 {
-    sampleRate = (newSampleRate > 0.0 ? newSampleRate : 44100.0);
+    sampleRate  = (newSampleRate > 0.0 ? newSampleRate : 44100.0);
     limiterGain = 1.0f;
 
     // ~50 ms release for limiter
@@ -120,9 +120,9 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int /*sample
     // Reset OTT split state
     resetOttState (getTotalNumOutputChannels());
 
-    // One-pole lowpass factor for 150 Hz split (0–150 = dry low band)
-    const float fc   = 150.0f;
-    const float sr   = (float) sampleRate;
+    // One-pole lowpass factor for 150 Hz split (0–150 = low band)
+    const float fc = 150.0f;
+    const float sr = (float) sampleRate;
     const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / sr);
     ottAlpha = juce::jlimit (0.0f, 1.0f, alpha);
 
@@ -239,16 +239,42 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     float blockMax = 0.0f; // For GUI burn (post processing)
 
     //==========================================================
-    // OTT unity gain-match prep (SILK + OTT only)
+    // SILK + OTT unity gain-match prep
     //==========================================================
-    juce::AudioBuffer<float> preChain (numChannels, numSamples);
-    preChain.makeCopyOf (buffer);
-
     double sumSqOriginal = 0.0;
     double sumSqOtt      = 0.0;
 
-    if (! useLimiter || true) // SILK/OTT are always before both modes
+    if (ottAmount <= 0.0f)
     {
+        // OTT fully bypassed: apply only INPUT GAIN + SILK in place,
+        // and force OTT gain to unity so knob = true bypass.
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float* samples = buffer.getWritePointer (ch);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float y = samples[i] * inputGain;
+
+                // SILK
+                if (silkBlend > 0.0f)
+                {
+                    const float silkFull = silkCurveFull (y);
+                    y = y + silkBlend * (silkFull - y);
+                }
+
+                samples[i] = y;
+            }
+        }
+
+        lastOttGain = 1.0f;
+    }
+    else
+    {
+        // OTT active: do SILK + OTT on a temp buffer and RMS gain-match
+        juce::AudioBuffer<float> preChain (numChannels, numSamples);
+        preChain.makeCopyOf (buffer);
+
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* x = preChain.getWritePointer (ch);
@@ -266,56 +292,49 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     y = y + silkBlend * (silkFull - y);
                 }
 
-                // Accumulate original (post-SILK, pre-OTT)
+                // Original (pre-OTT) energy
                 sumSqOriginal += (double) (y * y);
 
-                // 2) OTT high-band only (0–150 dry, >150 parallel)
-                if (ottAmount > 0.0f)
-                {
-                    // One-pole lowpass for 0–150 Hz
-                    ott.low = ottAlpha * ott.low + (1.0f - ottAlpha) * y;
-                    const float lowDry = ott.low;
-                    const float hiDry  = y - lowDry;
+                // 2) OTT high-band only (0–150 dry, >150 processed)
+                // One-pole lowpass for 0–150 Hz
+                ott.low = ottAlpha * ott.low + (1.0f - ottAlpha) * y;
+                const float lowDry = ott.low;
+                const float hiDry  = y - lowDry;
 
-                    // Simple "OTT-ish" processing for hi band:
-                    // boost, then soft clip
-                    float hiProc = hiDry * (1.0f + 2.5f * ottAmount);
-                    hiProc = std::tanh (hiProc);
+                // Simple "OTT-ish" processing on high band
+                float hiProc = hiDry * (1.0f + 2.5f * ottAmount);
+                hiProc = std::tanh (hiProc);
 
-                    // Blend processed hi band
-                    const float hiMix = hiDry + ottAmount * (hiProc - hiDry);
+                const float hiMix = hiDry + ottAmount * (hiProc - hiDry);
 
-                    y = lowDry + hiMix;
-                }
+                y = lowDry + hiMix;
 
-                // Accumulate OTT-processed energy
                 sumSqOtt += (double) (y * y);
 
                 x[i] = y;
             }
         }
+
+        const int totalSamplesOtt = juce::jmax (1, numSamples * juce::jmax (1, numChannels));
+
+        float ottGain = 1.0f;
+        if (sumSqOtt > 0.0)
+        {
+            float rmsOriginal = (float) std::sqrt (sumSqOriginal / (double) totalSamplesOtt + 1.0e-20);
+            float rmsOtt      = (float) std::sqrt (sumSqOtt      / (double) totalSamplesOtt + 1.0e-20);
+
+            if (rmsOtt > 0.0f)
+                ottGain = rmsOriginal / rmsOtt;
+        }
+
+        // Smooth OTT gain so it doesn't chatter
+        const float ottSmooth = 0.4f;
+        lastOttGain = (1.0f - ottSmooth) * lastOttGain + ottSmooth * ottGain;
+
+        // Copy OTT-processed buffer into main and apply gain-match
+        buffer.makeCopyOf (preChain);
+        buffer.applyGain (lastOttGain);
     }
-
-    // Compute RMS and gain-match factor
-    const int totalSamplesOtt = juce::jmax (1, numSamples * juce::jmax (1, numChannels));
-
-    float ottGain = 1.0f;
-    if (ottAmount > 0.0f && sumSqOtt > 0.0)
-    {
-        float rmsOriginal = (float) std::sqrt (sumSqOriginal / (double) totalSamplesOtt + 1.0e-20);
-        float rmsOtt      = (float) std::sqrt (sumSqOtt      / (double) totalSamplesOtt + 1.0e-20);
-
-        if (rmsOtt > 0.0f)
-            ottGain = rmsOriginal / rmsOtt;
-    }
-
-    // Smooth OTT gain so it doesn't chatter
-    const float ottSmooth = 0.4f;
-    lastOttGain = (1.0f - ottSmooth) * lastOttGain + ottSmooth * ottGain;
-
-    // Apply OTT gain-match and continue chain into main buffer
-    buffer.makeCopyOf (preChain);
-    buffer.applyGain (lastOttGain);
 
     //==========================================================
     // Main chain: SAT/CLIP or LIMITER, plus K-weighting + GUI
@@ -343,7 +362,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     {
         //======================================================
         // LIMIT MODE:
-        //   (SILK + OTT + unity) -> LIMITER -> POSTGAIN -> HARD CLIP
+        //   (GAIN + SILK + OTT) -> LIMITER -> POSTGAIN -> HARD CLIP
         //   SAT is ignored in this mode.
         //======================================================
         for (int ch = 0; ch < numChannels; ++ch)
@@ -393,7 +412,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     {
         //======================================================
         // CLIP / SAT MODE:
-        // (SILK + OTT + unity) -> SAT -> POSTGAIN -> HARD CLIP
+        // (GAIN + SILK + OTT) -> SAT -> POSTGAIN -> HARD CLIP
         //======================================================
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -477,7 +496,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         sampleRate = 44100.0;
 
     const float blockDurationSec = (float) numSamples / (float) sampleRate;
-    const float targetWindowSec  = 0.400f; // ITU momentary
+    const float targetWindowSec  = 0.400f; // momentary window
 
     float alpha = 0.0f;
     if (targetWindowSec > 0.0f)
@@ -495,6 +514,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
     else
     {
+        // decay towards silence
         lufsMeanSquare *= (1.0f - alpha);
         if (lufsMeanSquare < 1.0e-10f)
             lufsMeanSquare = 1.0e-10f;
@@ -512,7 +532,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     lufs = juce::jlimit (-60.0f, 3.0f, lufs);
 
     const float prevLufs   = guiLufs.load();
-    const float lufsAlpha  = 0.5f;
+    const float lufsAlpha  = 0.5f;  // extra smoothing
     const float lufsSmooth = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
     guiLufs.store (lufsSmooth);
 }
