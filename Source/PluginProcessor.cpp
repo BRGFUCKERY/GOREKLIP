@@ -173,7 +173,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     //==========================================================
     // SAT global "auto gain" – keep 0 dB baseline here.
-    // We'll do a tiny trim per-sample in clip mode.
+    // We'll do a tiny trim only when SAT is actually engaged.
     //==========================================================
     const float satCompDb = 0.0f;
 
@@ -231,7 +231,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     {
         //======================================================
         // NEW CLIP / SAT MODE:
-        // (Gain + tiny SAT trim) -> SILK -> SAT -> POSTGAIN -> HARD CLIP
+        // (Gain) -> SILK -> SAT (with tiny auto-trim) -> POSTGAIN -> HARD CLIP
         //======================================================
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -239,18 +239,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
             for (int i = 0; i < numSamples; ++i)
             {
-                // 0) Total input gain BEFORE SAT (user + static pre-gain)
+                // 0) Total input gain BEFORE SILK/SAT (user + static pre-gain)
                 float y = samples[i] * inputGainClip;
 
                 // ------------------------------------------------
-                // 1) Tiny SAT auto-trim (max about -2 dB)
-                // ------------------------------------------------
-                const float satTrimDb = -2.0f * satAmount;   // 0 .. -2 dB
-                const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
-                y *= satTrim;
-
-                // ------------------------------------------------
-                // 2) SILK (pre-clip transformer-ish colour)
+                // 1) SILK (pre-clip transformer-ish colour)
                 // ------------------------------------------------
                 if (silkBlend > 0.0f)
                 {
@@ -259,13 +252,20 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 }
 
                 // ------------------------------------------------
-                // 3) SATURATION – rounded, bass-thick TikTok curve
+                // 2) SATURATION – rounded, bass-thick TikTok curve
+                //    Only active when satAmount > 0.0
                 // ------------------------------------------------
                 if (satAmount > 0.0f)
                 {
+                    // Tiny SAT auto-trim (max about -1 dB)
+                    const float satTrimDb = -1.0f * satAmount;   // 0 .. -1 dB
+                    const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
+                    y *= satTrim;
+
                     // Threshold moves as SAT increases
-                    // Later onset at low SAT, earlier at high SAT
-                    const float thr = juce::jmap (satAmount, 0.92f, thresholdLinear);
+                    // sat = 0   -> thr = 0.55  (barely touching)
+                    // sat = 1   -> thr = 0.15  (continuous rounding)
+                    const float thr = juce::jmap (satAmount, 0.55f, 0.15f);
 
                     // Rounded soft clip
                     float y0 = fruitySoftClipSample (y, thr);
@@ -274,17 +274,17 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     const float bassLift = 1.0f + 0.20f * satAmount;
                     y0 *= bassLift;
 
-                    // Blend so early SAT is subtle, end is aggressive
-                    y = y + (satAmount * 0.88f) * (y0 - y);
+                    // Stronger blend so SAT is clearly audible
+                    y = y + (satAmount * 1.35f) * (y0 - y);
                 }
 
                 // ------------------------------------------------
-                // 4) Post-gain (Fruity-null alignment)
+                // 3) Post-gain (Fruity-null alignment)
                 // ------------------------------------------------
                 y *= g;
 
                 // ------------------------------------------------
-                // 5) Hard ceiling at 0 dBFS
+                // 4) Hard ceiling at 0 dBFS
                 // ------------------------------------------------
                 if (y >  1.0f) y =  1.0f;
                 if (y < -1.0f) y = -1.0f;
@@ -299,12 +299,20 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     //==========================================================
-    // Update GUI burn meter (0..1), smoothed a bit
-    // Faster in both attack & decay so the slam feels responsive
+    // Update GUI burn meter (0..1)
+    // Much LESS sensitive: only close to 0 dBFS goes full slam
+    // and decay is fairly quick so it doesn't stay burnt forever.
     //==========================================================
-    const float targetBurn = juce::jlimit (0.0f, 1.0f, (blockMax - 0.5f) / 0.5f);
-    const float previous   = guiBurn.load();
-    const float smoothed   = 0.55f * previous + 0.45f * targetBurn;
+    float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
+    normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
+
+    // Extra curve so mid-range feels relaxed, only real brickwall goes full 1.0
+    normPeak = std::pow (normPeak, 2.5f);
+
+    const float targetBurn = normPeak;
+
+    const float previous = guiBurn.load();
+    const float smoothed = 0.25f * previous + 0.75f * targetBurn;
 
     guiBurn.store (smoothed);
 }
@@ -322,7 +330,7 @@ juce::AudioProcessorEditor* FruityClipAudioProcessor::createEditor()
 //==============================================================
 const juce::String FruityClipAudioProcessor::getName() const      { return "GOREKLIPER"; }
 bool FruityClipAudioProcessor::acceptsMidi() const                { return false; }
-bool FruityClipAudioProcessor::producesMidi() const               { return false; }
+bool FruceyClipAudioProcessor::producesMidi() const               { return false; }
 bool FruityClipAudioProcessor::isMidiEffect() const               { return false; }
 double FruityClipAudioProcessor::getTailLengthSeconds() const     { return 0.0; }
 
