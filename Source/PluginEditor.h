@@ -1,140 +1,104 @@
 #pragma once
 
 #include "JuceHeader.h"
-#include <atomic>
-#include <vector>
+#include "PluginProcessor.h"
 
-class FruityClipAudioProcessor : public juce::AudioProcessor
+//==============================================================
+//  Custom LookAndFeel for the finger knobs
+//==============================================================
+class MiddleFingerLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    FruityClipAudioProcessor();
-    ~FruityClipAudioProcessor() override;
+    MiddleFingerLookAndFeel() = default;
 
-    //==========================================================
-    // Core AudioProcessor overrides
-    //==========================================================
-    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override;
+    void setKnobImage (const juce::Image& img)
+    {
+        knobImage = img;
+    }
 
-    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
+    // Let the LNF know which sliders are which
+    void setControlledSliders (juce::Slider* gain,
+                               juce::Slider* mode,
+                               juce::Slider* sat)
+    {
+        gainSlider = gain;
+        modeSlider = mode;
+        satSlider  = sat;
+    }
 
-    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
-
-    //==========================================================
-    // Editor
-    //==========================================================
-    juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override { return true; }
-
-    //==========================================================
-    // Metadata
-    //==========================================================
-    const juce::String getName() const override;
-    bool acceptsMidi() const override;
-    bool producesMidi() const override;
-    bool isMidiEffect() const override;
-    double getTailLengthSeconds() const override;
-
-    //==========================================================
-    // Programs
-    //==========================================================
-    int getNumPrograms() override;
-    int getCurrentProgram() override;
-    void setCurrentProgram (int index) override;
-    const juce::String getProgramName (int index) override;
-    void changeProgramName (int index, const juce::String& newName) override;
-
-    //==========================================================
-    // State
-    //==========================================================
-    void getStateInformation (juce::MemoryBlock& destData) override;
-    void setStateInformation (const void* data, int sizeInBytes) override;
-
-    //==========================================================
-    // Helpers for the editor
-    //==========================================================
-    juce::AudioProcessorValueTreeState& getParametersState() { return parameters; }
-
-    // 0..1 burn value for the background/white logo
-    float getGuiBurn() const { return guiBurn.load(); }
-
-    // K-weighted momentary loudness (LUFS-style)
-    float getGuiLufs() const { return guiLufs.load(); }
+    void drawRotarySlider (juce::Graphics& g,
+                           int x, int y, int width, int height,
+                           float sliderPosProportional,
+                           float rotaryStartAngle,
+                           float rotaryEndAngle,
+                           juce::Slider& slider) override;
 
 private:
-    //==========================================================
-    // Internal helpers
-    //==========================================================
-    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    juce::Image knobImage;
 
-    // Fruity-ish soft clip
-    static float fruitySoftClipSample (float x, float threshold);
+    // Pointers to specific sliders (not owned)
+    juce::Slider* gainSlider = nullptr; // left finger (GAIN)
+    juce::Slider* modeSlider = nullptr; // right finger (CLIPPER/LIMITER)
+    juce::Slider* satSlider  = nullptr; // SAT knob
+};
 
-    // Neve 5060-style "Silk" curve
-    static float silkCurveFull (float x);
+//==============================================================
+//  Main Editor
+//==============================================================
+class FruityClipAudioProcessorEditor  : public juce::AudioProcessorEditor,
+                                        private juce::Timer
+{
+public:
+    FruityClipAudioProcessorEditor (FruityClipAudioProcessor&);
+    ~FruityClipAudioProcessorEditor() override;
 
-    // Limiter sample processor
-    float processLimiterSample (float x);
+    void paint (juce::Graphics&) override;
+    void resized() override;
 
-    // Oversampling config helper
-    void updateOversampling (int osIndex, int numChannels);
+private:
+    FruityClipAudioProcessor& processor;
 
-    //==========================================================
-    // K-weighted LUFS meter state
-    //==========================================================
-    struct KFilterState
-    {
-        float z1a = 0.0f;
-        float z2a = 0.0f;
-        float z1b = 0.0f;
-        float z2b = 0.0f;
-    };
+    // Background & logo
+    juce::Image bgImage;
+    juce::Image slamImage;       // "slammed" background
+    juce::Image logoImage;
+    juce::Image logoWhiteImage;  // precomputed white version of logo (same alpha)
+    const float bgScale = 0.35f; // scale for bg.png
 
-    void resetKFilterState (int numChannels);
+    // LookAndFeel + knobs
+    MiddleFingerLookAndFeel fingerLnf;
 
-    std::vector<KFilterState> kFilterStates;
-    float lufsMeanSquare = 1.0e-6f;  // keep > 0 to avoid log(0)
+    // 5 knobs: GAIN, SILK, OTT, SAT, MODE
+    juce::Slider gainSlider;
+    juce::Slider silkSlider;
+    juce::Slider ottSlider;
+    juce::Slider satSlider;
+    juce::Slider modeSlider;
 
-    //==========================================================
-    // OTT high-pass split state (0–150 Hz dry, >150 Hz OTT)
-    //==========================================================
-    struct OttHPState
-    {
-        float low = 0.0f; // running lowpass state for low band
-    };
+    juce::Label  gainLabel;
+    juce::Label  silkLabel;
+    juce::Label  ottLabel;
+    juce::Label  satLabel;
+    juce::Label  modeLabel;
 
-    void resetOttState (int numChannels);
+    // LUFS text above CLIPPER/LIMITER finger
+    juce::Label  lufsLabel;
 
-    std::vector<OttHPState> ottStates;
-    float ottAlpha    = 0.0f;   // one-pole LP factor for 150 Hz split
-    float lastOttGain = 1.0f;   // smoothed unity gain-match factor
+    // Oversample mode (x1/x2/x4/x8/x16) – tiny top-right dropdown
+    juce::ComboBox oversampleBox;
 
-    //==========================================================
-    // Internal state
-    //==========================================================
-    double sampleRate      = 44100.0;
-    float  postGain        = 0.99999385f;  // Fruity-null alignment
-    float  thresholdLinear = 0.5f;         // updated in ctor
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   silkAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
 
-    // Limiter
-    float limiterGain      = 1.0f;
-    float limiterReleaseCo = 0.0f;
+    // GUI burn value (cached from processor)
+    float lastBurn = 0.0f;
 
-    // GUI burn value (0..1)
-    std::atomic<float> guiBurn { 0.0f };
+    // Timer for GUI updates
+    void timerCallback() override;
 
-    // GUI LUFS value
-    std::atomic<float> guiLufs { -60.0f };
-
-    // Parameter state (includes oversampleMode)
-    juce::AudioProcessorValueTreeState parameters;
-
-    //==========================================================
-    // Oversampling
-    //==========================================================
-    std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
-    int currentOversampleIndex = 0;   // 0:x1, 1:x2, 2:x4, 3:x8, 4:x16
-    int maxBlockSize           = 0;   // for oversampler->initProcessing
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessorEditor)
 };
