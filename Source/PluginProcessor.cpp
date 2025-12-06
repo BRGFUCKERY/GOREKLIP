@@ -719,7 +719,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Extra smoothing for GUI LUFS readout (faster ballistics)
     //==========================================================
     const float prevLufs   = guiLufs.load();
-    const float lufsAlpha  = 0.60f;  // 0.6 ~= 2× faster than old 0.3
+    const float lufsAlpha  = 0.60f;  // ~2× faster than 0.3
     const float lufsSmooth = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
 
     guiLufs.store (lufsSmooth);
