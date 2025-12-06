@@ -63,7 +63,7 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
     }
     else
     {
-        // Normal knobs (SILK, SAT)
+        // Normal knobs (SILK, OTT, SAT)
         angle = minAngle + (maxAngle - minAngle) * sliderPosProportional;
     }
 
@@ -98,6 +98,27 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::gorekliper_logo_png,
         BinaryData::gorekliper_logo_pngSize);
 
+    // Precompute a white version of the logo (same alpha, white RGB)
+    if (logoImage.isValid())
+    {
+        logoWhiteImage = logoImage.createCopy();
+
+        juce::Image::BitmapData data (logoWhiteImage, juce::Image::BitmapData::readWrite);
+        for (int y = 0; y < data.height; ++y)
+        {
+            for (int x = 0; x < data.width; ++x)
+            {
+                auto c = data.getPixelColour (x, y);
+                auto a = c.getAlpha();
+                if (a > 0)
+                {
+                    data.setPixelColour (x, y,
+                                         juce::Colour::fromRGBA (255, 255, 255, a));
+                }
+            }
+        }
+    }
+
     // Load finger knob image
     juce::Image fingerImage = juce::ImageCache::getFromMemory (
         BinaryData::finger_png,
@@ -129,16 +150,19 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     gainSlider.setRange (-12.0, 12.0, 0.01);
 
     setupKnob01 (silkSlider);
+    setupKnob01 (ottSlider);
     setupKnob01 (satSlider);
-    setupKnob01 (modeSlider); // MODE finger – param is bool, but we use 0..1 range
+    setupKnob01 (modeSlider); // MODE finger – param is bool, but we use 0..1
 
     gainSlider.setLookAndFeel (&fingerLnf);
     silkSlider.setLookAndFeel (&fingerLnf);
-    satSlider.setLookAndFeel  (&fingerLnf);
+    ottSlider .setLookAndFeel (&fingerLnf);
+    satSlider .setLookAndFeel (&fingerLnf);
     modeSlider.setLookAndFeel (&fingerLnf);
 
     addAndMakeVisible (gainSlider);
     addAndMakeVisible (silkSlider);
+    addAndMakeVisible (ottSlider);
     addAndMakeVisible (satSlider);
     addAndMakeVisible (modeSlider);
 
@@ -158,13 +182,26 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     setupLabel (gainLabel, "GAIN");
     setupLabel (silkLabel, "SILK");
+    setupLabel (ottLabel,  "OTT");
     setupLabel (satLabel,  "SAT");
-    setupLabel (modeLabel, "CLIPPER"); // will switch to LIMITER when mode is on
+    setupLabel (modeLabel, "CLIPPER"); // will switch to LIMITER in runtime
 
     addAndMakeVisible (gainLabel);
     addAndMakeVisible (silkLabel);
+    addAndMakeVisible (ottLabel);
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
+
+    // LUFS label – same white bold font style, a bit smaller
+    lufsLabel.setJustificationType (juce::Justification::centred);
+    lufsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    {
+        juce::FontOptions opts (14.0f);
+        opts = opts.withStyle ("Bold");
+        lufsLabel.setFont (juce::Font (opts));
+    }
+    lufsLabel.setText ("-- LUFS", juce::dontSendNotification);
+    addAndMakeVisible (lufsLabel);
 
     // ----------------------
     // PARAMETER ATTACHMENTS
@@ -174,11 +211,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     gainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "inputGain", gainSlider);
 
-    satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                        apvts, "satAmount",  satSlider);
-
     silkAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "silkAmount", silkSlider);
+
+    ottAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "ottAmount", ottSlider);
+
+    satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "satAmount",  satSlider);
 
     modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "useLimiter", modeSlider);
@@ -199,10 +239,10 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
     };
 
-    // Now the LNF knows which slider is which
+    // Now the LNF knows which slider is which for special angles
     fingerLnf.setControlledSliders (&gainSlider, &modeSlider, &satSlider);
 
-    // Start GUI update timer (for burn animation / crossfade)
+    // Start GUI update timer (for burn animation / crossfade + LUFS text)
     startTimerHz (30);
 }
 
@@ -211,7 +251,8 @@ FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
     stopTimer();
     gainSlider.setLookAndFeel (nullptr);
     silkSlider.setLookAndFeel (nullptr);
-    satSlider.setLookAndFeel  (nullptr);
+    ottSlider .setLookAndFeel (nullptr);
+    satSlider .setLookAndFeel (nullptr);
     modeSlider.setLookAndFeel (nullptr);
 }
 
@@ -226,48 +267,69 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     // Map burn into 0..1
     const float burnRaw = juce::jlimit (0.0f, 1.0f, lastBurn);
 
-    // Make it come in EVEN later – more headroom before full black
+    // Visual slam comes in later – you really have to hit it
     const float burnShaped = std::pow (burnRaw, 2.0f);
 
-    // Base background
+    // ------------------------------------------------
+    // 1) Base background
+    // ------------------------------------------------
     if (bgImage.isValid())
         g.drawImageWithin (bgImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     else
         g.fillAll (juce::Colours::black);
 
-    // Crossfade into "slam" background when you're really hitting it
+    // ------------------------------------------------
+    // 2) Slam background with same burn curve
+    // ------------------------------------------------
     if (slamImage.isValid() && burnShaped > 0.02f)
     {
         juce::Graphics::ScopedSaveState save (g);
 
-        // Direct 0..1 opacity from shaped burn
-        const float shapedVis = burnShaped;
-
-        g.setOpacity (shapedVis);
+        g.setOpacity (burnShaped);
         g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     }
 
-    // LOGO - crop invisible padding so the visible part touches the top
+    // ------------------------------------------------
+    // 3) Logo – normal at low slam, fades to white as you pin it
+    // ------------------------------------------------
     if (logoImage.isValid())
     {
         const float targetW = w * 0.80f;
         const float scale   = targetW / logoImage.getWidth();
 
-        const int drawW = (int)(logoImage.getWidth()  * scale);
-        const int drawH = (int)(logoImage.getHeight() * scale);
+        const int drawW = (int) (logoImage.getWidth()  * scale);
+        const int drawH = (int) (logoImage.getHeight() * scale);
 
         const int x = (w - drawW) / 2;
         const int y = 0; // absolutely top
 
         // Crop top 20% of source logo (remove invisible padding)
-        const int cropY      = (int)(logoImage.getHeight() * 0.20f);   // remove top 20%
-        const int cropHeight = logoImage.getHeight() - cropY;          // keep lower 80%
+        const int cropY      = (int) (logoImage.getHeight() * 0.20f); // remove top 20%
+        const int cropHeight = logoImage.getHeight() - cropY;         // keep lower 80%
 
-        g.drawImage (logoImage,
-                     x, y, drawW, drawH,     // destination
-                     0, cropY,               // source x, y
-                     logoImage.getWidth(),
-                     cropHeight);            // source height
+        // 3a) Draw original logo, fading out as burn increases
+        {
+            juce::Graphics::ScopedSaveState save (g);
+            const float baseOpacity = 1.0f - burnShaped;
+            g.setOpacity (baseOpacity);
+            g.drawImage (logoImage,
+                         x, y, drawW, drawH,      // destination
+                         0, cropY,                // source x, y
+                         logoImage.getWidth(),
+                         cropHeight);             // source height
+        }
+
+        // 3b) Draw white logo overlay, fading in with burn
+        if (logoWhiteImage.isValid() && burnShaped > 0.0f)
+        {
+            juce::Graphics::ScopedSaveState save (g);
+            g.setOpacity (burnShaped);
+            g.drawImage (logoWhiteImage,
+                         x, y, drawW, drawH,      // destination
+                         0, cropY,                // source x, y
+                         logoWhiteImage.getWidth(),
+                         cropHeight);             // source height
+        }
     }
 }
 
@@ -279,20 +341,21 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    const int knobSize = juce::jmin (w / 6, h / 3);
-    const int spacing  = knobSize / 2;
+    // 5 knobs in a row
+    const int knobSize = juce::jmin (w / 7, h / 3);
+    const int spacing  = knobSize / 3;
 
-    const int totalW   = knobSize * 4 + spacing * 3;
+    const int totalW   = knobSize * 5 + spacing * 4;
     const int startX   = (w - totalW) / 2;
 
-    // Keep knobs low near the bottom
     const int bottomMargin = (int)(h * 0.05f);
     const int knobY        = h - knobSize - bottomMargin;
 
     gainSlider.setBounds (startX + 0 * (knobSize + spacing), knobY, knobSize, knobSize);
     silkSlider.setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
-    satSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
-    modeSlider.setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
+    ottSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
+    satSlider .setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
+    modeSlider.setBounds (startX + 4 * (knobSize + spacing), knobY, knobSize, knobSize);
 
     const int labelH = 20;
 
@@ -306,6 +369,11 @@ void FruityClipAudioProcessorEditor::resized()
                          silkSlider.getWidth(),
                          labelH);
 
+    ottLabel.setBounds (ottSlider.getX(),
+                        ottSlider.getBottom() + 2,
+                        ottSlider.getWidth(),
+                        labelH);
+
     satLabel.setBounds (satSlider.getX(),
                         satSlider.getBottom() + 2,
                         satSlider.getWidth(),
@@ -315,10 +383,19 @@ void FruityClipAudioProcessorEditor::resized()
                          modeSlider.getBottom() + 2,
                          modeSlider.getWidth(),
                          labelH);
+
+    // LUFS label – directly above the CLIPPER/LIMITER finger
+    const int lufsHeight = 18;
+    const int lufsY      = modeSlider.getY() - lufsHeight - 4;
+
+    lufsLabel.setBounds (modeSlider.getX(),
+                         lufsY,
+                         modeSlider.getWidth(),
+                         lufsHeight);
 }
 
 //==============================================================
-// TIMER – pull burn value from processor
+// TIMER – pull burn + LUFS value from processor
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
@@ -330,7 +407,7 @@ void FruityClipAudioProcessorEditor::timerCallback()
 
     juce::String text;
     if (lufs <= -59.0f)
-        text = "-- LUFS";               // no more weird infinity glyph
+        text = "-- LUFS";               // silence / tails
     else
         text = juce::String (lufs, 1) + " LUFS";
 
