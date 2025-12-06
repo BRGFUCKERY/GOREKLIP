@@ -187,6 +187,17 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
 
+    // LUFS label – same white bold font style, a bit smaller
+    lufsLabel.setJustificationType (juce::Justification::centred);
+    lufsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    {
+        juce::FontOptions opts (14.0f);
+        opts = opts.withStyle ("Bold");
+        lufsLabel.setFont (juce::Font (opts));
+    }
+    lufsLabel.setText ("-∞ LUFS", juce::dontSendNotification);
+    addAndMakeVisible (lufsLabel);
+
     // ----------------------
     // PARAMETER ATTACHMENTS
     // ----------------------
@@ -223,7 +234,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // Now the LNF knows which slider is which
     fingerLnf.setControlledSliders (&gainSlider, &modeSlider, &satSlider);
 
-    // Start GUI update timer (for burn animation / crossfade)
+    // Start GUI update timer (for burn animation / crossfade + LUFS text)
     startTimerHz (30);
 }
 
@@ -357,14 +368,34 @@ void FruityClipAudioProcessorEditor::resized()
                          modeSlider.getBottom() + 2,
                          modeSlider.getWidth(),
                          labelH);
+
+    // LUFS label – directly above the CLIPPER/LIMITER finger
+    const int lufsHeight = 18;
+    const int lufsY      = modeSlider.getY() - lufsHeight - 4;
+
+    lufsLabel.setBounds (modeSlider.getX(),
+                         lufsY,
+                         modeSlider.getWidth(),
+                         lufsHeight);
 }
 
 //==============================================================
-// TIMER – pull burn value from processor
+// TIMER – pull burn + LUFS value from processor
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
-    // Always repaint so background crossfade actually follows audio
+    // Burn value for background/logo
     lastBurn = processor.getGuiBurn();
+
+    // Super-fast LUFS-ish meter (text)
+    const float lufs = processor.getGuiLufs();
+    juce::String text;
+    if (lufs <= -59.0f)
+        text = "-∞ LUFS";
+    else
+        text = juce::String (lufs, 1) + " LUFS";
+
+    lufsLabel.setText (text, juce::dontSendNotification);
+
     repaint();
 }
