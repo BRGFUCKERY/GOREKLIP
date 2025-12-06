@@ -47,21 +47,16 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
         const float angleDegrees = useLimiter ? 180.0f : 0.0f;
         angle = juce::degreesToRadians (angleDegrees);
     }
-    else if (gainSlider != nullptr && satSlider != nullptr && &slider == gainSlider)
+    else if (gainSlider != nullptr && &slider == gainSlider)
     {
-        // GAIN FINGER: display effective (user gain + SAT auto-trim visual)
-        const float gainDb = (float) slider.getValue();     // -12..+12
-        const float sat    = (float) satSlider->getValue(); // 0..1
-
+        // GAIN FINGER: show ONLY the real gain param (no auto-gain / SAT compensation)
         const auto& range = slider.getRange();
         const float minDb = (float) range.getStart(); // -12
         const float maxDb = (float) range.getEnd();   // +12
 
-        // Visual assumption: auto-trim is up to about -2 dB at heavy SAT
-        const float satCompDb  = -2.0f * (sat * sat);
-        const float effectiveDb = gainDb + satCompDb;
+        const float gainDb = (float) slider.getValue();
 
-        float norm = (effectiveDb - minDb) / (maxDb - minDb);
+        float norm = (gainDb - minDb) / (maxDb - minDb);
         norm = juce::jlimit (0.0f, 1.0f, norm);
 
         angle = minAngle + (maxAngle - minAngle) * norm;
@@ -93,7 +88,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::bg_png,
         BinaryData::bg_pngSize);
 
-    // Load SLAM background
+    // Load SLAM background (assets/slam.jpg -> BinaryData::slam_jpg)
     slamImage = juce::ImageCache::getFromMemory (
         BinaryData::slam_jpg,
         BinaryData::slam_jpgSize);
@@ -255,7 +250,7 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
         const int x = (w - drawW) / 2;
         const int y = 0; // absolutely top
 
-        // --- CROP TOP 20% OF SOURCE LOGO ---
+        // Crop top 20% of source logo (remove invisible padding)
         const int cropY      = (int)(logoImage.getHeight() * 0.20f);   // remove top 20%
         const int cropHeight = logoImage.getHeight() - cropY;          // keep lower 80%
 
