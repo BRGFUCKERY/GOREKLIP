@@ -227,7 +227,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
         }
     }
-       else
+    else
     {
         //======================================================
         // CLIP / SAT MODE:
@@ -252,13 +252,13 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 }
 
                 // ------------------------------------------------
-                // 2) SATURATION – rounded, bass-thick TikTok curve
+                // 2) SATURATION – rounded, bass-thick curve
                 //    Only active when satAmount > 0.0
                 // ------------------------------------------------
                 if (satAmount > 0.0f)
                 {
-                    // Tiny SAT auto-trim (max about -1.5 dB)
-                    const float satTrimDb = -1.5f * satAmount;   // 0 .. -1.5 dB
+                    // Tiny SAT auto-trim (max about -2.5 dB)
+                    const float satTrimDb = -2.5f * satAmount;   // 0 .. -2.5 dB
                     const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
                     y *= satTrim;
 
@@ -270,12 +270,12 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // Rounded soft clip
                     float y0 = fruitySoftClipSample (y, thr);
 
-                    // Bass lift – makes lows feel bigger without mud
-                    const float bassLift = 1.0f + 0.20f * satAmount;
+                    // Bass lift – still there but a bit tamer
+                    const float bassLift = 1.0f + 0.15f * satAmount;
                     y0 *= bassLift;
 
-                    // Stronger blend so SAT is clearly audible
-                    y = y + (satAmount * 1.35f) * (y0 - y);
+                    // Blend: strong enough to hear, not insane loudness jump
+                    y = y + (satAmount * 1.25f) * (y0 - y);
                 }
 
                 // ------------------------------------------------
@@ -298,24 +298,22 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
     }
 
-
     //==========================================================
-// Update GUI burn meter (0..1)
-// Much LESS sensitive: only close to 0 dBFS goes full slam
-//==========================================================
-float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
-normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
+    // Update GUI burn meter (0..1)
+    // Much LESS sensitive: only close to 0 dBFS goes full slam
+    //==========================================================
+    float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
+    normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
 
-// Extra curve so mid-range feels chill, only brickwall goes full 1.0
-normPeak = std::pow (normPeak, 2.5f);
+    // Extra curve so mid-range feels chill, only brickwall goes full 1.0
+    normPeak = std::pow (normPeak, 2.5f);
 
-const float targetBurn = normPeak;
+    const float targetBurn = normPeak;
 
-const float previous = guiBurn.load();
-const float smoothed = 0.25f * previous + 0.75f * targetBurn;
+    const float previous = guiBurn.load();
+    const float smoothed = 0.25f * previous + 0.75f * targetBurn;
 
-guiBurn.store (smoothed);
-
+    guiBurn.store (smoothed);
 }
 
 //==============================================================
@@ -334,7 +332,6 @@ bool FruityClipAudioProcessor::acceptsMidi() const                { return false
 bool FruityClipAudioProcessor::producesMidi() const               { return false; }
 bool FruityClipAudioProcessor::isMidiEffect() const               { return false; }
 double FruityClipAudioProcessor::getTailLengthSeconds() const     { return 0.0; }
-
 
 //==============================================================
 // Programs
