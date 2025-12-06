@@ -1,6 +1,8 @@
 #include "BinaryData.h"
 #include "PluginEditor.h"
 
+#include <cmath>
+
 //==============================================================
 // Custom Middle-Finger Knob LookAndFeel
 //==============================================================
@@ -11,28 +13,65 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
                                                 float rotaryEndAngle,
                                                 juce::Slider& slider)
 {
-    juce::ignoreUnused (rotaryStartAngle, rotaryEndAngle, slider);
+    juce::ignoreUnused (rotaryStartAngle, rotaryEndAngle);
 
     if (! knobImage.isValid())
         return;
 
     juce::Graphics::ScopedSaveState save (g);
 
-    auto bounds   = juce::Rectangle<float> ((float)x, (float)y, (float)width, (float)height);
+    auto bounds   = juce::Rectangle<float> ((float) x, (float) y,
+                                            (float) width, (float) height);
     auto knobArea = bounds.reduced (width * 0.05f, height * 0.05f);
 
-    const float imgW = (float) knobImage.getWidth();
-    const float imgH = (float) knobImage.getHeight();
+    const float imgW  = (float) knobImage.getWidth();
+    const float imgH  = (float) knobImage.getHeight();
     const float scale = std::min (knobArea.getWidth()  / imgW,
                                   knobArea.getHeight() / imgH);
 
     juce::Rectangle<float> imgRect (0.0f, 0.0f, imgW * scale, imgH * scale);
     imgRect.setCentre (knobArea.getCentre());
 
-    // WIDE ROTATION RANGE (~7 o'clock to ~5 o'clock)
+    // Default angle mapping: ~7 o'clock to ~5 o'clock
     const float minAngle = juce::degreesToRadians (-135.0f);
     const float maxAngle = juce::degreesToRadians ( 135.0f);
-    const float angle    = minAngle + (maxAngle - minAngle) * sliderPosProportional;
+
+    float angle = 0.0f;
+
+    if (modeSlider != nullptr && &slider == modeSlider)
+    {
+        // MODE FINGER: two positions only
+        const bool useLimiter = (slider.getValue() >= 0.5f);
+
+        // 12 o'clock (up) = CLIPPER, 6 o'clock (down) = LIMITER
+        const float angleDegrees = useLimiter ? 180.0f : 0.0f;
+        angle = juce::degreesToRadians (angleDegrees);
+    }
+    else if (gainSlider != nullptr && satSlider != nullptr && &slider == gainSlider)
+    {
+        // GAIN FINGER: display effective (user gain + SAT auto-trim visual)
+        const float gainDb = (float) slider.getValue();     // -12..+12
+        const float sat    = (float) satSlider->getValue(); // 0..1
+
+        // Mirror the max range used in the processor (-18..+6), but visualised inside slider range
+        const auto& range = slider.getRange();
+        const float minDb = (float) range.getStart(); // -12
+        const float maxDb = (float) range.getEnd();   // +12
+
+        // Assume auto-trim might be up to about -6 dB at heavy SAT
+        const float satCompDb  = -6.0f * (sat * sat);
+        const float effectiveDb = gainDb + satCompDb;
+
+        float norm = (effectiveDb - minDb) / (maxDb - minDb);
+        norm = juce::jlimit (0.0f, 1.0f, norm);
+
+        angle = minAngle + (maxAngle - minAngle) * norm;
+    }
+    else
+    {
+        // Normal knobs (SILK, SAT)
+        angle = minAngle + (maxAngle - minAngle) * sliderPosProportional;
+    }
 
     juce::AffineTransform t;
     t = t.rotated (angle, imgRect.getCentreX(), imgRect.getCentreY());
@@ -45,7 +84,7 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 }
 
 //==============================================================
-// EDITOR CONSTRUCTOR
+// Editor
 //==============================================================
 FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
@@ -76,7 +115,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // ----------------------
     // SLIDERS
     // ----------------------
-    auto setupKnob = [] (juce::Slider& s)
+    auto setupKnob01 = [] (juce::Slider& s)
     {
         s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -84,14 +123,25 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         s.setMouseDragSensitivity (250);
     };
 
-    setupKnob (silkSlider);
-    setupKnob (satSlider);
+    // GAIN uses dB range
+    gainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    gainSlider.setMouseDragSensitivity (250);
+    gainSlider.setRange (-12.0, 12.0, 0.01);
 
+    setupKnob01 (silkSlider);
+    setupKnob01 (satSlider);
+    setupKnob01 (modeSlider); // MODE finger – param is bool, but we use 0..1 range
+
+    gainSlider.setLookAndFeel (&fingerLnf);
     silkSlider.setLookAndFeel (&fingerLnf);
     satSlider.setLookAndFeel  (&fingerLnf);
+    modeSlider.setLookAndFeel (&fingerLnf);
 
+    addAndMakeVisible (gainSlider);
     addAndMakeVisible (silkSlider);
     addAndMakeVisible (satSlider);
+    addAndMakeVisible (modeSlider);
 
     // ----------------------
     // LABELS
@@ -104,28 +154,63 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         lbl.setFont (juce::Font (16.0f, juce::Font::bold));
     };
 
+    setupLabel (gainLabel, "GAIN");
     setupLabel (silkLabel, "SILK");
     setupLabel (satLabel,  "SAT");
+    setupLabel (modeLabel, "CLIPPER"); // will switch to LIMITER when mode is on
 
+    addAndMakeVisible (gainLabel);
     addAndMakeVisible (silkLabel);
     addAndMakeVisible (satLabel);
+    addAndMakeVisible (modeLabel);
 
     // ----------------------
     // PARAMETER ATTACHMENTS
     // ----------------------
     auto& apvts = processor.getParametersState();
 
+    gainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "inputGain", gainSlider);
+
     satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "satAmount",  satSlider);
 
     silkAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "silkAmount", silkSlider);
+
+    modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "useLimiter", modeSlider);
+
+    // Initial state from param
+    if (auto* modeParam = apvts.getRawParameterValue ("useLimiter"))
+    {
+        const bool useLimiter = (modeParam->load() >= 0.5f);
+        satSlider.setEnabled (! useLimiter);
+        modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
+    }
+
+    // When MODE changes, update SAT enable + text
+    modeSlider.onValueChange = [this]
+    {
+        const bool useLimiter = (modeSlider.getValue() >= 0.5f);
+        satSlider.setEnabled (! useLimiter);
+        modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
+    };
+
+    // Now the LNF knows which slider is which
+    fingerLnf.setControlledSliders (&gainSlider, &modeSlider, &satSlider);
+
+    // Start GUI update timer (for burn animation)
+    startTimerHz (30);
 }
 
 FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
 {
+    stopTimer();
+    gainSlider.setLookAndFeel (nullptr);
     silkSlider.setLookAndFeel (nullptr);
     satSlider.setLookAndFeel  (nullptr);
+    modeSlider.setLookAndFeel (nullptr);
 }
 
 //==============================================================
@@ -163,6 +248,33 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
                      logoImage.getWidth(),
                      cropHeight);            // source height
     }
+
+    // BURN OVERLAY – more smashed = more washed-out / burnt TikTok meme
+    if (lastBurn > 0.01f)
+    {
+        // Emphasise the top end so most of the drama is when you're really slamming
+        const float b     = juce::jlimit (0.0f, 1.0f, lastBurn);
+        const float shaped = std::pow (b, 0.6f); // 0.6 -> quicker ramp near the top
+
+        // 1) Heavy white wash – almost overexposed at full burn
+        g.setColour (juce::Colours::white.withAlpha (0.40f * shaped));
+        g.fillAll();
+
+        // 2) Cold blue-ish tint overlay
+        const juce::Colour tint = juce::Colour::fromFloatRGBA (0.75f, 0.82f, 1.0f, 0.30f * shaped);
+        g.setColour (tint);
+        g.fillAll();
+
+        // 3) Dark vignette / frame – makes it feel cooked & boxed in
+        const int frameThickness = juce::jmax (2, (int) std::round (4.0f * shaped));
+        g.setColour (juce::Colours::black.withAlpha (0.25f * shaped));
+        g.drawRect (getLocalBounds(), frameThickness);
+
+        // Inner vignette: darken edges a bit more
+        juce::Rectangle<int> inner = getLocalBounds().reduced (frameThickness * 2);
+        g.setColour (juce::Colours::black.withAlpha (0.18f * shaped));
+        g.fillRect (inner);
+    }
 }
 
 //==============================================================
@@ -170,32 +282,30 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
 //==============================================================
 void FruityClipAudioProcessorEditor::resized()
 {
-    auto bounds = getLocalBounds();
-
     const int w = getWidth();
     const int h = getHeight();
 
-    // Reserve a thin band for the logo visually (~18% height)
-    const int logoSpace = (int)(h * 0.18f);
-    bounds.removeFromTop (logoSpace);
+    const int knobSize = juce::jmin (w / 6, h / 3);
+    const int spacing  = knobSize / 2;
 
-    // Smaller knobs
-    const int knobSize = juce::jmax (50, (int)(h * 0.144f));
-
-    // MUCH more distance between knobs
-    const int spacing  = (int)(w * 0.22f);
-
-    const int totalW   = knobSize * 2 + spacing;
+    const int totalW   = knobSize * 4 + spacing * 3;
     const int startX   = (w - totalW) / 2;
 
     // Keep knobs low near the bottom
     const int bottomMargin = (int)(h * 0.05f);
     const int knobY        = h - knobSize - bottomMargin;
 
-    silkSlider.setBounds (startX, knobY, knobSize, knobSize);
-    satSlider .setBounds (startX + knobSize + spacing, knobY, knobSize, knobSize);
+    gainSlider.setBounds (startX + 0 * (knobSize + spacing), knobY, knobSize, knobSize);
+    silkSlider.setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
+    satSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
+    modeSlider.setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
 
     const int labelH = 20;
+
+    gainLabel.setBounds (gainSlider.getX(),
+                         gainSlider.getBottom() + 2,
+                         gainSlider.getWidth(),
+                         labelH);
 
     silkLabel.setBounds (silkSlider.getX(),
                          silkSlider.getBottom() + 2,
@@ -206,4 +316,24 @@ void FruityClipAudioProcessorEditor::resized()
                         satSlider.getBottom() + 2,
                         satSlider.getWidth(),
                         labelH);
+
+    modeLabel.setBounds (modeSlider.getX(),
+                         modeSlider.getBottom() + 2,
+                         modeSlider.getWidth(),
+                         labelH);
+}
+
+//==============================================================
+// TIMER – pull burn value from processor
+//==============================================================
+void FruityClipAudioProcessorEditor::timerCallback()
+{
+    const float newBurn = processor.getGuiBurn();
+
+    // Only repaint if it actually changed a bit
+    if (std::abs (newBurn - lastBurn) > 0.01f)
+    {
+        lastBurn = newBurn;
+        repaint();
+    }
 }
