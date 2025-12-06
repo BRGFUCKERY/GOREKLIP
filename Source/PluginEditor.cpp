@@ -226,50 +226,94 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     // Map burn into 0..1
     const float burnRaw = juce::jlimit (0.0f, 1.0f, lastBurn);
 
-    // Make it come in EVEN later – more headroom before full black
+    // Make visual slam come in later – you really have to hit it
     const float burnShaped = std::pow (burnRaw, 2.0f);
 
-    // Base background
+    // ------------------------------------------------
+    // 1) Base background
+    // ------------------------------------------------
     if (bgImage.isValid())
         g.drawImageWithin (bgImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     else
         g.fillAll (juce::Colours::black);
 
-    // Crossfade into "slam" background when you're really hitting it
+    // ------------------------------------------------
+    // 2) Slam background with same burn curve
+    // ------------------------------------------------
     if (slamImage.isValid() && burnShaped > 0.02f)
     {
         juce::Graphics::ScopedSaveState save (g);
 
-        // Direct 0..1 opacity from shaped burn
-        const float shapedVis = burnShaped;
-
-        g.setOpacity (shapedVis);
+        g.setOpacity (burnShaped);
         g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     }
 
-    // LOGO - crop invisible padding so the visible part touches the top
+    // ------------------------------------------------
+    // 3) Green / purple burnt overlay
+    // ------------------------------------------------
+    if (burnShaped > 0.02f)
+    {
+        const float overlayAlpha = 0.45f * burnShaped; // max ~45% tint
+
+        juce::Colour c1 = juce::Colour::fromFloatRGBA (0.2f, 0.95f, 0.5f, overlayAlpha);  // toxic green
+        juce::Colour c2 = juce::Colour::fromFloatRGBA (0.65f, 0.10f, 0.75f, overlayAlpha); // purple
+
+        juce::ColourGradient grad (c1,
+                                   0.0f, 0.0f,
+                                   c2,
+                                   (float) w, (float) h,
+                                   false);
+
+        g.setGradientFill (grad);
+        g.fillRect (0, 0, w, h);
+    }
+
+    // ------------------------------------------------
+    // 4) Logo – normal at low slam, goes white as you pin it
+    // ------------------------------------------------
     if (logoImage.isValid())
     {
         const float targetW = w * 0.80f;
         const float scale   = targetW / logoImage.getWidth();
 
-        const int drawW = (int)(logoImage.getWidth()  * scale);
-        const int drawH = (int)(logoImage.getHeight() * scale);
+        const int drawW = (int) (logoImage.getWidth()  * scale);
+        const int drawH = (int) (logoImage.getHeight() * scale);
 
         const int x = (w - drawW) / 2;
         const int y = 0; // absolutely top
 
         // Crop top 20% of source logo (remove invisible padding)
-        const int cropY      = (int)(logoImage.getHeight() * 0.20f);   // remove top 20%
-        const int cropHeight = logoImage.getHeight() - cropY;          // keep lower 80%
+        const int cropY      = (int) (logoImage.getHeight() * 0.20f); // remove top 20%
+        const int cropHeight = logoImage.getHeight() - cropY;         // keep lower 80%
 
-        g.drawImage (logoImage,
-                     x, y, drawW, drawH,     // destination
-                     0, cropY,               // source x, y
-                     logoImage.getWidth(),
-                     cropHeight);            // source height
+        // 4a) Draw original logo (fades out as we slam)
+        const float baseLogoOpacity = 1.0f - burnShaped;
+        if (baseLogoOpacity > 0.0f)
+        {
+            juce::Graphics::ScopedSaveState save (g);
+            g.setOpacity (baseLogoOpacity);
+
+            g.drawImage (logoImage,
+                         x, y, drawW, drawH,      // destination
+                         0, cropY,                // source x, y
+                         logoImage.getWidth(),
+                         cropHeight);             // source height
+        }
+
+        // 4b) White-out overlay tied to same burn curve
+        if (burnShaped > 0.0f)
+        {
+            juce::Graphics::ScopedSaveState save (g);
+
+            // Just white-fill the logo area – this washes the logo to white
+            // and slightly burns the background around it.
+            g.setOpacity (burnShaped);
+            g.setColour (juce::Colours::white);
+            g.fillRect (x, y, drawW, drawH);
+        }
     }
 }
+
 
 //==============================================================
 // LAYOUT
