@@ -89,7 +89,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::bg_pngSize);
 
     // ✅ Load SLAM background directly from BinaryData
-    // (JUCE generates slam_jpg / slam_jpgSize from slam.jpg)
     slamImage = juce::ImageCache::getFromMemory (
         BinaryData::slam_jpg,
         BinaryData::slam_jpgSize);
@@ -152,7 +151,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         lbl.setJustificationType (juce::Justification::centred);
         lbl.setColour (juce::Label::textColourId, juce::Colours::white);
 
-        // Use FontOptions correctly: style is a String ("Bold"), not Font::bold
         juce::FontOptions opts (16.0f);
         opts = opts.withStyle ("Bold");
         lbl.setFont (juce::Font (opts));
@@ -225,9 +223,11 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     const int w = getWidth();
     const int h = getHeight();
 
-    // Map burn into 0..1 and shape it so the slam comes in more towards the top
+    // Map burn into 0..1 and shape it so the slam comes in closer to max
     const float burnRaw    = juce::jlimit (0.0f, 1.0f, lastBurn);
-    const float burnShaped = std::pow (burnRaw, 0.45f); // more aggressive than 0.6f
+
+    // Slower build – doesn’t go 0→100 instantly
+    const float burnShaped = std::pow (burnRaw, 1.35f);
 
     // Base background
     if (bgImage.isValid())
@@ -239,7 +239,12 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     if (slamImage.isValid() && burnShaped > 0.01f)
     {
         juce::Graphics::ScopedSaveState save (g);
-        g.setOpacity (burnShaped);
+
+        // Cap opacity + add a little curve so it feels organic
+        const float vis       = juce::jmin (burnShaped, 0.90f);
+        const float shapedVis = std::pow (vis, 0.65f);
+
+        g.setOpacity (shapedVis);
         g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     }
 
@@ -261,7 +266,7 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
 
         g.drawImage (logoImage,
                      x, y, drawW, drawH,     // destination
-                     0, cropY,               // source x, y (start 20% down)
+                     0, cropY,               // source x, y
                      logoImage.getWidth(),
                      cropHeight);            // source height
     }
@@ -318,7 +323,7 @@ void FruityClipAudioProcessorEditor::resized()
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
-    // ❗ Always repaint so background crossfade actually follows audio
+    // Always repaint so background crossfade actually follows audio
     lastBurn = processor.getGuiBurn();
     repaint();
 }
