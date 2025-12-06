@@ -95,19 +95,22 @@ private:
     std::vector<KFilterState> kFilterStates;
     float lufsMeanSquare = 1.0e-6f;  // keep > 0 to avoid log(0)
 
-    //==========================================================
-    // OTT high-pass split state (0–150 Hz dry, >150 Hz OTT)
-    //==========================================================
-    struct OttHPState
-    {
-        float low = 0.0f; // running lowpass state for low band
-    };
+  //==========================================================
+// OTT high-pass split state (0–150 Hz dry, >150 Hz OTT)
+//==========================================================
+struct OttHPState
+{
+    float low = 0.0f;  // running lowpass state for low band
+    float env = 0.0f;  // high-band envelope for upward/downward dynamics
+};
 
-    void resetOttState (int numChannels);
+void resetOttState (int numChannels);
 
-    std::vector<OttHPState> ottStates;
-    float ottAlpha    = 0.0f;   // one-pole LP factor for 150 Hz split
-    float lastOttGain = 1.0f;   // smoothed unity gain-match factor
+std::vector<OttHPState> ottStates;
+float ottAlpha     = 0.0f;   // one-pole LP factor for 150 Hz split
+float ottEnvAlpha  = 0.0f;   // smoothing factor for high-band envelope
+float lastOttGain  = 1.0f;   // smoothed unity gain-match factor
+
 
     //==========================================================
     // Internal state
