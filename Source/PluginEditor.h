@@ -60,6 +60,7 @@ private:
 
     // Background & logo
     juce::Image bgImage;
+    juce::Image slamImage;   // NEW: "slammed" background
     juce::Image logoImage;
     const float bgScale = 0.35f; // scale for bg.png
 
