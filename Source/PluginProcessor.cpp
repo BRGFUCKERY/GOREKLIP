@@ -2,7 +2,6 @@
 #include "PluginEditor.h"
 
 #include <cmath>
-#include <vector>
 
 //==============================================================
 // Parameter layout
@@ -51,7 +50,6 @@ float FruityClipAudioProcessor::fruitySoftClipSample (float x, float threshold)
 
     // Normalised smooth curve between threshold and 1.0
     const float t = (ax - threshold) / (1.0f - threshold); // 0..1
-
     const float shaped = threshold + (1.0f - (1.0f - t) * (1.0f - t)) * (1.0f - threshold);
 
     return sign * shaped;
@@ -109,6 +107,10 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int /*sample
     // ~50 ms release for limiter
     const float releaseTimeSec = 0.050f;
     limiterReleaseCo = std::exp (-1.0f / (releaseTimeSec * (float) sampleRate));
+
+    // Reset K-weight filter + LUFS state
+    resetKFilterState (getTotalNumOutputChannels());
+    lufsMeanSquare = 1.0e-6f;
 }
 
 void FruityClipAudioProcessor::releaseResources() {}
@@ -118,6 +120,23 @@ bool FruityClipAudioProcessor::isBusesLayoutSupported (const BusesLayout& layout
     auto main = layouts.getMainOutputChannelSet();
     return main == juce::AudioChannelSet::stereo()
         || main == juce::AudioChannelSet::mono();
+}
+
+//==============================================================
+// K-weight filter reset
+//==============================================================
+void FruityClipAudioProcessor::resetKFilterState (int numChannels)
+{
+    kFilterStates.clear();
+    if (numChannels <= 0)
+        return;
+
+    kFilterStates.resize ((size_t) numChannels);
+    for (auto& st : kFilterStates)
+    {
+        st.z1a = st.z2a = 0.0f;
+        st.z1b = st.z2b = 0.0f;
+    }
 }
 
 //==============================================================
@@ -158,6 +177,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const int numChannels = buffer.getNumChannels();
     const int numSamples  = buffer.getNumSamples();
 
+    if ((int) kFilterStates.size() < numChannels)
+        resetKFilterState (numChannels);
+
     auto* gainParam = parameters.getRawParameterValue ("inputGain");
     auto* satParam  = parameters.getRawParameterValue ("satAmount");
     auto* silkParam = parameters.getRawParameterValue ("silkAmount");
@@ -172,10 +194,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float silkAmount = juce::jlimit (0.0f, 1.0f, silkAmountRaw);
 
     //==========================================================
-    // SAT global "auto gain" – keep 0 dB baseline here.
-    // We'll do a tiny trim only when SAT is actually engaged.
+    // SAT global "auto gain"
     //==========================================================
-    const float satCompDb = 0.0f;
+    const float satCompDb = 0.0f; // we’re doing the tiny trim inside SAT block
 
     // User gain (your left finger) – used directly in LIMIT mode
     const float inputGainLimiter = juce::Decibels::decibelsToGain (inputGainDb);
@@ -188,16 +209,40 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     float blockMax = 0.0f; // For GUI burn (post processing)
 
+    //==========================================================
+    // K-weighted LUFS accumulation
+    // Using ITU-R BS.1770-style K-weighting:
+    //   Stage 1 (shelving) + Stage 2 (high-pass / RLB),
+    // with coefficients given for 48 kHz (good approximation).
+    //==========================================================
+    // Stage 1 (head / shelving) coefficients (48 kHz reference)
+    // From ITU-R BS.1770 tables:contentReference[oaicite:0]{index=0}
+    constexpr float k_b0a =  1.53512485958697f;
+    constexpr float k_b1a = -2.69169618940638f;
+    constexpr float k_b2a =  1.19839281085285f;
+    constexpr float k_a1a = -1.69065929318241f;
+    constexpr float k_a2a =  0.73248077421585f;
+
+    // Stage 2 (RLB / high-pass) coefficients (48 kHz reference):contentReference[oaicite:1]{index=1}
+    constexpr float k_b0b =  1.0f;
+    constexpr float k_b1b = -2.0f;
+    constexpr float k_b2b =  1.0f;
+    constexpr float k_a1b = -1.99004745483398f;
+    constexpr float k_a2b =  0.99007225036621f;
+
+    double sumSquaresK = 0.0;
+    const int totalSamplesK = juce::jmax (1, numSamples * juce::jmax (1, numChannels));
+
     if (useLimiter)
     {
         //======================================================
         // LIMIT MODE:
         //   GAIN -> SILK -> LIMITER -> POSTGAIN -> HARD CLIP
-        //   SAT is ignored, and we do NOT apply any satCompDb.
         //======================================================
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* samples = buffer.getWritePointer (ch);
+            auto&  kf      = kFilterStates[(size_t) ch];
 
             for (int i = 0; i < numSamples; ++i)
             {
@@ -223,6 +268,23 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (a > blockMax)
                     blockMax = a;
 
+                // --- K-weighted meter path (does NOT affect audio) ---
+                float xk = y;
+
+                // Stage 1 (shelving) – Direct Form II transposed
+                float v1 = xk - k_a1a * kf.z1a - k_a2a * kf.z2a;
+                float y1 = k_b0a * v1 + k_b1a * kf.z1a + k_b2a * kf.z2a;
+                kf.z2a = kf.z1a;
+                kf.z1a = v1;
+
+                // Stage 2 (high-pass / RLB)
+                float v2 = y1 - k_a1b * kf.z1b - k_a2b * kf.z2b;
+                float y2 = k_b0b * v2 + k_b1b * kf.z1b + k_b2b * kf.z2b;
+                kf.z2b = kf.z1b;
+                kf.z1b = v2;
+
+                sumSquaresK += (double) (y2 * y2);
+
                 samples[i] = y;
             }
         }
@@ -230,12 +292,13 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     else
     {
         //======================================================
-        // NEW CLIP / SAT MODE:
+        // CLIP / SAT MODE:
         // (Gain) -> SILK -> SAT (with tiny auto-trim) -> POSTGAIN -> HARD CLIP
         //======================================================
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* samples = buffer.getWritePointer (ch);
+            auto&  kf      = kFilterStates[(size_t) ch];
 
             for (int i = 0; i < numSamples; ++i)
             {
@@ -252,30 +315,30 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 }
 
                 // ------------------------------------------------
-                // 2) SATURATION – rounded, bass-thick TikTok curve
+                // 2) SATURATION – rounded, bass-thick curve
                 //    Only active when satAmount > 0.0
                 // ------------------------------------------------
                 if (satAmount > 0.0f)
                 {
-                    // Tiny SAT auto-trim (max about -1 dB)
-                    const float satTrimDb = -1.0f * satAmount;   // 0 .. -1 dB
+                    // Tiny SAT auto-trim (max about -2.5 dB)
+                    const float satTrimDb = -2.5f * satAmount;   // 0 .. -2.5 dB
                     const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
                     y *= satTrim;
 
                     // Threshold moves as SAT increases
-                    // sat = 0   -> thr = 0.55  (barely touching)
-                    // sat = 1   -> thr = 0.15  (continuous rounding)
+                    // sat = 0   -> thr = 0.55
+                    // sat = 1   -> thr = 0.15
                     const float thr = juce::jmap (satAmount, 0.55f, 0.15f);
 
                     // Rounded soft clip
                     float y0 = fruitySoftClipSample (y, thr);
 
-                    // Bass lift – makes lows feel bigger without mud
-                    const float bassLift = 1.0f + 0.20f * satAmount;
+                    // Bass lift – still there but a bit tamer
+                    const float bassLift = 1.0f + 0.15f * satAmount;
                     y0 *= bassLift;
 
-                    // Stronger blend so SAT is clearly audible
-                    y = y + (satAmount * 1.35f) * (y0 - y);
+                    // Blend: strong enough to hear, not insane loudness jump
+                    y = y + (satAmount * 1.25f) * (y0 - y);
                 }
 
                 // ------------------------------------------------
@@ -293,6 +356,23 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (absY > blockMax)
                     blockMax = absY;
 
+                // --- K-weighted meter path (does NOT affect audio) ---
+                float xk = y;
+
+                // Stage 1 (shelving)
+                float v1 = xk - k_a1a * kf.z1a - k_a2a * kf.z2a;
+                float y1 = k_b0a * v1 + k_b1a * kf.z1a + k_b2a * kf.z2a;
+                kf.z2a = kf.z1a;
+                kf.z1a = v1;
+
+                // Stage 2 (high-pass / RLB)
+                float v2 = y1 - k_a1b * kf.z1b - k_a2b * kf.z2b;
+                float y2 = k_b0b * v2 + k_b1b * kf.z1b + k_b2b * kf.z2b;
+                kf.z2b = kf.z1b;
+                kf.z1b = v2;
+
+                sumSquaresK += (double) (y2 * y2);
+
                 samples[i] = y;
             }
         }
@@ -300,21 +380,66 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     //==========================================================
     // Update GUI burn meter (0..1)
-    // Much LESS sensitive: only close to 0 dBFS goes full slam
-    // and decay is fairly quick so it doesn't stay burnt forever.
     //==========================================================
     float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
     normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
+    normPeak = std::pow (normPeak, 2.5f);          // make mid-range calmer
 
-    // Extra curve so mid-range feels relaxed, only real brickwall goes full 1.0
-    normPeak = std::pow (normPeak, 2.5f);
+    const float previousBurn = guiBurn.load();
+    const float smoothedBurn = 0.25f * previousBurn + 0.75f * normPeak;
+    guiBurn.store (smoothedBurn);
 
-    const float targetBurn = normPeak;
+    //==========================================================
+    // Real-ish K-weighted “momentary LUFS” (slower, ~400 ms)
+    //==========================================================
+    if (sampleRate <= 0.0)
+        sampleRate = 44100.0;
 
-    const float previous = guiBurn.load();
-    const float smoothed = 0.25f * previous + 0.75f * targetBurn;
+    const float blockDurationSec = (float) numSamples / (float) sampleRate;
+    const float targetWindowSec  = 0.400f; // ITU momentary window ~400 ms:contentReference[oaicite:2]{index=2}
 
-    guiBurn.store (smoothed);
+    float alpha = 0.0f;
+    if (targetWindowSec > 0.0f)
+        alpha = blockDurationSec / targetWindowSec;
+
+    alpha = juce::jlimit (0.0f, 1.0f, alpha);
+
+    if (totalSamplesK > 0 && sumSquaresK > 0.0)
+    {
+        const float blockMs = (float) (sumSquaresK / (double) totalSamplesK);
+
+        if (std::isfinite (blockMs) && blockMs > 0.0f)
+        {
+            // Single-pole smoothing towards ~400 ms integration
+            lufsMeanSquare = (1.0f - alpha) * lufsMeanSquare + alpha * blockMs;
+        }
+    }
+    else
+    {
+        // When nothing is happening, decay towards silence
+        lufsMeanSquare *= (1.0f - alpha);
+        if (lufsMeanSquare < 1.0e-10f)
+            lufsMeanSquare = 1.0e-10f;
+    }
+
+    float lufs = -60.0f;
+    if (lufsMeanSquare > 0.0f)
+    {
+        // ITU-style: L = -0.691 + 10 * log10(z):contentReference[oaicite:3]{index=3}
+        lufs = -0.691f + 10.0f * std::log10 (lufsMeanSquare);
+        if (! std::isfinite (lufs))
+            lufs = -60.0f;
+    }
+
+    // Clamp to a sensible visual range
+    lufs = juce::jlimit (-60.0f, 3.0f, lufs);
+
+    // Smooth a bit more so it doesn’t shimmer too fast
+    const float prevLufs = guiLufs.load();
+    const float lufsAlpha = 0.5f; // 0.5 = still pretty snappy but less jittery
+    const float smoothedLufs = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
+
+    guiLufs.store (smoothedLufs);
 }
 
 //==============================================================
@@ -334,39 +459,6 @@ bool FruityClipAudioProcessor::producesMidi() const               { return false
 bool FruityClipAudioProcessor::isMidiEffect() const               { return false; }
 double FruityClipAudioProcessor::getTailLengthSeconds() const     { return 0.0; }
 
-
 //==============================================================
 // Programs
-//==============================================================
-int FruityClipAudioProcessor::getNumPrograms()                    { return 1; }
-int FruityClipAudioProcessor::getCurrentProgram()                 { return 0; }
-void FruityClipAudioProcessor::setCurrentProgram (int)            {}
-const juce::String FruityClipAudioProcessor::getProgramName (int) { return {}; }
-void FruityClipAudioProcessor::changeProgramName (int, const juce::String&) {}
-
-//==============================================================
-// State
-//==============================================================
-void FruityClipAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
-{
-    auto state = parameters.copyState();
-    if (auto xml = state.createXml())
-        copyXmlToBinary (*xml, destData);
-}
-
-void FruityClipAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
-{
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
-    {
-        if (xml->hasTagName (parameters.state.getType()))
-            parameters.replaceState (juce::ValueTree::fromXml (*xml));
-    }
-}
-
-//==============================================================
-// Entry point
-//==============================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FruityClipAudioProcessor();
-}
+//==============
