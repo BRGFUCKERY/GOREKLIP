@@ -585,9 +585,14 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
     }
 
-    //==========================================================
-    // Update GUI burn meter (0..1) from blockMax
-    //==========================================================
-    float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
-    normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
-    normPeak = std::pow (normPeak,
+
+//==========================================================
+// Update GUI burn meter (0..1) from blockMax
+//==========================================================
+float normPeak = (blockMax - 0.90f) / 0.08f;   // 0.90 -> 0, 0.98 -> 1
+normPeak = juce::jlimit (0.0f, 1.0f, normPeak);
+normPeak = std::pow (normPeak, 2.5f);          // make mid-range calmer
+
+const float previousBurn = guiBurn.load();
+const float smoothedBurn = 0.25f * previousBurn + 0.75f * normPeak;
+guiBurn.store (smoothedBurn);
