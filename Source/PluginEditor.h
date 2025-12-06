@@ -68,7 +68,7 @@ private:
     // LookAndFeel + knobs
     MiddleFingerLookAndFeel fingerLnf;
 
-    // 5 knobs now: GAIN, SILK, OTT, SAT, MODE
+    // 5 knobs: GAIN, SILK, OTT, SAT, MODE
     juce::Slider gainSlider;
     juce::Slider silkSlider;
     juce::Slider ottSlider;
@@ -84,11 +84,15 @@ private:
     // LUFS text above CLIPPER/LIMITER finger
     juce::Label  lufsLabel;
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> silkAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> ottAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> satAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> modeAttachment;
+    // Oversample mode (x1/x2/x4/x8) – tiny top-right dropdown
+    juce::ComboBox oversampleBox;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   silkAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
 
     // GUI burn value (cached from processor)
     float lastBurn = 0.0f;
