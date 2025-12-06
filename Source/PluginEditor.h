@@ -16,16 +16,6 @@ public:
         knobImage = img;
     }
 
-    // Let the LNF know which sliders are which
-    void setControlledSliders (juce::Slider* gain,
-                               juce::Slider* mode,
-                               juce::Slider* sat)
-    {
-        gainSlider = gain;
-        modeSlider = mode;
-        satSlider  = sat;
-    }
-
     void drawRotarySlider (juce::Graphics& g,
                            int x, int y, int width, int height,
                            float sliderPosProportional,
@@ -35,21 +25,16 @@ public:
 
 private:
     juce::Image knobImage;
-
-    // Pointers to specific sliders (not owned)
-    juce::Slider* gainSlider = nullptr; // left finger (GAIN)
-    juce::Slider* modeSlider = nullptr; // right finger (CLIPPER/LIMITER)
-    juce::Slider* satSlider  = nullptr; // SAT knob
 };
 
 //==============================================================
-//  Main Editor
+//  Main editor
 //==============================================================
 class FruityClipAudioProcessorEditor  : public juce::AudioProcessorEditor,
                                         private juce::Timer
 {
 public:
-    FruityClipAudioProcessorEditor (FruityClipAudioProcessor&);
+    explicit FruityClipAudioProcessorEditor (FruityClipAudioProcessor&);
     ~FruityClipAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
@@ -58,41 +43,56 @@ public:
 private:
     FruityClipAudioProcessor& processor;
 
-    // Background & logo
-    juce::Image bgImage;
-    juce::Image slamImage;       // "slammed" background
+    // Background and slam images
+    juce::Image backgroundImage;
+    juce::Image slamImage;
+
+    // Logo: original + white version
     juce::Image logoImage;
-    juce::Image logoWhiteImage;  // precomputed white version of logo (same alpha)
-    const float bgScale = 0.35f; // scale for bg.png
+    juce::Image logoWhiteImage;
 
-    // LookAndFeel + knobs
-    MiddleFingerLookAndFeel fingerLnf;
+    // Middle-finger knobs
+    MiddleFingerLookAndFeel middleFingerLnf;
 
-    // 5 knobs: GAIN, SILK, OTT, SAT, MODE
     juce::Slider gainSlider;
     juce::Slider silkSlider;
     juce::Slider ottSlider;
     juce::Slider satSlider;
     juce::Slider modeSlider;
 
-    juce::Label  gainLabel;
-    juce::Label  silkLabel;
-    juce::Label  ottLabel;
-    juce::Label  satLabel;
-    juce::Label  modeLabel;
+    juce::Label gainLabel;
+    juce::Label silkLabel;
+    juce::Label ottLabel;
+    juce::Label satLabel;
+    juce::Label modeLabel;
 
-    // LUFS text above CLIPPER/LIMITER finger
-    juce::Label  lufsLabel;
+    // LUFS label
+    juce::Label lufsLabel;
 
-    // Oversample mode (x1/x2/x4/x8) – tiny top-right dropdown
+    // Oversample dropdown
     juce::ComboBox oversampleBox;
 
+    // Attachments
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   silkAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
+
+    //==========================================================
+    // LOOK / VISUAL MODES
+    //==========================================================
+    enum class LookMode
+    {
+        LufsMeter = 0,   // background burn from LUFS
+        FuckedMeter,     // background burn from peak "slam" (original)
+        Static,          // static clean background
+        StaticCooked     // static fully burnt background
+    };
+
+    LookMode        lookMode      = LookMode::LufsMeter; // default
+    juce::TextButton lookMenuButton;                     // top-left menu button
 
     // GUI burn value (cached from processor)
     float lastBurn = 0.0f;
@@ -102,3 +102,4 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessorEditor)
 };
+
