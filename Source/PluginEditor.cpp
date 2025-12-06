@@ -88,13 +88,11 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         BinaryData::bg_png,
         BinaryData::bg_pngSize);
 
-    // Load SLAM background by *name* (slam.jpg).
-    {
-        int slamSize = 0;
-        if (const void* slamData = BinaryData::getNamedResource ("slam.jpg", slamSize))
-            slamImage = juce::ImageCache::getFromMemory (slamData, slamSize);
-        // If slamData == nullptr, slamImage stays invalid and we just won't crossfade.
-    }
+    // ✅ Load SLAM background directly from BinaryData
+    // (JUCE generates slam_jpg / slam_jpgSize from slam.jpg)
+    slamImage = juce::ImageCache::getFromMemory (
+        BinaryData::slam_jpg,
+        BinaryData::slam_jpgSize);
 
     // Load GOREKLIPER logo
     logoImage = juce::ImageCache::getFromMemory (
@@ -154,6 +152,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         lbl.setJustificationType (juce::Justification::centred);
         lbl.setColour (juce::Label::textColourId, juce::Colours::white);
 
+        // Use FontOptions correctly: style is a String ("Bold"), not Font::bold
         juce::FontOptions opts (16.0f);
         opts = opts.withStyle ("Bold");
         lbl.setFont (juce::Font (opts));
@@ -228,7 +227,7 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Map burn into 0..1 and shape it so the slam comes in more towards the top
     const float burnRaw    = juce::jlimit (0.0f, 1.0f, lastBurn);
-    const float burnShaped = std::pow (burnRaw, 0.35f); // more aggressive visual slam
+    const float burnShaped = std::pow (burnRaw, 0.45f); // more aggressive than 0.6f
 
     // Base background
     if (bgImage.isValid())
@@ -319,7 +318,7 @@ void FruityClipAudioProcessorEditor::resized()
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
-    // NUKED: always repaint so background crossfade follows audio in real-time
+    // ❗ Always repaint so background crossfade actually follows audio
     lastBurn = processor.getGuiBurn();
     repaint();
 }
