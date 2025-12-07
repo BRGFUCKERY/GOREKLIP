@@ -497,7 +497,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         const float low = sat.low;
 
                         // As SAT goes up, we lean more into the lowpassed version
-                        const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
+                        const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.55f);
                         const float tilted     = yPre + tiltAmount * (low - yPre);
 
                         // Smooth drive growth – no "nothing, nothing, BOOM"
@@ -506,7 +506,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         float driven = std::tanh (tilted * drive);
 
                         // Simple drive compensation so it doesn't jump in level insanely
-                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f);
+                        const float driveComp = 1.0f + 0.3f * (drive - 1.0f);
                         driven /= driveComp;
 
                         // Dry/wet mix with gentle curve so low SAT already does something
@@ -600,7 +600,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         const float low = sat.low;
 
                         // As SAT goes up, we lean more into the lowpassed version
-                        const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
+                        const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.55f);
                         const float tilted     = yPre + tiltAmount * (low - yPre);
 
                         // Smooth drive growth – no "nothing, nothing, BOOM"
@@ -609,7 +609,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         float driven = std::tanh (tilted * drive);
 
                         // Simple drive compensation so it doesn't jump in level insanely
-                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f);
+                        const float driveComp = 1.0f + 0.3f * (drive - 1.0f);
                         driven /= driveComp;
 
                         // Dry/wet mix with gentle curve so low SAT already does something
