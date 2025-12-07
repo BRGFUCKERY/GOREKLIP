@@ -18,12 +18,12 @@ FruityClipAudioProcessor::createParameterLayout()
 
     // OTT – 0..1 (150 Hz+ only, parallel)
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "ottAmount", "OTT Amount",
+        "ottAmount", "LOVE",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
     // SAT – 0..1
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "satAmount", "Saturation Amount",
+        "satAmount", "DEATH",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
     // MODE – 0 = clipper, 1 = limiter
@@ -374,7 +374,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // Upward region
                     float t = 1.0f - lev;                        // 0..1
                     t = juce::jlimit (0.0f, 1.0f, t);
-                    const float maxUp = 2.0f;                    // up to +6 dB
+                    const float maxUp = 2.3f;                    // up to +6 dB
                     dynGain += t * (maxUp - 1.0f) * ottAmount;
                 }
                 else
@@ -420,7 +420,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // shape so most of the trim happens near the top of the range
             float shaped = std::pow (t, 1.5f); // 0..1, slower at start, faster at end
 
-            const float maxTrimDb = -1.0f;      // was -0.8f
+            const float maxTrimDb = -1.5f;      // was -0.8f
             staticTrimDb = maxTrimDb * shaped;
         }
 
@@ -512,6 +512,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         // Dry/wet mix with gentle curve so low SAT already does something
                         const float mix = std::pow (satAmount, 1.1f);
                         y = yPre + mix * (driven - yPre);
+
+                        float makeupDb = 0.0f;
+                        if (satAmount > 0.5f)
+                        {
+                            float t = (satAmount - 0.5f) / 0.5f; // 0..1 from 50% to 100%
+                            t = juce::jlimit (0.0f, 1.0f, t);
+                            makeupDb = 0.8f * t;
+                        }
+                        const float makeup = juce::Decibels::decibelsToGain (makeupDb);
+                        y *= makeup;
                     }
 
                     // Post-gain (Fruity-null alignment)
@@ -615,6 +625,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         // Dry/wet mix with gentle curve so low SAT already does something
                         const float mix = std::pow (satAmount, 1.1f);
                         y = yPre + mix * (driven - yPre);
+
+                        float makeupDb = 0.0f;
+                        if (satAmount > 0.5f)
+                        {
+                            float t = (satAmount - 0.5f) / 0.5f; // 0..1 from 50% to 100%
+                            t = juce::jlimit (0.0f, 1.0f, t);
+                            makeupDb = 0.8f * t;
+                        }
+                        const float makeup = juce::Decibels::decibelsToGain (makeupDb);
+                        y *= makeup;
                     }
 
                     // Post-gain (Fruity-null alignment)
