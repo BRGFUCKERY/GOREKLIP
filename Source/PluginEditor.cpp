@@ -203,6 +203,21 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     addAndMakeVisible (lufsLabel);
 
     // ----------------------
+    // LOOK DROPDOWN (top-left)
+    // ----------------------
+    lookBox.addItem ("LOOK : COOKED", 1);
+    lookBox.addItem ("LOOK : LUFS",   2);
+    lookBox.addItem ("LOOK : STATIC", 3);
+    lookBox.setTextWhenNothingSelected ("LOOK : COOKED");
+    lookBox.setJustificationType (juce::Justification::centred);
+    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
+    lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
+
+    addAndMakeVisible (lookBox);
+
+    // ----------------------
     // OVERSAMPLE DROPDOWN (top-right, tiny, white "x1" etc.)
     // ----------------------
     oversampleBox.addItem ("x1",  1);
@@ -211,6 +226,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.addItem ("x8",  4);
     oversampleBox.addItem ("x16", 5);
     oversampleBox.setSelectedId (1, juce::dontSendNotification); // default x1
+    oversampleBox.setTextWhenNothingSelected ("x1");
 
     oversampleBox.setJustificationType (juce::Justification::centred);
     oversampleBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
@@ -239,6 +255,15 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "oversampleMode", oversampleBox);
+
+    lookAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+                        apvts, "lookMode", lookBox);
+
+    lookBox.onChange = [this]
+    {
+        const int selectedIndex = lookBox.getSelectedItemIndex();
+        processor.setStoredLookMode (selectedIndex);
+    };
 
     // Initial state from param
     if (auto* modeParam = apvts.getRawParameterValue ("useLimiter"))
@@ -351,8 +376,15 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
+    const int lookW = juce::jmax (80, w / 6);
+    const int lookH = juce::jmax (16, h / 20);
+    const int lookX = 6;
+    const int lookY = 6;
+
+    lookBox.setBounds (lookX, lookY, lookW, lookH);
+
     // OVERSAMPLE BOX – tiny top-right
-    const int osW = juce::jmax (40, w / 10);
+    const int osW = juce::jmax (60, w / 10);
     const int osH = juce::jmax (16, h / 20);
     const int osX = w - osW - 6;
     const int osY = 6;
@@ -412,6 +444,7 @@ void FruityClipAudioProcessorEditor::resized()
 void FruityClipAudioProcessorEditor::timerCallback()
 {
     const bool bypassNow = processor.getGainBypass();
+    const int lookMode = processor.getLookMode(); // 0=COOKED, 1=LUFS, 2=STATIC
 
     if (bypassNow)
     {
@@ -422,7 +455,21 @@ void FruityClipAudioProcessorEditor::timerCallback()
     else
     {
         // Normal reactive background and LUFS display
-        lastBurn = processor.getGuiBurn();
+        switch (lookMode)
+        {
+            case 1: // LUFS
+                lastBurn = processor.getGuiBurnLufs();
+                break;
+
+            case 2: // STATIC
+                lastBurn = 0.0f; // no burn, static background
+                break;
+
+            case 0: // COOKED
+            default:
+                lastBurn = processor.getGuiBurn();
+                break;
+        }
 
         const float lufs      = processor.getGuiLufs();
         const bool  hasSignal = processor.getGuiHasSignal();

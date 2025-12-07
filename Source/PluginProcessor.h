@@ -58,11 +58,24 @@ public:
     // 0..1 burn value for the background/white logo
     float getGuiBurn() const { return guiBurn.load(); }
 
+    // LUFS-driven burn value
+    float getGuiBurnLufs() const { return guiBurnLufs.load(); }
+
     // K-weighted momentary loudness (LUFS-style)
     float getGuiLufs() const { return guiLufs.load(); }
 
     // True if we currently have enough signal to show LUFS
     bool getGuiHasSignal() const { return guiSignalEnv.load() > 0.2f; }
+
+    int getLookMode() const
+    {
+        if (auto* p = parameters.getRawParameterValue ("lookMode"))
+            return (int) p->load();
+        return 0;
+    }
+
+    int getStoredLookMode() const;
+    void setStoredLookMode (int modeIndex);
 
     // Bypass all processing after input gain (for A/B)
     void setGainBypass (bool shouldBypass)        { gainBypass.store (shouldBypass); }
@@ -142,6 +155,9 @@ private:
     // GUI burn value (0..1)
     std::atomic<float> guiBurn { 0.0f };
 
+    // GUI LUFS-based burn value (0..1)
+    std::atomic<float> guiBurnLufs { 0.0f };
+
     // GUI LUFS value
     std::atomic<float> guiLufs { -60.0f };
 
@@ -153,6 +169,9 @@ private:
 
     // Parameter state (includes oversampleMode)
     juce::AudioProcessorValueTreeState parameters;
+
+    // Global user settings (e.g. preferred look mode)
+    std::unique_ptr<juce::PropertiesFile> userSettings;
 
     //==========================================================
     // Oversampling
