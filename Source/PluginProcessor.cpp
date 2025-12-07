@@ -14,100 +14,32 @@ FruityClipAudioProcessor::createParameterLayout()
     // Left finger – input gain, in dB
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
         "inputGain", "Input Gain",
-        juce::NormalisableRange<float> (-24.0f, 24.0f, 0.01f, 1.0f),
-        0.0f));
+        juce::NormalisableRange<float> (-12.0f, 12.0f, 0.01f), 0.0f));
 
-    // Middle finger – OTT amount (0..1)
+    // OTT – 0..1 (150 Hz+ only, parallel)
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "ottAmount", "OTT",
-        juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f, 1.0f),
-        0.0f));
+        "ottAmount", "OTT Amount",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
-    // Right finger – saturation amount (0..1)
+    // SAT – 0..1
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "satAmount", "Saturation",
-        juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f, 1.0f),
-        0.0f));
+        "satAmount", "Saturation Amount",
+        juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
-    // Mode toggle – clipper vs limiter
+    // MODE – 0 = clipper, 1 = limiter
     params.push_back (std::make_unique<juce::AudioParameterBool>(
-        "useLimiter", "Limiter Mode",
-        false));
+        "useLimiter", "Use Limiter", false));
 
-    // Oversampling mode
+    // OVERSAMPLE MODE – 0:x1, 1:x2, 2:x4, 3:x8, 4:x16
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
-        "oversampleMode", "Oversampling",
-        juce::StringArray { "x1", "x2", "x4", "x8", "x16" },
-        0));
+        "oversampleMode", "Oversample Mode",
+        juce::StringArray { "x1", "x2", "x4", "x8", "x16" }, 0));
 
     return { params.begin(), params.end() };
 }
 
 //==============================================================
-// Construction / destruction
-//==============================================================
-FruityClipAudioProcessor::FruityClipAudioProcessor()
-    : AudioProcessor (BusesProperties().withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      parameters (*this, nullptr, "PARAMETERS", createParameterLayout())
-{
-    // Fruity soft-clip threshold at 0.5
-    thresholdLinear = 0.5f;
-
-    // OTT high-pass split around ~150 Hz, 1-pole smoothing
-    const double cutoffHz = 150.0;
-    const double t        = std::exp (-2.0 * juce::MathConstants<double>::pi * cutoffHz / 44100.0);
-    ottAlpha              = (float) t;
-
-    // Prepare K-meter filter state vectors empty
-    resetKFilterState (2);
-    resetOttState (2);
-}
-
-FruityClipAudioProcessor::~FruityClipAudioProcessor() = default;
-
-//==============================================================
-// Basic AudioProcessor overrides
-//==============================================================
-void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesPerBlock)
-{
-    sampleRate   = (newSampleRate > 0.0 ? newSampleRate : 44100.0);
-    limiterGain  = 1.0f;
-    maxBlockSize = juce::jmax (1, samplesPerBlock);
-
-    // ~50 ms release for limiter
-    const double releaseMs = 50.0;
-    limiterReleaseCo = (float) std::exp (-1.0 / ((releaseMs / 1000.0) * sampleRate));
-
-    // Reset LUFS averaging
-    lufsMeanSquare = 1.0e-6f;
-
-    // Recreate oversampling if needed
-    auto* osModeParam = parameters.getRawParameterValue ("oversampleMode");
-    const int osIndex = osModeParam ? (int) osModeParam->load() : 0;
-
-    updateOversampling (osIndex, getTotalNumOutputChannels());
-}
-
-void FruityClipAudioProcessor::releaseResources()
-{
-}
-
-// We just declare stereo, but let the host handle more if needed.
-bool FruityClipAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
-{
-    // Must have same layout on input and output
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
-        return false;
-
-    // Allow mono or stereo only
-    auto main = layouts.getMainOutputChannelSet();
-    return (main == juce::AudioChannelSet::mono()
-         || main == juce::AudioChannelSet::stereo());
-}
-
-//==============================================================
-// Fruity-ish soft clip – used for main clip and sat curve
+// Fruity-ish soft clip curve
 // threshold: 0..1, where lower = earlier / softer onset
 //==============================================================
 float FruityClipAudioProcessor::fruitySoftClipSample (float x, float threshold)
@@ -123,44 +55,46 @@ float FruityClipAudioProcessor::fruitySoftClipSample (float x, float threshold)
 
     // Normalised smooth curve between threshold and 1.0
     const float t = (ax - threshold) / (1.0f - threshold); // 0..1
-    const float y = threshold + (1.0f - threshold) * std::tanh (t * 2.0f);
+    const float shaped = threshold + (1.0f - (1.0f - t) * (1.0f - t)) * (1.0f - threshold);
 
-    return sign * y;
+    return sign * shaped;
 }
 
 //==============================================================
-// Limiter – 0 lookahead, simple gain computer with release
+// Constructor / Destructor
 //==============================================================
-float FruityClipAudioProcessor::processLimiterSample (float x)
+FruityClipAudioProcessor::FruityClipAudioProcessor()
+    : juce::AudioProcessor (BusesProperties()
+                                .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                                .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+      parameters (*this, nullptr, "PARAMS", createParameterLayout())
 {
-    const float ax = std::abs (x);
-
-    if (ax > 1.0f)
-    {
-        float needed = 1.0f / (ax + 1.0e-20f);
-        if (needed < limiterGain)
-            limiterGain = needed;
-    }
-    else
-    {
-        limiterGain = limiterGain + (1.0f - limiterGain) * (1.0f - limiterReleaseCo);
-    }
-
-    return x * limiterGain;
+    // Ultra fine-tuned Fruity-null gain
+    postGain        = 0.99999385f;
+    // Soft clip threshold (~ -6 dB at satAmount = 1)
+    thresholdLinear = juce::Decibels::decibelsToGain (-6.0f);
 }
+
+FruityClipAudioProcessor::~FruityClipAudioProcessor() = default;
 
 //==============================================================
 // Oversampling config helper
 //==============================================================
 void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 {
-    osIndex = juce::jlimit (0, 4, osIndex);
-    if (osIndex == currentOversampleIndex && oversampler)
-        return;
+    // osIndex: 0=x1, 1=x2, 2=x4, 3:x8, 4:x16
+    currentOversampleIndex = juce::jlimit (0, 4, osIndex);
 
-    currentOversampleIndex = osIndex;
-
-    const int numStages = osIndex; // 0->x1, 1->x2, 2->x4, 3->x8, 4->x16
+    int numStages = 0; // factor = 2^stages
+    switch (currentOversampleIndex)
+    {
+        case 0: numStages = 0; break; // x1
+        case 1: numStages = 1; break; // x2
+        case 2: numStages = 2; break; // x4
+        case 3: numStages = 3; break; // x8
+        case 4: numStages = 4; break; // x16
+        default: numStages = 0; break;
+    }
 
     if (numStages <= 0 || numChannels <= 0)
     {
@@ -181,12 +115,88 @@ void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 }
 
 //==============================================================
-// Reset helpers
+// Basic AudioProcessor overrides
+//==============================================================
+void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesPerBlock)
+{
+    sampleRate   = (newSampleRate > 0.0 ? newSampleRate : 44100.0);
+    limiterGain  = 1.0f;
+    maxBlockSize = juce::jmax (1, samplesPerBlock);
+
+    // ~50 ms release for limiter
+    const float releaseTimeSec = 0.050f;
+    limiterReleaseCo = std::exp (-1.0f / (releaseTimeSec * (float) sampleRate));
+
+    // Reset K-weight filter + LUFS state
+    resetKFilterState (getTotalNumOutputChannels());
+    lufsMeanSquare = 1.0e-6f;
+
+    // Reset OTT split state
+    resetOttState (getTotalNumOutputChannels());
+
+    // Reset SAT bass-tilt state
+    resetSatState (getTotalNumOutputChannels());
+
+    const float sr = (float) sampleRate;
+
+    // One-pole lowpass factor for 150 Hz split (0–150 = low band)
+    {
+        const float fc = 150.0f;
+        const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / sr);
+        ottAlpha = juce::jlimit (0.0f, 1.0f, alpha);
+    }
+
+    // Envelope smoothing for high-band dynamics – slower now (~30 ms)
+    // This gives more "tails" and less choking after transients.
+    {
+        const float envTauSec = 0.030f; // was 0.010f
+        const float envA = std::exp (-1.0f / (envTauSec * sr));
+        ottEnvAlpha = juce::jlimit (0.0f, 1.0f, envA);
+    }
+
+    // One-pole lowpass for SAT bass tilt (around 300 Hz at base rate)
+    {
+        const float fcSat = 300.0f;
+        const float alphaSat = std::exp (-2.0f * juce::MathConstants<float>::pi * fcSat / sr);
+        satLowAlpha = juce::jlimit (0.0f, 1.0f, alphaSat);
+    }
+
+    lastOttGain = 1.0f;
+
+    // Initial oversampling setup from parameter
+    if (auto* osModeParam = parameters.getRawParameterValue ("oversampleMode"))
+    {
+        const int osIndex = (int) osModeParam->load();
+        updateOversampling (osIndex, getTotalNumOutputChannels());
+    }
+    else
+    {
+        updateOversampling (0, getTotalNumOutputChannels());
+    }
+
+    // Reset GUI signal envelope for LUFS gating
+    guiSignalEnv.store (0.0f);
+}
+
+void FruityClipAudioProcessor::releaseResources() {}
+
+bool FruityClipAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+    auto main = layouts.getMainOutputChannelSet();
+    return main == juce::AudioChannelSet::stereo()
+        || main == juce::AudioChannelSet::mono();
+}
+
+//==============================================================
+// K-weight filter reset
 //==============================================================
 void FruityClipAudioProcessor::resetKFilterState (int numChannels)
 {
     kFilterStates.clear();
-    kFilterStates.resize ((size_t) juce::jmax (1, numChannels));
+    if (numChannels <= 0)
+        return;
+
+    kFilterStates.resize ((size_t) numChannels);
     for (auto& st : kFilterStates)
     {
         st.z1a = st.z2a = 0.0f;
@@ -194,12 +204,62 @@ void FruityClipAudioProcessor::resetKFilterState (int numChannels)
     }
 }
 
+//==============================================================
+// OTT HP split reset
+//==============================================================
 void FruityClipAudioProcessor::resetOttState (int numChannels)
 {
     ottStates.clear();
-    ottStates.resize ((size_t) juce::jmax (1, numChannels));
+    if (numChannels <= 0)
+        return;
+
+    ottStates.resize ((size_t) numChannels);
     for (auto& st : ottStates)
+    {
         st.low = 0.0f;
+        st.env = 0.0f;
+    }
+}
+
+//==============================================================
+// SAT bass-tilt reset
+//==============================================================
+void FruityClipAudioProcessor::resetSatState (int numChannels)
+{
+    satStates.clear();
+    if (numChannels <= 0)
+        return;
+
+    satStates.resize ((size_t) numChannels);
+    for (auto& st : satStates)
+        st.low = 0.0f;
+}
+
+//==============================================================
+// Limiter sample processor (0 lookahead, zero latency)
+//==============================================================
+float FruityClipAudioProcessor::processLimiterSample (float x)
+{
+    const float ax    = std::abs (x);
+    const float limit = 1.0f;
+
+    float desiredGain = 1.0f;
+    if (ax > limit && ax > 0.0f)
+        desiredGain = limit / ax;
+
+    // Instant attack, exponential release
+    if (desiredGain < limiterGain)
+    {
+        // Attack: clamp down immediately
+        limiterGain = desiredGain;
+    }
+    else
+    {
+        // Release: move back towards 1.0
+        limiterGain = limiterGain + (1.0f - limiterReleaseCo) * (desiredGain - limiterGain);
+    }
+
+    return x * limiterGain;
 }
 
 //==============================================================
@@ -217,6 +277,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         resetKFilterState (numChannels);
     if ((int) ottStates.size() < numChannels)
         resetOttState (numChannels);
+    if ((int) satStates.size() < numChannels)
+        resetSatState (numChannels);
 
     auto* gainParam   = parameters.getRawParameterValue ("inputGain");
     auto* ottParam    = parameters.getRawParameterValue ("ottAmount");
@@ -236,9 +298,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float g         = postGain;                // Fruity-null alignment
     const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
 
-    // Keep oversampling in sync with parameter
+    // Oversampling mode can be changed at runtime – keep Oversampling object in sync
     if (osIndexParam != currentOversampleIndex || (! oversampler && osIndexParam > 0))
+    {
         updateOversampling (osIndexParam, numChannels);
+    }
 
     if (oversampler && maxBlockSize < numSamples)
     {
@@ -247,118 +311,131 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     //==========================================================
-    // PRE-CHAIN: INPUT GAIN + OTT (always at base rate)
+    // PRE-CHAIN: GAIN + OTT (always at base rate)
     //==========================================================
-    double sumSqOriginal = 0.0;
-    double sumSqOtt      = 0.0;
 
     if (ottAmount <= 0.0f)
     {
-        // OTT bypassed: just apply input gain, keep OTT gain = 1
+        // OTT fully bypassed: apply only INPUT GAIN in place.
         for (int ch = 0; ch < numChannels; ++ch)
         {
-            float* s = buffer.getWritePointer (ch);
+            float* samples = buffer.getWritePointer (ch);
 
             for (int i = 0; i < numSamples; ++i)
             {
-                float y = s[i] * inputGain;
-                sumSqOriginal += (double) (y * y);
-                s[i] = y;
+                float y = samples[i] * inputGain;
+                samples[i] = y;
             }
         }
 
-        lastOttGain = 1.0f;
+        lastOttGain = 1.0f; // 1.0 = no trim
     }
     else
     {
-        // Work in a temp buffer so we can RMS-match OTT vs original
-        juce::AudioBuffer<float> tmp (numChannels, numSamples);
-        tmp.makeCopyOf (buffer);
+        // OTT active: process on temp buffer, then apply static trim to main buffer
+        juce::AudioBuffer<float> preChain;
+        preChain.makeCopyOf (buffer);
 
+        // First, apply INPUT GAIN + OTT on preChain
         for (int ch = 0; ch < numChannels; ++ch)
         {
-            float* s = tmp.getWritePointer (ch);
+            float* x = preChain.getWritePointer (ch);
             auto&  ott = ottStates[(size_t) ch];
-
-            float low = ott.low;
 
             for (int i = 0; i < numSamples; ++i)
             {
-                // Input gain
-                float x = s[i] * inputGain;
+                // 1) INPUT GAIN
+                float y = x[i] * inputGain;
 
-                // Original energy (pre-OTT)
-                sumSqOriginal += (double) (x * x);
+                // 2) OTT high-band only (0–150 dry, >150 processed)
+                //    Low band stays intact, high band gets dynamic OTT.
+                ott.low = ottAlpha * ott.low + (1.0f - ottAlpha) * y;
+                const float lowDry = ott.low;
+                const float hiDry  = y - lowDry;
 
-                // One-pole split: low band (≈0–150 Hz) + high band
-                low  = ottAlpha * low + (1.0f - ottAlpha) * x;
-                float hiDry = x - low;
+                // 3) High-band envelope for upward + downward action
+                const float absHi = std::abs (hiDry);
+                ott.env = ottEnvAlpha * ott.env + (1.0f - ottEnvAlpha) * absHi;
+                const float env = ott.env;
 
-                // Simple envelope proxy from instantaneous magnitude
-                float env = std::abs (hiDry) + 1.0e-6f;
+                // Reference level for high band (~ -20 dB region)
+                constexpr float refLevel = 0.10f; // tweakable
 
-                // Upward/downward style shaping factor
+                // Normalised level around reference
+                float lev = env / (refLevel + 1.0e-6f);
+
+                // 4) Dynamic gain:
+                //    - lev < 1  => upward (boost quiet highs / tails)
+                //    - lev > 1  => downward (very gentle – don't choke the tails)
                 float dynGain = 1.0f;
 
-                if (env < 1.0f)
+                if (lev < 1.0f)
                 {
-                    // Quiet highs → lift tails/room
-                    float t = juce::jlimit (0.0f, 1.0f, 1.0f - env);
-                    dynGain += t * 0.5f * ottAmount;  // more tails when ottAmount is high
+                    // Upward region
+                    float t = 1.0f - lev;                        // 0..1
+                    t = juce::jlimit (0.0f, 1.0f, t);
+                    const float maxUp = 2.0f;                    // up to +6 dB
+                    dynGain += t * (maxUp - 1.0f) * ottAmount;
                 }
                 else
                 {
-                    // Loud highs → control a bit
-                    float t = juce::jlimit (0.0f, 1.0f, env - 1.0f);
-                    const float minGain = 0.6f;
+                    // Downward region – softened a lot so tails stay alive
+                    float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
+                    const float minGain = 0.85f;                 // only ~ -1.4 dB max tame
                     dynGain -= t * (1.0f - minGain) * ottAmount;
                 }
 
-                float hiProc = hiDry * dynGain;
+                // 5) Static tilt
+                const float staticBoost = 1.0f + 1.0f * ottAmount;
 
-                // Soft rounding so it’s not harsh
-                hiProc = std::tanh (hiProc * (1.0f + 0.5f * ottAmount));
+                // Apply combined static + dynamic gain to high band
+                float hiProc = hiDry * staticBoost * dynGain;
 
-                // Static "air" / high boost
-                const float staticHighBoost = 1.0f + 2.0f * ottAmount; // more highs as knob goes up
-                hiProc *= staticHighBoost;
+                // 6) Soft non-linearity to stop craziness
+                hiProc = std::tanh (hiProc);
 
-                // Crossfade between dry high and processed high
-                float hiMix = hiDry + ottAmount * (hiProc - hiDry);
+                // 7) Parallel blend (high band only)
+                const float hiMix = hiDry + ottAmount * (hiProc - hiDry);
 
-                float y = low + hiMix;
+                // 8) Recombine with untouched low band
+                y = lowDry + hiMix;
 
-                sumSqOtt += (double) (y * y);
-                s[i]      = y;
+                x[i] = y;
             }
-
-            ott.low = low;
         }
 
-        // RMS gain-match OTT vs original so knob isn’t a fake loudness boost
-        const int totalSamplesOtt = juce::jmax (1, numSamples * juce::jmax (1, numChannels));
+        // --- STATIC TRIM AFTER OTT ---
+        // A bit more reduction towards the end of the knob.
+        // - No trim up to 50%
+        // - Gently increasing trim up to about -1.0 dB at OTT = 1,
+        //   with most of the reduction happening near the very top.
+        float staticTrimDb = 0.0f;
 
-        float ottGain = 1.0f;
-        if (sumSqOtt > 0.0 && sumSqOriginal > 0.0)
+        if (ottAmount > 0.5f)
         {
-            float rmsOriginal = (float) std::sqrt (sumSqOriginal / (double) totalSamplesOtt + 1.0e-20);
-            float rmsOtt      = (float) std::sqrt (sumSqOtt      / (double) totalSamplesOtt + 1.0e-20);
+            // normalise OTT 0.5 -> 1.0 to 0..1
+            float t = (ottAmount - 0.5f) / 0.5f;
+            t = juce::jlimit (0.0f, 1.0f, t);
 
-            if (rmsOtt > 0.0f)
-                ottGain = rmsOriginal / rmsOtt;
+            // shape so most of the trim happens near the top of the range
+            float shaped = std::pow (t, 1.5f); // 0..1, slower at start, faster at end
+
+            const float maxTrimDb = -1.0f;      // was -0.8f
+            staticTrimDb = maxTrimDb * shaped;
         }
 
-        // Smooth so it doesn’t chatter
-        const float ottSmooth = 0.35f;
-        lastOttGain = (1.0f - ottSmooth) * lastOttGain + ottSmooth * ottGain;
+        const float staticTrim = juce::Decibels::decibelsToGain (staticTrimDb);
 
-        buffer.makeCopyOf (tmp);
-        buffer.applyGain (lastOttGain);
+        lastOttGain = staticTrim; // store for potential debug / GUI if needed
+
+        buffer.makeCopyOf (preChain);
+        buffer.applyGain (staticTrim);
     }
 
     //==========================================================
     // DISTORTION CHAIN (SAT/CLIP or LIMITER)
     //   - In oversampled mode, this runs at higher rate
+    //   - No metering here; meters are computed later at base rate
     //==========================================================
     const bool useOversampling = (oversampler != nullptr && currentOversampleIndex > 0);
 
@@ -379,7 +456,10 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 {
                     float y = samples[i];
 
+                    // Limiter (0 lookahead)
                     y = processLimiterSample (y);
+
+                    // Alignment + final hard safety in OS world
                     y *= g;
 
                     if (y >  1.0f) y =  1.0f;
@@ -403,44 +483,41 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // SATURATION (pre-clip), only active when satAmount > 0
                     if (satAmount > 0.0f)
                     {
-                        // Static duck so it doesn’t just get louder when you crank SAT.
-                        const float satTrimDb = -3.0f * satAmount;           // up to about -3 dB at 100%
+                        auto& sat = satStates[(size_t) ch];
+
+                        // Curved auto-trim: gentle at start, stronger at the top
+                        const float tTrim     = std::pow (satAmount, 1.3f);
+                        const float satTrimDb = -2.5f * tTrim; // same max, slower onset
                         const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
-                        y *= satTrim;
 
-                        // Drive into the curve – starts mild, gets hotter as SAT increases.
-                        const float driveDb = 3.0f + 9.0f * satAmount;       // ~3 dB low, ~12 dB high
-                        const float drive   = juce::Decibels::decibelsToGain (driveDb);
-                        const float in      = y * drive;
+                        float yPre = y * satTrim;
 
-                        // Rounded "burn" curve:
-                        // 1) Fruity-style soft clip with moving threshold
-                        const float thr = juce::jmap (satAmount, 0.75f, 0.25f);
-                        float shaped = fruitySoftClipSample (in, thr);
+                        // Low-tilt bass emphasis for the drive
+                        sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * yPre;
+                        const float low = sat.low;
 
-                        // 2) Extra rounding so it feels smooth / melted, not spiky
-                        shaped = 0.7f * shaped + 0.3f * std::tanh (shaped);
+                        // As SAT goes up, we lean more into the lowpassed version
+                        const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
+                        const float tilted     = yPre + tiltAmount * (low - yPre);
 
-                        // Bass emphasis – more low / low-mid weight as SAT goes up.
-                        const float bassLift = 1.0f + 0.35f * satAmount;     // up to ~ +3 dB-ish in the lows
-                        float ySat = shaped * bassLift;
+                        // Smooth drive growth – no "nothing, nothing, BOOM"
+                        const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
 
-                        // Undo part of the drive so overall loudness stays controlled.
-                        const float invDrive = 1.0f / juce::jmax (drive, 1.0e-6f);
-                        ySat *= invDrive;
+                        float driven = std::tanh (tilted * drive);
 
-                        // Mix: shaped so 0–50% already feels like "something".
-                        float mix = std::pow (satAmount, 0.7f);              // 0..1, biased to kick in earlier
-                        mix = juce::jlimit (0.0f, 1.0f, mix);
+                        // Simple drive compensation so it doesn't jump in level insanely
+                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f);
+                        driven /= driveComp;
 
-                        // Final blend
-                        y = y + mix * (ySat - y);
+                        // Dry/wet mix with gentle curve so low SAT already does something
+                        const float mix = std::pow (satAmount, 1.1f);
+                        y = yPre + mix * (driven - yPre);
                     }
 
                     // Post-gain (Fruity-null alignment)
                     y *= g;
 
-                    // Hard ceiling
+                    // Hard ceiling in OS world
                     if (y >  1.0f) y =  1.0f;
                     if (y < -1.0f) y = -1.0f;
 
@@ -449,12 +526,28 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
         }
 
-        // Back down to base rate
+        // Downsample back into original buffer
         oversampler->processSamplesDown (block);
+
+        // FINAL SAFETY CEILING AT BASE RATE (catches intersample overs)
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float* s = buffer.getWritePointer (ch);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float y = s[i];
+
+                if (y >  1.0f) y =  1.0f;
+                if (y < -1.0f) y = -1.0f;
+
+                s[i] = y;
+            }
+        }
     }
     else
     {
-        // NO OVERSAMPLING – base rate
+        // NO OVERSAMPLING – original behaviour at base rate
         if (useLimiter)
         {
             // LIMIT MODE
@@ -466,7 +559,10 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 {
                     float y = samples[i];
 
+                    // Limiter (0 lookahead)
                     y = processLimiterSample (y);
+
+                    // Alignment + final hard safety
                     y *= g;
 
                     if (y >  1.0f) y =  1.0f;
@@ -490,33 +586,41 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // SATURATION (pre-clip), only active when satAmount > 0
                     if (satAmount > 0.0f)
                     {
-                        const float satTrimDb = -3.0f * satAmount;           // up to about -3 dB at 100%
+                        auto& sat = satStates[(size_t) ch];
+
+                        // Curved auto-trim: gentle at start, stronger at the top
+                        const float tTrim     = std::pow (satAmount, 1.3f);
+                        const float satTrimDb = -2.5f * tTrim; // same max, slower onset
                         const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
-                        y *= satTrim;
 
-                        const float driveDb = 3.0f + 9.0f * satAmount;       // ~3 dB low, ~12 dB high
-                        const float drive   = juce::Decibels::decibelsToGain (driveDb);
-                        const float in      = y * drive;
+                        float yPre = y * satTrim;
 
-                        const float thr = juce::jmap (satAmount, 0.75f, 0.25f);
-                        float shaped = fruitySoftClipSample (in, thr);
+                        // Low-tilt bass emphasis for the drive
+                        sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * yPre;
+                        const float low = sat.low;
 
-                        shaped = 0.7f * shaped + 0.3f * std::tanh (shaped);
+                        // As SAT goes up, we lean more into the lowpassed version
+                        const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
+                        const float tilted     = yPre + tiltAmount * (low - yPre);
 
-                        const float bassLift = 1.0f + 0.35f * satAmount;
-                        float ySat = shaped * bassLift;
+                        // Smooth drive growth – no "nothing, nothing, BOOM"
+                        const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
 
-                        const float invDrive = 1.0f / juce::jmax (drive, 1.0e-6f);
-                        ySat *= invDrive;
+                        float driven = std::tanh (tilted * drive);
 
-                        float mix = std::pow (satAmount, 0.7f);
-                        mix = juce::jlimit (0.0f, 1.0f, mix);
+                        // Simple drive compensation so it doesn't jump in level insanely
+                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f);
+                        driven /= driveComp;
 
-                        y = y + mix * (ySat - y);
+                        // Dry/wet mix with gentle curve so low SAT already does something
+                        const float mix = std::pow (satAmount, 1.1f);
+                        y = yPre + mix * (driven - yPre);
                     }
 
+                    // Post-gain (Fruity-null alignment)
                     y *= g;
 
+                    // Hard ceiling
                     if (y >  1.0f) y =  1.0f;
                     if (y < -1.0f) y = -1.0f;
 
@@ -552,20 +656,23 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     for (int ch = 0; ch < numChannels; ++ch)
     {
-        auto& kf = kFilterStates[(size_t) ch];
         float* samples = buffer.getWritePointer (ch);
+        auto&  kf      = kFilterStates[(size_t) ch];
 
         for (int i = 0; i < numSamples; ++i)
         {
-            float x = samples[i];
+            float y = samples[i];
 
-            // blockMax over absolute signal
-            float ax = std::abs (x);
-            if (ax > blockMax)
-                blockMax = ax;
+            // Track peak for GUI burn + gating
+            const float ay = std::abs (y);
+            if (ay > blockMax)
+                blockMax = ay;
+
+            // --- K-weighted meter path ---
+            float xk = y;
 
             // Stage 1
-            float v1 = x - k_a1a * kf.z1a - k_a2a * kf.z2a;
+            float v1 = xk - k_a1a * kf.z1a - k_a2a * kf.z2a;
             float y1 = k_b0a * v1 + k_b1a * kf.z1a + k_b2a * kf.z2a;
             kf.z2a = kf.z1a;
             kf.z1a = v1;
@@ -596,19 +703,29 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     //   + signal gating envelope (for hiding the meter)
     //==========================================================
     if (sampleRate <= 0.0)
-        sampleRate = 44100.0;
+        sampleRate = 44100.0f;
 
-    const float invTotal = 1.0f / (float) totalSamplesK;
-    float blockMs = (float) (sumSquaresK * invTotal);
+    const float blockDurationSec = (float) numSamples / (float) sampleRate;
 
-    // Attack / release for running mean-square over ~3 seconds
-    const float windowSec = 3.0f;
-    const float alphaMs   = 1.0f - std::exp (-1.0f / (windowSec * (float) sampleRate));
+    // Exponential integrator approximating a 3 s short-term window
+    const float tauShortSec = 3.0f; // ITU short-term ≈ 3 s
+    float alphaMs = 0.0f;
+    if (tauShortSec > 0.0f)
+        alphaMs = 1.0f - std::exp (-blockDurationSec / tauShortSec);
+    alphaMs = juce::jlimit (0.0f, 1.0f, alphaMs);
 
+    float blockMs = 0.0f;
+    if (totalSamplesK > 0 && sumSquaresK > 0.0)
+        blockMs = (float) (sumSquaresK / (double) totalSamplesK);
+
+    if (! std::isfinite (blockMs) || blockMs < 0.0f)
+        blockMs = 0.0f;
+
+    // Update short-term mean-square
     if (blockMs <= 0.0f)
     {
-        // Let mean-square decay slowly when silent
-        lufsMeanSquare *= (1.0f - 0.25f * alphaMs);
+        // decay towards silence
+        lufsMeanSquare *= (1.0f - alphaMs);
     }
     else
     {
@@ -640,23 +757,28 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     // Treat as "has signal" if:
-    //   - blockLufs > -50 dB
-    //   - OR the raw block peak is above some small level
-    bool hasSignal = (blockLufs > -50.0f) || (blockMax > 0.01f);
+    //   - block short-term LUFS above ~ -60
+    //   OR
+    //   - raw peak above ~ -40 dBFS (0.01 linear)
+    const bool hasSignalNow =
+        (blockLufs > -60.0f) ||
+        (blockMax > 0.01f);
 
-    // Smooth an envelope for gating
-    const float attackGate  = 0.25f;
-    const float releaseGate = 0.02f;
+    // Smooth gate envelope so LUFS label doesn't flicker
+    const float prevEnv   = guiSignalEnv.load();
+    const float gateAlpha = 0.25f;
+    const float targetEnv = hasSignalNow ? 1.0f : 0.0f;
+    const float newEnv    = (1.0f - gateAlpha) * prevEnv + gateAlpha * targetEnv;
+    guiSignalEnv.store (newEnv);
 
-    float gateEnv = guiSignalEnv.load();
-    const float target = hasSignal ? 1.0f : 0.0f;
-    const float coeff  = hasSignal ? attackGate : releaseGate;
+    //==========================================================
+    // GUI LUFS readout – slower bar so it feels like a ST meter
+    //==========================================================
+    const float prevLufs   = guiLufs.load();
+    const float lufsAlpha  = 0.40f;  // slower now
+    const float lufsSmooth = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
 
-    gateEnv = gateEnv + coeff * (target - gateEnv);
-    guiSignalEnv.store (gateEnv);
-
-    // Finally, write LUFS to GUI atomic
-    guiLufs.store (lufs);
+    guiLufs.store (lufsSmooth);
 }
 
 //==============================================================
@@ -690,7 +812,8 @@ void FruityClipAudioProcessor::changeProgramName (int, const juce::String&) {}
 //==============================================================
 void FruityClipAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = parameters.state.createXml())
+    auto state = parameters.copyState();
+    if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
