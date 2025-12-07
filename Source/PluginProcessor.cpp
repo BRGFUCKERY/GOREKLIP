@@ -485,11 +485,17 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         auto& sat = satStates[(size_t) ch];
 
-                        // Curved auto-trim: gentle at start, stronger at the top
-                        const float tTrim     = std::pow (satAmount, 1.3f);
-                        const float satTrimDb = -2.5f * tTrim; // same max, slower onset
-                        const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
+                        float satTrimDb = 0.0f;
+                        if (satAmount > 0.5f)
+                        {
+                            float tt = (satAmount - 0.5f) / 0.5f;   // normalized 0..1 above 50%
+                            tt = juce::jlimit (0.0f, 1.0f, tt);
 
+                            // max -2.0 dB at full SAT
+                            satTrimDb = -2.0f * tt;
+                        }
+
+                        const float satTrim = juce::Decibels::decibelsToGain (satTrimDb);
                         float yPre = y * satTrim;
 
                         // Low-tilt bass emphasis for the drive
@@ -588,11 +594,17 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         auto& sat = satStates[(size_t) ch];
 
-                        // Curved auto-trim: gentle at start, stronger at the top
-                        const float tTrim     = std::pow (satAmount, 1.3f);
-                        const float satTrimDb = -2.5f * tTrim; // same max, slower onset
-                        const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
+                        float satTrimDb = 0.0f;
+                        if (satAmount > 0.5f)
+                        {
+                            float tt = (satAmount - 0.5f) / 0.5f;   // normalized 0..1 above 50%
+                            tt = juce::jlimit (0.0f, 1.0f, tt);
 
+                            // max -2.0 dB at full SAT
+                            satTrimDb = -2.0f * tt;
+                        }
+
+                        const float satTrim = juce::Decibels::decibelsToGain (satTrimDb);
                         float yPre = y * satTrim;
 
                         // Low-tilt bass emphasis for the drive
