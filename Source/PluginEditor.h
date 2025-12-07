@@ -92,18 +92,6 @@ private:
 class DownwardComboBoxLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    void positionComboBoxPopup (juce::ComboBox& box,
-                                juce::PopupMenu& menu,
-                                int& x, int& y, int& w, int& h) override
-    {
-        juce::ignoreUnused (menu, h);
-
-        const auto bounds = box.getScreenBounds();
-
-        x = bounds.getX();
-        y = bounds.getBottom();
-        w = bounds.getWidth();
-    }
 };
 
 //==============================================================
