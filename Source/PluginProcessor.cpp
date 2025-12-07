@@ -863,8 +863,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     //==========================================================
     // GUI LUFS readout – slower bar so it feels like a ST meter
     //==========================================================
-    const float prevLufs   = guiLufs.load();
-    const float lufsAlpha  = 0.40f;  // slower now
+    const float prevLufs  = guiLufs.load();
+    const float lufsAlpha = hasSignalNow ? 0.20f : 0.75f; // slower with signal, fast drop when silent
     const float lufsSmooth = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
 
     guiLufs.store (lufsSmooth);

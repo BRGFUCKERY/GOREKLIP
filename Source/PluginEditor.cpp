@@ -135,18 +135,20 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // ----------------------
     // SLIDERS
     // ----------------------
-    auto setupKnob01 = [] (juce::Slider& s)
+    auto setupKnob01 = [] (FineControlSlider& s)
     {
         s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         s.setRange (0.0, 1.0, 0.0001);
         s.setMouseDragSensitivity (250);
+        s.setDragSensitivities (250, 800);
     };
 
     // GAIN uses dB range
     gainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     gainSlider.setMouseDragSensitivity (250);
+    gainSlider.setDragSensitivities (250, 800);
     gainSlider.setRange (-12.0, 12.0, 0.01);
 
     setupKnob01 (ottSlider);
@@ -205,16 +207,18 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // ----------------------
     // LOOK DROPDOWN (top-left)
     // ----------------------
+    lookBox.addSectionHeading ("BYPASS (tap the gain logo)");
     lookBox.addItem ("LOOK : COOKED", 1);
     lookBox.addItem ("LOOK : LUFS",   2);
     lookBox.addItem ("LOOK : STATIC", 3);
-    lookBox.setTextWhenNothingSelected ("LOOK : COOKED");
+    lookBox.setTextWhenNothingSelected ("");
     lookBox.setJustificationType (juce::Justification::centred);
-    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
+    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
     lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
     lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
     lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
+    lookBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (lookBox);
 
     // ----------------------
@@ -234,6 +238,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
+    oversampleBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (oversampleBox);
 
     // ----------------------
@@ -261,8 +266,8 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     lookBox.onChange = [this]
     {
-        const int selectedIndex = lookBox.getSelectedItemIndex();
-        processor.setStoredLookMode (selectedIndex);
+        const int selectedId = lookBox.getSelectedId();
+        processor.setStoredLookMode (juce::jlimit (0, 2, selectedId - 1));
     };
 
     // Initial state from param
@@ -295,6 +300,8 @@ FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
     ottSlider .setLookAndFeel (nullptr);
     satSlider .setLookAndFeel (nullptr);
     modeSlider.setLookAndFeel (nullptr);
+    lookBox.setLookAndFeel (nullptr);
+    oversampleBox.setLookAndFeel (nullptr);
 }
 
 //==============================================================
