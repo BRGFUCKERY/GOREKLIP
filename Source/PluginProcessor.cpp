@@ -506,7 +506,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         float driven = std::tanh (tilted * drive);
 
                         // Simple drive compensation so it doesn't jump in level insanely
-                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f);
+                        // Scale the compensation with satAmount so mid values (35–50%) are less quiet,
+                        // but at 100% we stay exactly the same as before.
+                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f) * (0.5f + 0.5f * satAmount);
                         driven /= driveComp;
 
                         // Dry/wet mix with gentle curve so low SAT already does something
@@ -609,7 +611,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         float driven = std::tanh (tilted * drive);
 
                         // Simple drive compensation so it doesn't jump in level insanely
-                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f);
+                        // Scale the compensation with satAmount so mid values (35–50%) are less quiet,
+                        // but at 100% we stay exactly the same as before.
+                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f) * (0.5f + 0.5f * satAmount);
                         driven /= driveComp;
 
                         // Dry/wet mix with gentle curve so low SAT already does something
