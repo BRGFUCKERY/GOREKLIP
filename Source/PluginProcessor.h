@@ -112,6 +112,19 @@ private:
     float lastOttGain  = 1.0f;   // now stores static trim (for debug/consistency)
 
     //==========================================================
+    // SAT bass-tilt state (for gradual TikTok bass boost)
+    //==========================================================
+    struct SatState
+    {
+        float low = 0.0f;   // lowpassed state for bass emphasis
+    };
+
+    void resetSatState (int numChannels);
+
+    std::vector<SatState> satStates;
+    float satLowAlpha = 0.0f;    // one-pole LP factor for SAT bass tilt
+
+    //==========================================================
     // Internal state
     //==========================================================
     double sampleRate      = 44100.0;
