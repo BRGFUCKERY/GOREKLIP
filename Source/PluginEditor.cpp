@@ -83,7 +83,7 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
     : AudioProcessorEditor (&p),
       processor (p),
-      lookBox (p)
+      lookBox ()
 {
     // Force popup menus / alerts to be black background with white text (no blue)
     auto& lf = getLookAndFeel();
@@ -153,13 +153,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         s.setRange (0.0, 1.0, 0.0001);
-        s.setMouseDragSensitivity (250);
+        if (auto* fine = dynamic_cast<FineControlSlider*> (&s))
+            fine->setBaseSensitivity (250);
     };
 
     // GAIN uses dB range
     gainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    gainSlider.setMouseDragSensitivity (250);
+    gainSlider.setBaseSensitivity (250);
     gainSlider.setRange (-12.0, 12.0, 0.01);
 
     setupKnob01 (ottSlider);
@@ -221,7 +222,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lookBox.addItem ("LOOK : COOKED", 1);
     lookBox.addItem ("LOOK : LUFS",   2);
     lookBox.addItem ("LOOK : STATIC", 3);
-    // Closed state text is irrelevant because we paint arrow-only, but keep it empty
+    // Keep placeholder empty so the closed box only shows the arrow area
     lookBox.setTextWhenNothingSelected ({});
     lookBox.setJustificationType (juce::Justification::centred);
     lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
