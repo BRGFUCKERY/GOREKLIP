@@ -18,12 +18,12 @@ FruityClipAudioProcessor::createParameterLayout()
 
     // OTT – 0..1 (150 Hz+ only, parallel)
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "ottAmount", "OTT Amount",
+        "ottAmount", "LOVE",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
     // SAT – 0..1
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "satAmount", "Saturation Amount",
+        "satAmount", "DEATH",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
     // MODE – 0 = clipper, 1 = limiter

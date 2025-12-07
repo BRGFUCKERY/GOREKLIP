@@ -178,8 +178,8 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     };
 
     setupLabel (gainLabel, "GAIN");
-    setupLabel (ottLabel,  "OTT");
-    setupLabel (satLabel,  "SAT");
+    setupLabel (ottLabel,  "LOVE");
+    setupLabel (satLabel,  "DEATH");
     setupLabel (modeLabel, "CLIPPER"); // will switch to LIMITER in runtime
 
     addAndMakeVisible (gainLabel);
