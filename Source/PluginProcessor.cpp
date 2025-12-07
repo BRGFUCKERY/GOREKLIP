@@ -485,34 +485,32 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         auto& sat = satStates[(size_t) ch];
 
-                        // Curved auto-trim: gentle at start, stronger at the top
-                        const float tTrim     = std::pow (satAmount, 1.3f);
-                        const float satTrimDb = -2.5f * tTrim; // same max, slower onset
-                        const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
+                        // --- STATIC INPUT TRIM ---
+                        // At SAT = 0  -> 0 dB
+                        // At SAT = 1  -> ~-0.5 dB
+                        const float inputTrimDb = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, -0.5f);
+                        const float inputTrim   = juce::Decibels::decibelsToGain (inputTrimDb);
 
-                        float yPre = y * satTrim;
+                        float yPre = y * inputTrim;
 
-                        // Low-tilt bass emphasis for the drive
+                        // --- BASS TILT ---
                         sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * yPre;
                         const float low = sat.low;
 
-                        // As SAT goes up, we lean more into the lowpassed version
                         const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
                         const float tilted     = yPre + tiltAmount * (low - yPre);
 
-                        // Smooth drive growth – no "nothing, nothing, BOOM"
+                        // --- DRIVE ---
                         const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
 
                         float driven = std::tanh (tilted * drive);
 
-                        // Simple drive compensation so it doesn't jump in level insanely
-                        // Scale the compensation with satAmount so mid values (35–50%) are less quiet,
-                        // but at 100% we stay exactly the same as before.
-                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f) * (0.5f + 0.5f * satAmount);
-                        driven /= driveComp;
+                        // --- STATIC NORMALISATION (UNITY) ---
+                        const float norm = 1.0f / std::tanh (drive);
+                        driven *= norm;
 
-                        // Dry/wet mix with gentle curve so low SAT already does something
-                        const float mix = std::pow (satAmount, 1.1f);
+                        // --- DRY/WET ---
+                        const float mix = std::pow (satAmount, 1.0f);
                         y = yPre + mix * (driven - yPre);
                     }
 
@@ -590,34 +588,32 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         auto& sat = satStates[(size_t) ch];
 
-                        // Curved auto-trim: gentle at start, stronger at the top
-                        const float tTrim     = std::pow (satAmount, 1.3f);
-                        const float satTrimDb = -2.5f * tTrim; // same max, slower onset
-                        const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
+                        // --- STATIC INPUT TRIM ---
+                        // At SAT = 0  -> 0 dB
+                        // At SAT = 1  -> ~-0.5 dB
+                        const float inputTrimDb = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, -0.5f);
+                        const float inputTrim   = juce::Decibels::decibelsToGain (inputTrimDb);
 
-                        float yPre = y * satTrim;
+                        float yPre = y * inputTrim;
 
-                        // Low-tilt bass emphasis for the drive
+                        // --- BASS TILT ---
                         sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * yPre;
                         const float low = sat.low;
 
-                        // As SAT goes up, we lean more into the lowpassed version
                         const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
                         const float tilted     = yPre + tiltAmount * (low - yPre);
 
-                        // Smooth drive growth – no "nothing, nothing, BOOM"
+                        // --- DRIVE ---
                         const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
 
                         float driven = std::tanh (tilted * drive);
 
-                        // Simple drive compensation so it doesn't jump in level insanely
-                        // Scale the compensation with satAmount so mid values (35–50%) are less quiet,
-                        // but at 100% we stay exactly the same as before.
-                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f) * (0.5f + 0.5f * satAmount);
-                        driven /= driveComp;
+                        // --- STATIC NORMALISATION (UNITY) ---
+                        const float norm = 1.0f / std::tanh (drive);
+                        driven *= norm;
 
-                        // Dry/wet mix with gentle curve so low SAT already does something
-                        const float mix = std::pow (satAmount, 1.1f);
+                        // --- DRY/WET ---
+                        const float mix = std::pow (satAmount, 1.0f);
                         y = yPre + mix * (driven - yPre);
                     }
 
