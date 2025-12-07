@@ -347,12 +347,13 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     dynGain += t * (maxUp - 1.0f) * ottAmount;
                 }
                 else
-                {
-                    // Downward region
-                    float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
-                    const float minGain = 0.5f;                  // down to -6 dB
-                    dynGain -= t * (1.0f - minGain) * ottAmount;
-                }
+{
+    // Downward region (gentler – don't choke the highs so much)
+    float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
+    const float minGain = 0.75f;                 // down to about -2.5 dB
+    dynGain -= t * (1.0f - minGain) * ottAmount;
+}
+
 
                 // 5) Static tilt (reduced vs old version)
                 const float staticBoost = 1.0f + 1.0f * ottAmount; // was 1 + 2.5 * amt
@@ -374,16 +375,26 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         // --- STATIC TRIM AFTER OTT ---
-        // Subtle static gain compensation based only on ottAmount,
-        // so we don't change the compression character, only overall level.
-        const float maxTrimDb   = -1.5f;  // max attenuation at OTT = 1 (~ -1.5 dB)
-        const float staticTrimDb = maxTrimDb * ottAmount;
-        const float staticTrim   = juce::Decibels::decibelsToGain (staticTrimDb);
+// Much gentler: only starts trimming above ~50% OTT,
+// max ~ -0.4 dB at OTT = 1 so it stays exciting.
+float trimFactor = 0.0f;
 
-        lastOttGain = staticTrim; // store for potential debug / GUI if needed
+// only start compensating once OTT > 0.5
+if (ottAmount > 0.5f)
+{
+    trimFactor = (ottAmount - 0.5f) / 0.5f;      // 0..1 for OTT 0.5 -> 1.0
+    trimFactor = juce::jlimit (0.0f, 1.0f, trimFactor);
+}
 
-        buffer.makeCopyOf (preChain);
-        buffer.applyGain (staticTrim);
+const float maxTrimDb    = -0.4f;                // much smaller trim
+const float staticTrimDb = maxTrimDb * trimFactor;
+const float staticTrim   = juce::Decibels::decibelsToGain (staticTrimDb);
+
+lastOttGain = staticTrim; // store for potential debug / GUI if needed
+
+buffer.makeCopyOf (preChain);
+buffer.applyGain (staticTrim);
+
     }
 
     //==========================================================
