@@ -374,26 +374,33 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
         }
 
-        // --- STATIC TRIM AFTER OTT ---
-// Much gentler: only starts trimming above ~50% OTT,
-// max ~ -0.4 dB at OTT = 1 so it stays exciting.
-float trimFactor = 0.0f;
+     // --- STATIC TRIM AFTER OTT ---
+// A bit more reduction towards the end of the knob.
+// - No trim up to 50%
+// - Gently increasing trim up to about -0.8 dB at OTT = 1,
+//   with most of the reduction happening near the very top.
+float staticTrimDb = 0.0f;
 
-// only start compensating once OTT > 0.5
 if (ottAmount > 0.5f)
 {
-    trimFactor = (ottAmount - 0.5f) / 0.5f;      // 0..1 for OTT 0.5 -> 1.0
-    trimFactor = juce::jlimit (0.0f, 1.0f, trimFactor);
+    // normalise OTT 0.5 -> 1.0 to 0..1
+    float t = (ottAmount - 0.5f) / 0.5f;
+    t = juce::jlimit (0.0f, 1.0f, t);
+
+    // shape so most of the trim happens near the top of the range
+    float shaped = std::pow (t, 1.5f); // 0..1, but slower at start, faster at end
+
+    const float maxTrimDb = -0.8f;     // max trim at OTT = 1 (~ -0.8 dB)
+    staticTrimDb = maxTrimDb * shaped;
 }
 
-const float maxTrimDb    = -0.4f;                // much smaller trim
-const float staticTrimDb = maxTrimDb * trimFactor;
-const float staticTrim   = juce::Decibels::decibelsToGain (staticTrimDb);
+const float staticTrim = juce::Decibels::decibelsToGain (staticTrimDb);
 
 lastOttGain = staticTrim; // store for potential debug / GUI if needed
 
 buffer.makeCopyOf (preChain);
 buffer.applyGain (staticTrim);
+
 
     }
 
