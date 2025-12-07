@@ -35,6 +35,10 @@ FruityClipAudioProcessor::createParameterLayout()
         "oversampleMode", "Oversample Mode",
         juce::StringArray { "x1", "x2", "x4", "x8", "x16" }, 0));
 
+    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+        "lookMode", "Look Mode",
+        juce::StringArray { "COOKED", "LUFS", "STATIC" }, 0));
+
     return { params.begin(), params.end() };
 }
 
@@ -73,9 +77,43 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
     postGain        = 0.99999385f;
     // Soft clip threshold (~ -6 dB at satAmount = 1)
     thresholdLinear = juce::Decibels::decibelsToGain (-6.0f);
+
+    juce::PropertiesFile::Options opts;
+    opts.applicationName     = "GOREKLIPER";
+    opts.filenameSuffix      = "settings";
+    opts.osxLibrarySubFolder = "Application Support";
+    opts.folderName          = "GOREKLIPER";
+
+    userSettings = std::make_unique<juce::PropertiesFile> (opts);
+
+    // If no explicit lookMode stored yet, default to 0 (COOKED)
+    if (userSettings && ! userSettings->containsKey ("lookMode"))
+        userSettings->setValue ("lookMode", 0);
+
+    if (auto* choiceParam = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("lookMode")))
+    {
+        const int storedIndex = juce::jlimit (0, choiceParam->choices.size() - 1, getStoredLookMode());
+        *choiceParam = storedIndex; // sets the choice index without host automation
+    }
 }
 
 FruityClipAudioProcessor::~FruityClipAudioProcessor() = default;
+
+int FruityClipAudioProcessor::getStoredLookMode() const
+{
+    if (userSettings)
+        return userSettings->getIntValue ("lookMode", 0);
+    return 0;
+}
+
+void FruityClipAudioProcessor::setStoredLookMode (int modeIndex)
+{
+    if (userSettings)
+    {
+        userSettings->setValue ("lookMode", modeIndex);
+        userSettings->saveIfNeeded();
+    }
+}
 
 //==============================================================
 // Oversampling config helper
@@ -400,19 +438,19 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // Upward region
                     float t = 1.0f - lev;                        // 0..1
                     t = juce::jlimit (0.0f, 1.0f, t);
-                    const float maxUp = 2.0f;                    // up to +6 dB
+                    const float maxUp = 1.7f;                    // up to +6 dB
                     dynGain += t * (maxUp - 1.0f) * ottAmount;
                 }
                 else
                 {
                     // Downward region – softened a lot so tails stay alive
                     float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
-                    const float minGain = 0.85f;                 // only ~ -1.4 dB max tame
+                    const float minGain = 0.90f;                 // only ~ -1.4 dB max tame
                     dynGain -= t * (1.0f - minGain) * ottAmount;
                 }
 
                 // 5) Static tilt
-                const float staticBoost = 1.0f + 1.0f * ottAmount;
+                const float staticBoost = 1.0f + 0.7f * ottAmount;
 
                 // Apply combined static + dynamic gain to high band
                 float hiProc = hiDry * staticBoost * dynGain;
@@ -789,6 +827,31 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const bool hasSignalNow =
         (blockLufs > -60.0f) ||
         (blockMax > 0.01f);
+
+    // LUFS-based burn: -20 LUFS -> 0, -1 LUFS -> 1
+    float targetBurnLufs = 0.0f;
+    {
+        float t = (blockLufs + 20.0f) / 19.0f;  // -20..-1 -> 0..1
+        t = juce::jlimit (0.0f, 1.0f, t);
+        // emphasise the top end so it stays calm until loud
+        targetBurnLufs = std::pow (t, 3.0f);
+    }
+
+    // Smooth and gate using hasSignalNow so it falls quickly when music stops
+    float prevBurnLufs = guiBurnLufs.load();
+
+    // Fast rise, moderately quick fall:
+    float alphaOn  = 0.8f;   // when we have signal
+    float alphaOff = 0.3f;   // when signal disappears
+
+    float alpha = hasSignalNow ? alphaOn : alphaOff;
+    float newBurnLufs = (1.0f - alpha) * prevBurnLufs + alpha * targetBurnLufs;
+
+    // If there is no signal and targetBurnLufs is 0, ensure it decays toward 0
+    if (! hasSignalNow && targetBurnLufs <= 0.0f)
+        newBurnLufs *= 0.8f;
+
+    guiBurnLufs.store (newBurnLufs);
 
     // Smooth gate envelope so LUFS label doesn't flicker
     const float prevEnv   = guiSignalEnv.load();
