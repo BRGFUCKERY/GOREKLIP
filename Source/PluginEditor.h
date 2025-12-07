@@ -97,6 +97,8 @@ private:
     // Local GUI state for gain-bypass toggle
     bool isGainBypass = false;
 
+    void mouseUp (const juce::MouseEvent& e) override;
+
     // Timer for GUI updates
     void timerCallback() override;
 

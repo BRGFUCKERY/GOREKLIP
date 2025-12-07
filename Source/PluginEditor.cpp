@@ -189,15 +189,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     // Make GAIN label clickable to toggle bypass-after-gain
     gainLabel.setInterceptsMouseClicks (true, false);
-    gainLabel.onMouseUp = [this] (const juce::MouseEvent&)
-    {
-        isGainBypass = ! isGainBypass;
-        processor.setGainBypass (isGainBypass);
-
-        // Optional visual cue on the label itself
-        gainLabel.setColour (juce::Label::textColourId,
-                             isGainBypass ? juce::Colours::grey : juce::Colours::white);
-    };
+    gainLabel.addMouseListener (this, false);
 
     // LUFS label – white bold font, slightly smaller
     lufsLabel.setJustificationType (juce::Justification::centred);
@@ -448,4 +440,18 @@ void FruityClipAudioProcessorEditor::timerCallback()
     }
 
     repaint();
+}
+
+void FruityClipAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
+{
+    // Only react if the GAIN label was clicked
+    if (e.eventComponent == &gainLabel || e.originalComponent == &gainLabel)
+    {
+        isGainBypass = ! isGainBypass;
+        processor.setGainBypass (isGainBypass);
+
+        // Visual cue on the label itself
+        gainLabel.setColour (juce::Label::textColourId,
+                             isGainBypass ? juce::Colours::grey : juce::Colours::white);
+    }
 }
