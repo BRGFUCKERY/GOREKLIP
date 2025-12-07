@@ -94,6 +94,9 @@ private:
     // GUI burn value (cached from processor)
     float lastBurn = 0.0f;
 
+    // Local GUI state for gain-bypass toggle
+    bool isGainBypass = false;
+
     // Timer for GUI updates
     void timerCallback() override;
 
