@@ -77,6 +77,9 @@ public:
     int getStoredLookMode() const;
     void setStoredLookMode (int modeIndex);
 
+    int getStoredOversampleMode() const;
+    void setStoredOversampleMode (int modeIndex);
+
     // Bypass all processing after input gain (for A/B)
     void setGainBypass (bool shouldBypass)        { gainBypass.store (shouldBypass); }
     bool getGainBypass() const                    { return gainBypass.load(); }

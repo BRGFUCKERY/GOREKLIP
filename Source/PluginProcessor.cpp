@@ -90,10 +90,20 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
     if (userSettings && ! userSettings->containsKey ("lookMode"))
         userSettings->setValue ("lookMode", 0);
 
+    // If no explicit oversampleMode stored yet, default to 0 (x1)
+    if (userSettings && ! userSettings->containsKey ("oversampleMode"))
+        userSettings->setValue ("oversampleMode", 0);
+
     if (auto* choiceParam = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("lookMode")))
     {
         const int storedIndex = juce::jlimit (0, choiceParam->choices.size() - 1, getStoredLookMode());
         *choiceParam = storedIndex; // sets the choice index without host automation
+    }
+
+    if (auto* osChoice = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("oversampleMode")))
+    {
+        const int storedOS = juce::jlimit (0, osChoice->choices.size() - 1, getStoredOversampleMode());
+        *osChoice = storedOS;
     }
 }
 
@@ -111,6 +121,22 @@ void FruityClipAudioProcessor::setStoredLookMode (int modeIndex)
     if (userSettings)
     {
         userSettings->setValue ("lookMode", modeIndex);
+        userSettings->saveIfNeeded();
+    }
+}
+
+int FruityClipAudioProcessor::getStoredOversampleMode() const
+{
+    if (userSettings)
+        return userSettings->getIntValue ("oversampleMode", 0);
+    return 0;
+}
+
+void FruityClipAudioProcessor::setStoredOversampleMode (int modeIndex)
+{
+    if (userSettings)
+    {
+        userSettings->setValue ("oversampleMode", modeIndex);
         userSettings->saveIfNeeded();
     }
 }
@@ -828,28 +854,31 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         (blockLufs > -60.0f) ||
         (blockMax > 0.01f);
 
-    // LUFS-based burn: -20 LUFS -> 0, -1 LUFS -> 1
+    // LUFS-based burn: -20 LUFS -> 0, -2 LUFS -> 1
     float targetBurnLufs = 0.0f;
     {
-        float t = (blockLufs + 20.0f) / 19.0f;  // -20..-1 -> 0..1
+        // Map -20..-2 LUFS into 0..1
+        float t = (blockLufs + 20.0f) / 18.0f;  // -20 -> 0, -2 -> 1
         t = juce::jlimit (0.0f, 1.0f, t);
-        // emphasise the top end so it stays calm until loud
+
+        // Emphasise the top end so it stays calm until it is really loud
         targetBurnLufs = std::pow (t, 3.0f);
     }
 
-    // Smooth and gate using hasSignalNow so it falls quickly when music stops
     float prevBurnLufs = guiBurnLufs.load();
+    float newBurnLufs  = 0.0f;
 
-    // Fast rise, moderately quick fall:
-    float alphaOn  = 0.8f;   // when we have signal
-    float alphaOff = 0.3f;   // when signal disappears
-
-    float alpha = hasSignalNow ? alphaOn : alphaOff;
-    float newBurnLufs = (1.0f - alpha) * prevBurnLufs + alpha * targetBurnLufs;
-
-    // If there is no signal and targetBurnLufs is 0, ensure it decays toward 0
-    if (! hasSignalNow && targetBurnLufs <= 0.0f)
-        newBurnLufs *= 0.8f;
+    if (hasSignalNow)
+    {
+        // While audio is present, move towards the LUFS-driven target in an integrated way
+        const float alphaOn = 0.6f; // slower, more "short-term" feeling
+        newBurnLufs = (1.0f - alphaOn) * prevBurnLufs + alphaOn * targetBurnLufs;
+    }
+    else
+    {
+        // No signal: instantly snap back to no burn
+        newBurnLufs = 0.0f;
+    }
 
     guiBurnLufs.store (newBurnLufs);
 

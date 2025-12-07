@@ -81,8 +81,21 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 // Editor
 //==============================================================
 FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
-    : AudioProcessorEditor (&p), processor (p)
+    : AudioProcessorEditor (&p),
+      processor (p),
+      lookBox (p)
 {
+    // Force popup menus / alerts to be black background with white text (no blue)
+    auto& lf = getLookAndFeel();
+    lf.setColour (juce::PopupMenu::backgroundColourId,           juce::Colours::black);
+    lf.setColour (juce::PopupMenu::textColourId,                 juce::Colours::white);
+    lf.setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colour (0xff202020));
+    lf.setColour (juce::PopupMenu::highlightedTextColourId,      juce::Colours::white);
+
+    lf.setColour (juce::AlertWindow::backgroundColourId, juce::Colours::black);
+    lf.setColour (juce::AlertWindow::textColourId,       juce::Colours::white);
+    lf.setColour (juce::AlertWindow::outlineColourId,    juce::Colours::white);
+
     // Load background
     bgImage = juce::ImageCache::getFromMemory (
         BinaryData::bg_png,
@@ -208,11 +221,12 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lookBox.addItem ("LOOK : COOKED", 1);
     lookBox.addItem ("LOOK : LUFS",   2);
     lookBox.addItem ("LOOK : STATIC", 3);
-    lookBox.setTextWhenNothingSelected ("LOOK : COOKED");
+    // Closed state text is irrelevant because we paint arrow-only, but keep it empty
+    lookBox.setTextWhenNothingSelected ({});
     lookBox.setJustificationType (juce::Justification::centred);
     lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
     lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::black);
     lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
     addAndMakeVisible (lookBox);
@@ -231,7 +245,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setJustificationType (juce::Justification::centred);
     oversampleBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
     oversampleBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
-    oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::black);
     oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
     addAndMakeVisible (oversampleBox);
@@ -258,6 +272,12 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     lookAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "lookMode", lookBox);
+
+    oversampleBox.onChange = [this]
+    {
+        const int selectedIndex = oversampleBox.getSelectedItemIndex();
+        processor.setStoredOversampleMode (selectedIndex);
+    };
 
     lookBox.onChange = [this]
     {
@@ -444,17 +464,32 @@ void FruityClipAudioProcessorEditor::resized()
 void FruityClipAudioProcessorEditor::timerCallback()
 {
     const bool bypassNow = processor.getGainBypass();
-    const int lookMode = processor.getLookMode(); // 0=COOKED, 1=LUFS, 2=STATIC
+    const int  lookMode  = processor.getLookMode(); // 0=COOKED, 1=LUFS, 2=STATIC
 
-    if (bypassNow)
+    const float lufs      = processor.getGuiLufs();
+    const bool  hasSignal = processor.getGuiHasSignal();
+
+    // LUFS label visibility is driven only by signal presence,
+    // regardless of bypass state
+    if (! hasSignal)
     {
-        // In bypass mode, keep background static and hide LUFS
-        lastBurn = 0.0f;
         lufsLabel.setVisible (false);
     }
     else
     {
-        // Normal reactive background and LUFS display
+        lufsLabel.setVisible (true);
+        juce::String text = juce::String (lufs, 2) + " LUFS";
+        lufsLabel.setText (text, juce::dontSendNotification);
+    }
+
+    if (bypassNow)
+    {
+        // In bypass mode, keep background fully clean (no burn)
+        lastBurn = 0.0f;
+    }
+    else
+    {
+        // Normal reactive background depending on LOOK mode
         switch (lookMode)
         {
             case 1: // LUFS
@@ -469,20 +504,6 @@ void FruityClipAudioProcessorEditor::timerCallback()
             default:
                 lastBurn = processor.getGuiBurn();
                 break;
-        }
-
-        const float lufs      = processor.getGuiLufs();
-        const bool  hasSignal = processor.getGuiHasSignal();
-
-        if (! hasSignal)
-        {
-            lufsLabel.setVisible (false);
-        }
-        else
-        {
-            lufsLabel.setVisible (true);
-            juce::String text = juce::String (lufs, 2) + " LUFS";
-            lufsLabel.setText (text, juce::dontSendNotification);
         }
     }
 
