@@ -512,6 +512,33 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         // Dry/wet mix with gentle curve so low SAT already does something
                         const float mix = std::pow (satAmount, 1.1f);
                         y = yPre + mix * (driven - yPre);
+
+                        // Subtle HF presence restore at high SAT
+                        float hiOut = y - low;
+
+                        if (satAmount > 0.7f)
+                        {
+                            float th = (satAmount - 0.7f) / 0.3f;   // 0..1 from 70% to 100%
+                            th = juce::jlimit (0.0f, 1.0f, th);
+
+                            // up to about +1 dB HF presence at full SAT
+                            const float hfBoostDb = 1.0f * th;
+                            const float hfBoost   = juce::Decibels::decibelsToGain (hfBoostDb);
+
+                            hiOut *= hfBoost;
+                        }
+
+                        float ySat = low + hiOut;
+
+                        float makeupDb = 0.0f;
+                        if (satAmount > 0.5f)
+                        {
+                            float t = (satAmount - 0.5f) / 0.5f;   // 0..1 from 50% to 100%
+                            t = juce::jlimit (0.0f, 1.0f, t);
+                            makeupDb = 1.2f * t;                  // up to about +1.2 dB at SAT = 1
+                        }
+                        const float makeup = juce::Decibels::decibelsToGain (makeupDb);
+                        y = ySat * makeup;
                     }
 
                     // Post-gain (Fruity-null alignment)
@@ -615,6 +642,33 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         // Dry/wet mix with gentle curve so low SAT already does something
                         const float mix = std::pow (satAmount, 1.1f);
                         y = yPre + mix * (driven - yPre);
+
+                        // Subtle HF presence restore at high SAT
+                        float hiOut = y - low;
+
+                        if (satAmount > 0.7f)
+                        {
+                            float th = (satAmount - 0.7f) / 0.3f;   // 0..1 from 70% to 100%
+                            th = juce::jlimit (0.0f, 1.0f, th);
+
+                            // up to about +1 dB HF presence at full SAT
+                            const float hfBoostDb = 1.0f * th;
+                            const float hfBoost   = juce::Decibels::decibelsToGain (hfBoostDb);
+
+                            hiOut *= hfBoost;
+                        }
+
+                        float ySat = low + hiOut;
+
+                        float makeupDb = 0.0f;
+                        if (satAmount > 0.5f)
+                        {
+                            float t = (satAmount - 0.5f) / 0.5f;   // 0..1 from 50% to 100%
+                            t = juce::jlimit (0.0f, 1.0f, t);
+                            makeupDb = 1.2f * t;                  // up to about +1.2 dB at SAT = 1
+                        }
+                        const float makeup = juce::Decibels::decibelsToGain (makeupDb);
+                        y = ySat * makeup;
                     }
 
                     // Post-gain (Fruity-null alignment)
