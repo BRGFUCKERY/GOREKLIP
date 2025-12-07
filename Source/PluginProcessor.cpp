@@ -1,4 +1,3 @@
-// PluginProcessor.cpp
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
@@ -17,7 +16,7 @@ FruityClipAudioProcessor::createParameterLayout()
         "inputGain", "Input Gain",
         juce::NormalisableRange<float> (-12.0f, 12.0f, 0.01f), 0.0f));
 
-    // OTT – 0..1 (150 Hz+ only, parallel, unity gain)
+    // OTT – 0..1 (150 Hz+ only, parallel)
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
         "ottAmount", "OTT Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
@@ -284,13 +283,10 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     //==========================================================
     // PRE-CHAIN: GAIN + OTT (always at base rate)
     //==========================================================
-    double sumSqOriginal = 0.0;
-    double sumSqOtt      = 0.0;
 
     if (ottAmount <= 0.0f)
     {
-        // OTT fully bypassed: apply only INPUT GAIN in place,
-        // and force OTT gain to unity so knob = true bypass.
+        // OTT fully bypassed: apply only INPUT GAIN in place.
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* samples = buffer.getWritePointer (ch);
@@ -302,11 +298,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
         }
 
-        lastOttGain = 1.0f;
+        lastOttGain = 1.0f; // 1.0 = no trim
     }
     else
     {
-        // OTT active: do OTT on a temp buffer and RMS gain-match
+        // OTT active: process on temp buffer, then apply static trim AFTER OTT.
         juce::AudioBuffer<float> preChain (numChannels, numSamples);
         preChain.makeCopyOf (buffer);
 
@@ -319,9 +315,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             {
                 // 1) INPUT GAIN
                 float y = x[i] * inputGain;
-
-                // Original (pre-OTT) energy
-                sumSqOriginal += (double) (y * y);
 
                 // 2) OTT high-band only (0–150 dry, >150 processed)
                 //    Low band stays intact, high band gets dynamic OTT.
@@ -370,38 +363,27 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // 6) Soft non-linearity to stop craziness
                 hiProc = std::tanh (hiProc);
 
-                // 7) Parallel blend
+                // 7) Parallel blend (high band only)
                 const float hiMix = hiDry + ottAmount * (hiProc - hiDry);
 
                 // 8) Recombine with untouched low band
                 y = lowDry + hiMix;
 
-                // Energy after OTT for RMS gain-matching
-                sumSqOtt += (double) (y * y);
-
                 x[i] = y;
             }
         }
 
-        const int totalSamplesOtt = juce::jmax (1, numSamples * juce::jmax (1, numChannels));
+        // --- STATIC TRIM AFTER OTT ---
+        // Subtle static gain compensation based only on ottAmount,
+        // so we don't change the compression character, only overall level.
+        const float maxTrimDb   = -1.5f;  // max attenuation at OTT = 1 (~ -1.5 dB)
+        const float staticTrimDb = maxTrimDb * ottAmount;
+        const float staticTrim   = juce::Decibels::decibelsToGain (staticTrimDb);
 
-        float ottGain = 1.0f;
-        if (sumSqOtt > 0.0)
-        {
-            float rmsOriginal = (float) std::sqrt (sumSqOriginal / (double) totalSamplesOtt + 1.0e-20);
-            float rmsOtt      = (float) std::sqrt (sumSqOtt      / (double) totalSamplesOtt + 1.0e-20);
+        lastOttGain = staticTrim; // store for potential debug / GUI if needed
 
-            if (rmsOtt > 0.0f)
-                ottGain = rmsOriginal / rmsOtt;
-        }
-
-        // Smooth OTT gain so it doesn't chatter
-        const float ottSmooth = 0.4f;
-        lastOttGain = (1.0f - ottSmooth) * lastOttGain + ottSmooth * ottGain;
-
-        // Copy OTT-processed buffer into main and apply gain-match
         buffer.makeCopyOf (preChain);
-        buffer.applyGain (lastOttGain);
+        buffer.applyGain (staticTrim);
     }
 
     //==========================================================
