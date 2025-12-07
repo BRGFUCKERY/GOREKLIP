@@ -452,26 +452,44 @@ buffer.applyGain (staticTrim);
                 {
                     float y = samples[i];
 
-                    // SATURATION (pre-clip), only active when satAmount > 0
-                    if (satAmount > 0.0f)
-                    {
-                        // Tiny SAT auto-trim (max about -2.5 dB)
-                        const float satTrimDb = -2.5f * satAmount;   // 0 .. -2.5 dB
-                        const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
-                        y *= satTrim;
+                    405                     // SATURATION (pre-clip), only active when satAmount > 0
+ 406                     if (satAmount > 0.0f)
+ 407                     {
+ 408                         // Static duck so it doesn’t just get louder when you crank SAT.
+ 409                         // Up to about -3 dB at 100%.
+ 410                         const float satTrimDb = -3.0f * satAmount;           // 0 .. -3 dB
+ 411                         const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
+ 412                         y *= satTrim;
+ 413 
+ 414                         // Drive into the curve – starts mild, gets hotter as SAT increases.
+ 415                         const float driveDb = 3.0f + 9.0f * satAmount;       // ~3 dB low, ~12 dB high
+ 416                         const float drive   = juce::Decibels::decibelsToGain (driveDb);
+ 417                         const float in      = y * drive;
+ 418 
+ 419                         // Rounded "burn" curve:
+ 420                         // 1) Fruity-style soft clip with moving threshold
+ 421                         const float thr = juce::jmap (satAmount, 0.75f, 0.25f);
+ 422                         float shaped = fruitySoftClipSample (in, thr);
+ 423 
+ 424                         // 2) Extra rounding so it feels smooth / melted, not spiky
+ 425                         shaped = 0.7f * shaped + 0.3f * std::tanh (shaped);
+ 426 
+ 427                         // Bass emphasis – more low / low-mid weight as SAT goes up.
+ 428                         const float bassLift = 1.0f + 0.35f * satAmount;     // up to ~ +3 dB-ish in the lows
+ 429                         float ySat = shaped * bassLift;
+ 430 
+ 431                         // Undo part of the drive so overall loudness stays controlled.
+ 432                         const float invDrive = 1.0f / juce::jmax (drive, 1.0e-6f);
+ 433                         ySat *= invDrive;
+ 434 
+ 435                         // Mix: shaped so 0–50% already feels like "something".
+ 436                         float mix = std::pow (satAmount, 0.7f);              // 0..1, biased to kick in earlier
+ 437                         mix = juce::jlimit (0.0f, 1.0f, mix);
+ 438 
+ 439                         // Final blend
+ 440                         y = y + mix * (ySat - y);
+ 441                     }
 
-                        // Threshold moves as SAT increases
-                        const float thr = juce::jmap (satAmount, 0.55f, 0.15f);
-
-                        // Rounded soft clip
-                        float y0 = fruitySoftClipSample (y, thr);
-
-                        // Bass lift – still there but a bit tamer
-                        const float bassLift = 1.0f + 0.15f * satAmount;
-                        y0 *= bassLift;
-
-                        // Blend
-                        y = y + (satAmount * 1.25f) * (y0 - y);
                     }
 
                     // Post-gain (Fruity-null alignment)
@@ -543,26 +561,44 @@ buffer.applyGain (staticTrim);
                 {
                     float y = samples[i];
 
-                    // SATURATION (pre-clip), only active when satAmount > 0
-                    if (satAmount > 0.0f)
-                    {
-                        // Tiny SAT auto-trim (max about -2.5 dB)
-                        const float satTrimDb = -2.5f * satAmount;   // 0 .. -2.5 dB
-                        const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
-                        y *= satTrim;
+                 496                     // SATURATION (pre-clip), only active when satAmount > 0
+ 497                     if (satAmount > 0.0f)
+ 498                     {
+ 499                         // Static duck so it doesn’t just get louder when you crank SAT.
+ 500                         // Up to about -3 dB at 100%.
+ 501                         const float satTrimDb = -3.0f * satAmount;           // 0 .. -3 dB
+ 502                         const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
+ 503                         y *= satTrim;
+ 504 
+ 505                         // Drive into the curve – starts mild, gets hotter as SAT increases.
+ 506                         const float driveDb = 3.0f + 9.0f * satAmount;       // ~3 dB low, ~12 dB high
+ 507                         const float drive   = juce::Decibels::decibelsToGain (driveDb);
+ 508                         const float in      = y * drive;
+ 509 
+ 510                         // Rounded "burn" curve:
+ 511                         // 1) Fruity-style soft clip with moving threshold
+ 512                         const float thr = juce::jmap (satAmount, 0.75f, 0.25f);
+ 513                         float shaped = fruitySoftClipSample (in, thr);
+ 514 
+ 515                         // 2) Extra rounding so it feels smooth / melted, not spiky
+ 516                         shaped = 0.7f * shaped + 0.3f * std::tanh (shaped);
+ 517 
+ 518                         // Bass emphasis – more low / low-mid weight as SAT goes up.
+ 519                         const float bassLift = 1.0f + 0.35f * satAmount;     // up to ~ +3 dB-ish in the lows
+ 520                         float ySat = shaped * bassLift;
+ 521 
+ 522                         // Undo part of the drive so overall loudness stays controlled.
+ 523                         const float invDrive = 1.0f / juce::jmax (drive, 1.0e-6f);
+ 524                         ySat *= invDrive;
+ 525 
+ 526                         // Mix: shaped so 0–50% already feels like "something".
+ 527                         float mix = std::pow (satAmount, 0.7f);              // 0..1, biased to kick in earlier
+ 528                         mix = juce::jlimit (0.0f, 1.0f, mix);
+ 529 
+ 530                         // Final blend
+ 531                         y = y + mix * (ySat - y);
+ 532                     }
 
-                        // Threshold moves as SAT increases
-                        const float thr = juce::jmap (satAmount, 0.55f, 0.15f);
-
-                        // Rounded soft clip
-                        float y0 = fruitySoftClipSample (y, thr);
-
-                        // Bass lift – still there but a bit tamer
-                        const float bassLift = 1.0f + 0.15f * satAmount;
-                        y0 *= bassLift;
-
-                        // Blend
-                        y = y + (satAmount * 1.25f) * (y0 - y);
                     }
 
                     // Post-gain (Fruity-null alignment)
