@@ -485,10 +485,18 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         auto& sat = satStates[(size_t) ch];
 
-                        // Curved auto-trim: gentle at start, stronger at the top
-                        const float tTrim     = std::pow (satAmount, 1.3f);
-                        const float satTrimDb = -2.5f * tTrim; // same max, slower onset
-                        const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
+                        // Milder auto-trim – nothing until 50%, then up to about -0.7 dB
+                        float satTrimDb = 0.0f;
+
+                        if (satAmount > 0.5f)
+                        {
+                            float tt = (satAmount - 0.5f) / 0.5f;
+                            tt = juce::jlimit (0.0f, 1.0f, tt);
+
+                            satTrimDb = -0.7f * tt;
+                        }
+
+                        const float satTrim = juce::Decibels::decibelsToGain (satTrimDb);
 
                         float yPre = y * satTrim;
 
@@ -500,8 +508,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
                         const float tilted     = yPre + tiltAmount * (low - yPre);
 
-                        // Smooth drive growth – no "nothing, nothing, BOOM"
-                        const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
+                        // Smooth drive growth – more present earlier in the knob
+                        const float drive = 1.0f + 9.0f * std::pow (satAmount, 0.8f);
 
                         float driven = std::tanh (tilted * drive);
 
@@ -510,8 +518,22 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         driven /= driveComp;
 
                         // Dry/wet mix with gentle curve so low SAT already does something
-                        const float mix = std::pow (satAmount, 1.1f);
-                        y = yPre + mix * (driven - yPre);
+                        const float mix = std::pow (satAmount, 0.8f);
+                        float ySat = yPre + mix * (driven - yPre);
+
+                        // Makeup gain – subtle lift from 20% upwards to counter trim
+                        float makeupDb = 0.0f;
+
+                        if (satAmount > 0.2f)
+                        {
+                            float t = (satAmount - 0.2f) / 0.8f;
+                            t = juce::jlimit (0.0f, 1.0f, t);
+
+                            makeupDb = 1.0f * t;
+                        }
+
+                        const float makeup = juce::Decibels::decibelsToGain (makeupDb);
+                        y = ySat * makeup;
                     }
 
                     // Post-gain (Fruity-null alignment)
@@ -588,10 +610,18 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         auto& sat = satStates[(size_t) ch];
 
-                        // Curved auto-trim: gentle at start, stronger at the top
-                        const float tTrim     = std::pow (satAmount, 1.3f);
-                        const float satTrimDb = -2.5f * tTrim; // same max, slower onset
-                        const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
+                        // Milder auto-trim – nothing until 50%, then up to about -0.7 dB
+                        float satTrimDb = 0.0f;
+
+                        if (satAmount > 0.5f)
+                        {
+                            float tt = (satAmount - 0.5f) / 0.5f;
+                            tt = juce::jlimit (0.0f, 1.0f, tt);
+
+                            satTrimDb = -0.7f * tt;
+                        }
+
+                        const float satTrim = juce::Decibels::decibelsToGain (satTrimDb);
 
                         float yPre = y * satTrim;
 
@@ -603,8 +633,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
                         const float tilted     = yPre + tiltAmount * (low - yPre);
 
-                        // Smooth drive growth – no "nothing, nothing, BOOM"
-                        const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
+                        // Smooth drive growth – more present earlier in the knob
+                        const float drive = 1.0f + 9.0f * std::pow (satAmount, 0.8f);
 
                         float driven = std::tanh (tilted * drive);
 
@@ -613,8 +643,22 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         driven /= driveComp;
 
                         // Dry/wet mix with gentle curve so low SAT already does something
-                        const float mix = std::pow (satAmount, 1.1f);
-                        y = yPre + mix * (driven - yPre);
+                        const float mix = std::pow (satAmount, 0.8f);
+                        float ySat = yPre + mix * (driven - yPre);
+
+                        // Makeup gain – subtle lift from 20% upwards to counter trim
+                        float makeupDb = 0.0f;
+
+                        if (satAmount > 0.2f)
+                        {
+                            float t = (satAmount - 0.2f) / 0.8f;
+                            t = juce::jlimit (0.0f, 1.0f, t);
+
+                            makeupDb = 1.0f * t;
+                        }
+
+                        const float makeup = juce::Decibels::decibelsToGain (makeupDb);
+                        y = ySat * makeup;
                     }
 
                     // Post-gain (Fruity-null alignment)
