@@ -42,6 +42,58 @@ private:
     juce::Slider* satSlider  = nullptr; // SAT knob
 };
 
+class FineControlSlider : public juce::Slider
+{
+public:
+    FineControlSlider() = default;
+
+    void setDragSensitivities (int normal, int fine)
+    {
+        normalSensitivity = (float) normal;
+        fineSensitivity   = (float) fine;
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseDown (e);
+        lastDragPos = e.position;
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        const auto delta   = e.position - lastDragPos;
+        const float motion = delta.x - delta.y;
+
+        lastDragPos = e.position;
+
+        const float sensitivity = e.mods.isShiftDown() ? fineSensitivity : normalSensitivity;
+        const auto  range       = getRange();
+
+        if (sensitivity > 0.0f)
+        {
+            const double deltaValue = (motion / sensitivity) * range.getLength();
+            const double newValue   = juce::jlimit (range.getStart(), range.getEnd(), getValue() + deltaValue);
+
+            setValue (newValue, juce::sendNotificationSync);
+        }
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseUp (e);
+    }
+
+private:
+    juce::Point<float> lastDragPos;
+    float normalSensitivity = 250.0f;
+    float fineSensitivity   = 1000.0f;
+};
+
+class DownwardComboBoxLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+};
+
 //==============================================================
 //  Main Editor
 //==============================================================
@@ -67,12 +119,13 @@ private:
 
     // LookAndFeel + knobs
     MiddleFingerLookAndFeel fingerLnf;
+    DownwardComboBoxLookAndFeel comboLnf;
 
     // 4 knobs: GAIN, OTT, SAT, MODE
-    juce::Slider gainSlider;
-    juce::Slider ottSlider;
-    juce::Slider satSlider;
-    juce::Slider modeSlider;
+    FineControlSlider gainSlider;
+    FineControlSlider ottSlider;
+    FineControlSlider satSlider;
+    FineControlSlider modeSlider;
 
     juce::Label  gainLabel;
     juce::Label  ottLabel;
