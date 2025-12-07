@@ -298,6 +298,32 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float g         = postGain;                // Fruity-null alignment
     const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
 
+    //==========================================================
+    // GAIN-BYPASS MODE:
+    //   - Apply only INPUT GAIN
+    //   - Skip OTT, SAT, limiter, oversampling, and metering
+    //==========================================================
+    if (gainBypass.load())
+    {
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float* samples = buffer.getWritePointer (ch);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float y = samples[i] * inputGain;
+                samples[i] = y;
+            }
+        }
+
+        // In bypass mode, keep GUI visuals static
+        guiBurn.store (0.0f);
+        guiSignalEnv.store (0.0f);
+        // Do not modify guiLufs here; it will be ignored visually in the editor
+
+        return;
+    }
+
     // Oversampling mode can be changed at runtime – keep Oversampling object in sync
     if (osIndexParam != currentOversampleIndex || (! oversampler && osIndexParam > 0))
     {

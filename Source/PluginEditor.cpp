@@ -187,6 +187,10 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
 
+    // Make GAIN label clickable to toggle bypass-after-gain
+    gainLabel.setInterceptsMouseClicks (true, false);
+    gainLabel.addMouseListener (this, false);
+
     // LUFS label – white bold font, slightly smaller
     lufsLabel.setJustificationType (juce::Justification::centred);
     lufsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
@@ -407,25 +411,47 @@ void FruityClipAudioProcessorEditor::resized()
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
-    // Burn value for background/logo
-    lastBurn = processor.getGuiBurn();
+    const bool bypassNow = processor.getGainBypass();
 
-    // LUFS + gate state
-    const float lufs      = processor.getGuiLufs();
-    const bool  hasSignal = processor.getGuiHasSignal();
-
-    if (! hasSignal)
+    if (bypassNow)
     {
-        // No signal: hide the LUFS meter completely
+        // In bypass mode, keep background static and hide LUFS
+        lastBurn = 0.0f;
         lufsLabel.setVisible (false);
     }
     else
     {
-        // Signal present: show LUFS with numeric readout
-        lufsLabel.setVisible (true);
-        juce::String text = juce::String (lufs, 2) + " LUFS";
-        lufsLabel.setText (text, juce::dontSendNotification);
+        // Normal reactive background and LUFS display
+        lastBurn = processor.getGuiBurn();
+
+        const float lufs      = processor.getGuiLufs();
+        const bool  hasSignal = processor.getGuiHasSignal();
+
+        if (! hasSignal)
+        {
+            lufsLabel.setVisible (false);
+        }
+        else
+        {
+            lufsLabel.setVisible (true);
+            juce::String text = juce::String (lufs, 2) + " LUFS";
+            lufsLabel.setText (text, juce::dontSendNotification);
+        }
     }
 
     repaint();
+}
+
+void FruityClipAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
+{
+    // Only react if the GAIN label was clicked
+    if (e.eventComponent == &gainLabel || e.originalComponent == &gainLabel)
+    {
+        isGainBypass = ! isGainBypass;
+        processor.setGainBypass (isGainBypass);
+
+        // Visual cue on the label itself
+        gainLabel.setColour (juce::Label::textColourId,
+                             isGainBypass ? juce::Colours::grey : juce::Colours::white);
+    }
 }

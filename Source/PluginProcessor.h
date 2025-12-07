@@ -64,6 +64,10 @@ public:
     // True if we currently have enough signal to show LUFS
     bool getGuiHasSignal() const { return guiSignalEnv.load() > 0.2f; }
 
+    // Bypass all processing after input gain (for A/B)
+    void setGainBypass (bool shouldBypass)        { gainBypass.store (shouldBypass); }
+    bool getGainBypass() const                    { return gainBypass.load(); }
+
 private:
     //==========================================================
     // Internal helpers
@@ -143,6 +147,9 @@ private:
 
     // GUI signal envelope (0..1) for gating the LUFS display
     std::atomic<float> guiSignalEnv { 0.0f };
+
+    // When true, only input gain is applied; OTT/SAT/limiter/oversampling/metering are bypassed
+    std::atomic<bool> gainBypass { false };
 
     // Parameter state (includes oversampleMode)
     juce::AudioProcessorValueTreeState parameters;
