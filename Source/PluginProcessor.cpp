@@ -485,33 +485,55 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         auto& sat = satStates[(size_t) ch];
 
-                        // Curved auto-trim: gentle at start, stronger at the top
-                        const float tTrim     = std::pow (satAmount, 1.3f);
-                        const float satTrimDb = -2.5f * tTrim; // same max, slower onset
+                        // Curved auto-trim: gentle at start, still some control at the top
+                        const float tTrim     = std::pow (satAmount, 1.1f);
+                        const float satTrimDb = -1.5f * tTrim; // max about -1.5 dB at SAT = 1
                         const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
 
                         float yPre = y * satTrim;
 
-                        // Low-tilt bass emphasis for the drive
+                        // Split into low band (~300 Hz) and complementary high band
                         sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * yPre;
                         const float low = sat.low;
+                        const float hi  = yPre - low;
 
-                        // As SAT goes up, we lean more into the lowpassed version
-                        const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
-                        const float tilted     = yPre + tiltAmount * (low - yPre);
+                        // Drive increases smoothly with SAT
+                        const float drive = 1.0f + 6.0f * std::pow (satAmount, 1.3f);
 
-                        // Smooth drive growth – no "nothing, nothing, BOOM"
-                        const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
+                        // Saturate only the low band
+                        float lowDriven = std::tanh (low * drive);
 
-                        float driven = std::tanh (tilted * drive);
+                        // Drive compensation: gentle, keeps some loudness reward
+                        const float driveComp = 1.0f + 0.3f * (drive - 1.0f);
+                        lowDriven /= driveComp;
 
-                        // Simple drive compensation so it doesn't jump in level insanely
-                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f);
-                        driven /= driveComp;
+                        // Mix saturated low band back with original low band
+                        const float lowMix = std::pow (satAmount, 1.0f); // smooth curve
+                        float lowOut = low + lowMix * (lowDriven - low);
 
-                        // Dry/wet mix with gentle curve so low SAT already does something
-                        const float mix = std::pow (satAmount, 1.1f);
-                        y = yPre + mix * (driven - yPre);
+                        // Recombine with untouched high band
+                        float ySat = lowOut + hi;
+
+                        // Optional gentle full-band rounding
+                        const float glueAmount = 0.15f * satAmount; // small blend
+                        if (glueAmount > 0.0f)
+                        {
+                            float glued = std::tanh (ySat * 1.5f);
+                            ySat = ySat + glueAmount * (glued - ySat);
+                        }
+
+                        // Slight loudness bias at higher SAT
+                        float makeupDb = 0.0f;
+
+                        if (satAmount > 0.6f)
+                        {
+                            float t = (satAmount - 0.6f) / 0.4f;   // 0..1 from 60% to 100%
+                            t = juce::jlimit (0.0f, 1.0f, t);
+                            makeupDb = 0.7f * t;                  // up to about +0.7 dB at SAT = 1
+                        }
+
+                        const float makeup = juce::Decibels::decibelsToGain (makeupDb);
+                        y = ySat * makeup;
                     }
 
                     // Post-gain (Fruity-null alignment)
@@ -588,33 +610,55 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         auto& sat = satStates[(size_t) ch];
 
-                        // Curved auto-trim: gentle at start, stronger at the top
-                        const float tTrim     = std::pow (satAmount, 1.3f);
-                        const float satTrimDb = -2.5f * tTrim; // same max, slower onset
+                        // Curved auto-trim: gentle at start, still some control at the top
+                        const float tTrim     = std::pow (satAmount, 1.1f);
+                        const float satTrimDb = -1.5f * tTrim; // max about -1.5 dB at SAT = 1
                         const float satTrim   = juce::Decibels::decibelsToGain (satTrimDb);
 
                         float yPre = y * satTrim;
 
-                        // Low-tilt bass emphasis for the drive
+                        // Split into low band (~300 Hz) and complementary high band
                         sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * yPre;
                         const float low = sat.low;
+                        const float hi  = yPre - low;
 
-                        // As SAT goes up, we lean more into the lowpassed version
-                        const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
-                        const float tilted     = yPre + tiltAmount * (low - yPre);
+                        // Drive increases smoothly with SAT
+                        const float drive = 1.0f + 6.0f * std::pow (satAmount, 1.3f);
 
-                        // Smooth drive growth – no "nothing, nothing, BOOM"
-                        const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
+                        // Saturate only the low band
+                        float lowDriven = std::tanh (low * drive);
 
-                        float driven = std::tanh (tilted * drive);
+                        // Drive compensation: gentle, keeps some loudness reward
+                        const float driveComp = 1.0f + 0.3f * (drive - 1.0f);
+                        lowDriven /= driveComp;
 
-                        // Simple drive compensation so it doesn't jump in level insanely
-                        const float driveComp = 1.0f + 0.6f * (drive - 1.0f);
-                        driven /= driveComp;
+                        // Mix saturated low band back with original low band
+                        const float lowMix = std::pow (satAmount, 1.0f); // smooth curve
+                        float lowOut = low + lowMix * (lowDriven - low);
 
-                        // Dry/wet mix with gentle curve so low SAT already does something
-                        const float mix = std::pow (satAmount, 1.1f);
-                        y = yPre + mix * (driven - yPre);
+                        // Recombine with untouched high band
+                        float ySat = lowOut + hi;
+
+                        // Optional gentle full-band rounding
+                        const float glueAmount = 0.15f * satAmount; // small blend
+                        if (glueAmount > 0.0f)
+                        {
+                            float glued = std::tanh (ySat * 1.5f);
+                            ySat = ySat + glueAmount * (glued - ySat);
+                        }
+
+                        // Slight loudness bias at higher SAT
+                        float makeupDb = 0.0f;
+
+                        if (satAmount > 0.6f)
+                        {
+                            float t = (satAmount - 0.6f) / 0.4f;   // 0..1 from 60% to 100%
+                            t = juce::jlimit (0.0f, 1.0f, t);
+                            makeupDb = 0.7f * t;                  // up to about +0.7 dB at SAT = 1
+                        }
+
+                        const float makeup = juce::Decibels::decibelsToGain (makeupDb);
+                        y = ySat * makeup;
                     }
 
                     // Post-gain (Fruity-null alignment)
