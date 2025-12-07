@@ -1,4 +1,3 @@
-// PluginProcessor.h
 #pragma once
 
 #include "JuceHeader.h"
@@ -110,7 +109,7 @@ private:
     std::vector<OttHPState> ottStates;
     float ottAlpha     = 0.0f;   // one-pole LP factor for 150 Hz split
     float ottEnvAlpha  = 0.0f;   // envelope smoothing factor
-    float lastOttGain  = 1.0f;   // smoothed unity gain-match factor
+    float lastOttGain  = 1.0f;   // now stores static trim (for debug/consistency)
 
     //==========================================================
     // Internal state
