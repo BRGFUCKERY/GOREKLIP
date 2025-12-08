@@ -61,7 +61,7 @@ public:
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
-        const auto  delta  = e.position - lastDragPos;
+        const auto delta   = e.position - lastDragPos;
         const float motion = delta.x - delta.y;
 
         lastDragPos = e.position;
@@ -97,15 +97,10 @@ public:
     {
         auto options = juce::LookAndFeel_V4::getOptionsForComboBoxPopupMenu (box, label);
 
-        // Make the popup:
-        //  - open directly under the combo
-        //  - aligned to the combo
-        //  - start from the top item (no “keep selected in middle” behaviour)
         options = options
-                    .withTargetComponent (&box)
-                    .withMinimumWidth (box.getWidth())
-                    .withPreferredPopupDirection (juce::PopupMenu::Options::PopupDirection::downwards)
-                    .withInitiallySelectedItem (-1);
+            .withTargetComponent (&box)
+            .withPreferredPopupDirection (juce::PopupMenu::Options::PopupDirection::downwards)
+            .withInitiallySelectedItem (-1);
 
         return options;
     }
@@ -135,7 +130,7 @@ private:
     const float bgScale = 0.35f; // scale for bg.png
 
     // LookAndFeel + knobs
-    MiddleFingerLookAndFeel    fingerLnf;
+    MiddleFingerLookAndFeel fingerLnf;
     DownwardComboBoxLookAndFeel comboLnf;
 
     // 4 knobs: GAIN, OTT, SAT, MODE
@@ -166,7 +161,7 @@ private:
     // GUI burn value (cached from processor)
     float lastBurn = 0.0f;
 
-    int  lastLookId      = 1;
+    int lastLookId = 1;
     bool isRestoringLook = false;
 
     // Local GUI state for gain-bypass toggle
