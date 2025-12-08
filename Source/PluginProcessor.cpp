@@ -829,29 +829,33 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         (blockMax > 0.01f);
 
     // LUFS-based burn: -20 LUFS -> 0, -2 LUFS -> 1
-    float targetBurnLufs = 0.0f;
-    {
-        float t = (blockLufs + 20.0f) / 18.0f;  // -20..-2 -> 0..1
-        t = juce::jlimit (0.0f, 1.0f, t);
-        // gentler curve so mid-LUFS still show some burn
-        targetBurnLufs = std::pow (t, 1.6f);
-    }
+float targetBurnLufs = 0.0f;
+{
+    float t = (blockLufs + 20.0f) / 18.0f;  // -20..-2 -> 0..1
+    t = juce::jlimit (0.0f, 1.0f, t);
 
-    // Smooth and gate using hasSignalNow so it falls quickly when music stops
-    float prevBurnLufs = guiBurnLufs.load();
+    // Heavier curve so you get a wide, gradual sweep of burn
+    // Mid-LUFS moves are subtle, only really pins near the top.
+    targetBurnLufs = std::pow (t, 2.4f);
+}
 
-    // Fast rise, moderately quick fall:
-    float alphaOn  = 0.8f;   // when we have signal
-    float alphaOff = 0.3f;   // when signal disappears
+// Smooth and gate using hasSignalNow so it rises stupid slow,
+// and only gets fast when the music drops out.
+float prevBurnLufs = guiBurnLufs.load();
 
-    float alpha = hasSignalNow ? alphaOn : alphaOff;
-    float newBurnLufs = (1.0f - alpha) * prevBurnLufs + alpha * targetBurnLufs;
+// Very slow rise, quicker fall when signal disappears
+const float alphaOn  = 0.12f; // when we have signal  (slow)
+const float alphaOff = 0.60f; // when signal disappears (fast-ish)
 
-    // If there is no signal and targetBurnLufs is 0, ensure it decays toward 0
-    if (! hasSignalNow && targetBurnLufs <= 0.0f)
-        newBurnLufs *= 0.8f;
+float alpha = hasSignalNow ? alphaOn : alphaOff;
+float newBurnLufs = (1.0f - alpha) * prevBurnLufs + alpha * targetBurnLufs;
 
-    guiBurnLufs.store (newBurnLufs);
+// If there’s absolutely no signal and target is zero, push it down faster
+if (! hasSignalNow && targetBurnLufs <= 0.0f)
+    newBurnLufs *= 0.7f;
+
+guiBurnLufs.store (newBurnLufs);
+
 
     // Smooth gate envelope so LUFS label doesn't flicker
     const float prevEnv   = guiSignalEnv.load();
