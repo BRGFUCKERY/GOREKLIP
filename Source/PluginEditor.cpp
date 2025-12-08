@@ -126,98 +126,120 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     fingerLnf.setKnobImage (fingerImage);
 
-    // Enable double-buffering & non-opaque background
-    setOpaque (false);
+    if (bgImage.isValid())
+        setSize ((int)(bgImage.getWidth() * bgScale),
+                 (int)(bgImage.getHeight() * bgScale));
+    else
+        setSize (600, 400);
 
-    // Set LookAndFeel for sliders
+    // ----------------------
+    // SLIDERS
+    // ----------------------
+    auto setupKnob01 = [] (FineControlSlider& s)
+    {
+        s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        s.setRange (0.0, 1.0, 0.0001);
+        s.setMouseDragSensitivity (250);
+        s.setDragSensitivities (250, 800);
+    };
+
+    // GAIN uses dB range
+    gainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    gainSlider.setMouseDragSensitivity (250);
+    gainSlider.setDragSensitivities (250, 800);
+    gainSlider.setRange (-12.0, 12.0, 0.01);
+
+    setupKnob01 (ottSlider);
+    setupKnob01 (satSlider);
+    setupKnob01 (modeSlider); // MODE finger – param is bool, but we use 0..1
+
     gainSlider.setLookAndFeel (&fingerLnf);
     ottSlider .setLookAndFeel (&fingerLnf);
     satSlider .setLookAndFeel (&fingerLnf);
     modeSlider.setLookAndFeel (&fingerLnf);
-
-    gainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    gainSlider.setRange (-12.0, 12.0, 0.01);
-    gainSlider.setDragSensitivities (250, 1000);
-
-    ottSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    ottSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    ottSlider.setRange (0.0, 1.0, 0.001);
-    ottSlider.setDragSensitivities (250, 1000);
-
-    satSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    satSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    satSlider.setRange (0.0, 1.0, 0.001);
-    satSlider.setDragSensitivities (250, 1000);
-
-    modeSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    modeSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    modeSlider.setRange (0.0, 1.0, 0.001);
-    modeSlider.setDragSensitivities (250, 1000);
-
-    // Knob labels
-    auto setupLabel = [] (juce::Label& label, const juce::String& text)
-    {
-        label.setText (text, juce::dontSendNotification);
-        label.setJustificationType (juce::Justification::centred);
-        label.setColour (juce::Label::textColourId, juce::Colours::white);
-        label.setFont (juce::Font (13.0f, juce::Font::bold));
-    };
-
-    setupLabel (gainLabel, "GAIN");
-    setupLabel (ottLabel,  "LOVE");
-    setupLabel (satLabel,  "DEATH");
-    setupLabel (modeLabel, "CLIPPER");
 
     addAndMakeVisible (gainSlider);
     addAndMakeVisible (ottSlider);
     addAndMakeVisible (satSlider);
     addAndMakeVisible (modeSlider);
 
+    // ----------------------
+    // LABELS
+    // ----------------------
+    auto setupLabel = [] (juce::Label& lbl, const juce::String& text)
+    {
+        lbl.setText (text, juce::dontSendNotification);
+        lbl.setJustificationType (juce::Justification::centred);
+        lbl.setColour (juce::Label::textColourId, juce::Colours::white);
+
+        juce::FontOptions opts (16.0f);
+        opts = opts.withStyle ("Bold");
+        lbl.setFont (juce::Font (opts));
+    };
+
+    setupLabel (gainLabel, "GAIN");
+    setupLabel (ottLabel,  "LOVE");
+    setupLabel (satLabel,  "DEATH");
+    setupLabel (modeLabel, "CLIPPER"); // will switch to LIMITER in runtime
+
     addAndMakeVisible (gainLabel);
     addAndMakeVisible (ottLabel);
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
 
-    // LUFS label
-    lufsLabel.setText ("", juce::dontSendNotification);
+    // Make GAIN label clickable to toggle bypass-after-gain
+    gainLabel.setInterceptsMouseClicks (true, false);
+    gainLabel.addMouseListener (this, false);
+
+    // LUFS label – white bold font, slightly smaller
     lufsLabel.setJustificationType (juce::Justification::centred);
     lufsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-    lufsLabel.setFont (juce::Font (13.0f, juce::Font::bold));
+    {
+        juce::FontOptions opts (15.4f);
+        opts = opts.withStyle ("Bold");
+        lufsLabel.setFont (juce::Font (opts));
+    }
+    lufsLabel.setText ("0.00 LUFS", juce::dontSendNotification);
     addAndMakeVisible (lufsLabel);
 
-    // Oversample ComboBox (top-right)
-    oversampleBox.setLookAndFeel (&comboLnf);
-    oversampleBox.addItem ("x1", 1);
-    oversampleBox.addItem ("x2", 2);
-    oversampleBox.addItem ("x4", 3);
-    oversampleBox.addItem ("x8", 4);
+    // ----------------------
+    // LOOK DROPDOWN (top-left)
+    // ----------------------
+    lookBox.addSectionHeading ("BYPASS");
+    lookBox.addItem ("BYPASS",        100);
+    lookBox.addItem ("LOOK : COOKED", 1);
+    lookBox.addItem ("LOOK : LUFS",   2);
+    lookBox.addItem ("LOOK : STATIC", 3);
+    lookBox.setTextWhenNothingSelected ("");
+    lookBox.setJustificationType (juce::Justification::centred);
+    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
+    lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
+
+    lookBox.setLookAndFeel (&comboLnf);
+    addAndMakeVisible (lookBox);
+
+    // ----------------------
+    // OVERSAMPLE DROPDOWN (top-right, tiny, white "x1" etc.)
+    // ----------------------
+    oversampleBox.addItem ("x1",  1);
+    oversampleBox.addItem ("x2",  2);
+    oversampleBox.addItem ("x4",  3);
+    oversampleBox.addItem ("x8",  4);
     oversampleBox.addItem ("x16", 5);
-    oversampleBox.setSelectedId (1, juce::dontSendNotification);
-    oversampleBox.setTooltip ("Oversampling");
+    oversampleBox.setSelectedId (1, juce::dontSendNotification); // default x1
+    oversampleBox.setTextWhenNothingSelected ("x1");
+
+    oversampleBox.setJustificationType (juce::Justification::centred);
+    oversampleBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
+    oversampleBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
     addAndMakeVisible (oversampleBox);
-
-    // LOOK / SETTINGS ComboBox (top-left)
-    lookBox.setLookAndFeel (&comboLnf);
-    lookBox.setTextWhenNothingSelected ("");
-
-    lookBox.clear();
-
-    // Top heading: SETTINGS
-    lookBox.addSectionHeading ("SETTINGS");
-
-    // Options that actually change the look mode
-    lookBox.addItem ("LOOK : COOKED",   1);
-    lookBox.addItem ("LOOK : LOUDNESS", 2);  // was "LOOK : LUFS"
-    lookBox.addItem ("LOOK : STATIC",   3);
-
-    lookBox.addSeparator();
-
-    // Info entry at the bottom – replaces old BYPASS menu item
-    lookBox.addItem ("KLIPPERBIBLE", 100);
-
-    addAndMakeVisible (lookBox);
 
     // ----------------------
     // PARAMETER ATTACHMENTS
@@ -239,7 +261,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "oversampleMode", oversampleBox);
 
-    // Restore look mode, keep it in 1..3 and default to COOKED
     lastLookId = juce::jlimit (1, 3, processor.getStoredLookMode() + 1);
     lookBox.setSelectedId (lastLookId, juce::dontSendNotification);
 
@@ -253,7 +274,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
         const int selectedId = lookBox.getSelectedId();
 
-        // KLIPPERBIBLE info entry
         if (selectedId == 100)
         {
             isRestoringLook = true;
@@ -381,11 +401,10 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    // LOOK / SETTINGS combo – hug the top-left corner
     const int lookW = juce::jmax (80, w / 6);
     const int lookH = juce::jmax (16, h / 20);
-    const int lookX = 0;
-    const int lookY = 0;
+    const int lookX = 2;
+    const int lookY = 6;
 
     lookBox.setBounds (lookX, lookY, lookW, lookH);
 
@@ -397,142 +416,131 @@ void FruityClipAudioProcessorEditor::resized()
 
     oversampleBox.setBounds (osX, osY, osW, osH);
 
-    // Knob layout: 2x2 grid
-    const int marginX = 40;
-    const int marginY = 120;
-    const int spacingX = 40;
-    const int spacingY = 80;
+    // 4 knobs in a row (GAIN, OTT, SAT, MODE)
+    const int knobSize = juce::jmin (w / 7, h / 3);
+    const int spacing  = knobSize / 2;
 
-    const int knobWidth  = (w - 2 * marginX - spacingX) / 2;
-    const int knobHeight = knobWidth;
+    const int totalW   = knobSize * 4 + spacing * 3;
+    const int startX   = (w - totalW) / 2;
 
-    const int leftX  = marginX;
-    const int rightX = marginX + knobWidth + spacingX;
+    const int bottomMargin = (int) (h * 0.05f);
+    const int knobY        = h - knobSize - bottomMargin;
 
-    const int topY    = marginY;
-    const int bottomY = marginY + knobHeight + spacingY;
+    gainSlider.setBounds (startX + 0 * (knobSize + spacing), knobY, knobSize, knobSize);
+    ottSlider .setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
+    satSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
+    modeSlider.setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
 
-    gainSlider.setBounds (leftX,  topY,    knobWidth, knobHeight);
-    ottSlider .setBounds (rightX, topY,    knobWidth, knobHeight);
-    satSlider .setBounds (leftX,  bottomY, knobWidth, knobHeight);
-    modeSlider.setBounds (rightX, bottomY, knobWidth, knobHeight);
-
-    const int labelHeight = 20;
+    const int labelH = 20;
 
     gainLabel.setBounds (gainSlider.getX(),
-                         gainSlider.getBottom() + 4,
-                         knobWidth,
-                         labelHeight);
+                         gainSlider.getBottom() + 2,
+                         gainSlider.getWidth(),
+                         labelH);
 
     ottLabel.setBounds (ottSlider.getX(),
-                        ottSlider.getBottom() + 4,
-                        knobWidth,
-                        labelHeight);
+                        ottSlider.getBottom() + 2,
+                        ottSlider.getWidth(),
+                        labelH);
 
     satLabel.setBounds (satSlider.getX(),
-                        satSlider.getBottom() + 4,
-                        knobWidth,
-                        labelHeight);
+                        satSlider.getBottom() + 2,
+                        satSlider.getWidth(),
+                        labelH);
 
     modeLabel.setBounds (modeSlider.getX(),
-                         modeSlider.getBottom() + 4,
-                         knobWidth,
-                         labelHeight);
+                         modeSlider.getBottom() + 2,
+                         modeSlider.getWidth(),
+                         labelH);
 
-    // LUFS label above MODE finger
-    const int lufsW = knobWidth;
-    const int lufsH = 20;
-    const int lufsX = modeSlider.getX();
-    const int lufsY = modeSlider.getY() - lufsH - 4;
-    lufsLabel.setBounds (lufsX, lufsY, lufsW, lufsH);
+    // LUFS label – directly above the CLIPPER/LIMITER finger
+    const int lufsHeight = 18;
+    const int lufsY      = modeSlider.getY() - lufsHeight - 4;
+
+    lufsLabel.setBounds (modeSlider.getX(),
+                         lufsY,
+                         modeSlider.getWidth(),
+                         lufsHeight);
 }
 
 //==============================================================
-// Mouse handling – logo bypass + KLIPPERBIBLE is in the menu
-//==============================================================
-void FruityClipAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
-{
-    // Click on the logo area toggles circuit bypass (for A/B)
-    const int w = getWidth();
-
-    if (logoImage.isValid())
-    {
-        const float targetW = w * 0.80f;
-        const float scale   = targetW / logoImage.getWidth();
-
-        const int drawW = (int) (logoImage.getWidth()  * scale);
-        const int drawH = (int) (logoImage.getHeight() * scale);
-
-        const int x = (w - drawW) / 2;
-        const int y = 0; // top
-
-        const int cropY      = (int) (logoImage.getHeight() * 0.20f);
-        const int cropHeight = logoImage.getHeight() - cropY;
-
-        juce::Rectangle<int> logoBounds (x, y, drawW, drawH);
-        if (logoBounds.contains (e.getPosition()))
-        {
-            isGainBypass = ! isGainBypass;
-            processor.setGainBypass (isGainBypass);
-            return;
-        }
-
-        juce::ignoreUnused (cropHeight);
-    }
-
-    juce::AudioProcessorEditor::mouseUp (e);
-}
-
-//==============================================================
-// Timer – GUI updates
+// TIMER – pull burn + LUFS value from processor
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
-    // Decide which burn to use based on current look mode
+    const bool bypassNow = processor.getGainBypass();
     const int lookMode = processor.getLookMode(); // 0=COOKED, 1=LUFS, 2=STATIC
 
-    float guiBurnValue = 0.0f;
-
-    if (lookMode == 1)
-        guiBurnValue = processor.getGuiBurnLufs();  // LUFS-driven
-    else
-        guiBurnValue = processor.getGuiBurn();      // normal burn
-
-    lastBurn = guiBurnValue;
-
-    // LUFS label text (only when we actually have signal)
-    if (processor.getGuiHasSignal())
+    if (bypassNow)
     {
-        const float lufs = processor.getGuiLufs();
-        lufsLabel.setText (juce::String (lufs, 1) + " LUFS", juce::dontSendNotification);
+        // In bypass mode, keep background static and hide LUFS
+        lastBurn = 0.0f;
+        lufsLabel.setVisible (false);
     }
     else
     {
-        lufsLabel.setText ("", juce::dontSendNotification);
+        // Normal reactive background and LUFS display
+        switch (lookMode)
+        {
+            case 1: // LUFS
+                lastBurn = processor.getGuiBurnLufs();
+                break;
+
+            case 2: // STATIC
+                lastBurn = 0.0f; // no burn, static background
+                break;
+
+            case 0: // COOKED
+            default:
+                lastBurn = processor.getGuiBurn();
+                break;
+        }
+
+        const float lufs      = processor.getGuiLufs();
+        const bool  hasSignal = processor.getGuiHasSignal();
+
+        if (! hasSignal)
+        {
+            lufsLabel.setVisible (false);
+        }
+        else
+        {
+            lufsLabel.setVisible (true);
+            juce::String text = juce::String (lufs, 2) + " LUFS";
+            lufsLabel.setText (text, juce::dontSendNotification);
+        }
     }
 
     repaint();
 }
 
-//==============================================================
-// KLIPPERBIBLE popup
-//==============================================================
 void FruityClipAudioProcessorEditor::showBypassInfoPopup()
 {
-    const juce::String message =
-        "KLIPPERBIBLE\n\n"
-        "BYPASS:\n"
-        "• Tap the GAIN logo to bypass the clipping & saturation circuit.\n"
-        "• The input GAIN stays active, so your level doesn’t jump.\n"
-        "• LOVE, DEATH, limiter, oversampling and ceiling are parked while bypassed.\n"
-        "• This lets you A/B the circuit tone at the same loudness instead of just louder vs quieter.\n\n"
-        "FINGER TRICKS:\n"
-        "• Hold SHIFT while moving any finger for fine-tune moves.\n"
-        "• Flick the last finger up and down to switch between CLIPPER and LIMITER mode.\n\n"
-        "FOLLOW ME ON INSTAGRAM @BORGORE\n";
+    juce::String text;
+    text << "Tap the GAIN logo to bypass the clipping and saturation circuit.\n\n";
+    text << "• The input gain stays active, so your level doesn’t jump.\n";
+    text << "• Only the LOVE (OTT), DEATH, limiter, oversampling and ceiling are parked.\n";
+    text << "• This lets you A/B the circuit tone at the same loudness instead of “louder vs quieter”.\n\n";
+    text << "Tap the GAIN logo again to drop back into full GORE mode.";
 
     juce::AlertWindow::showMessageBoxAsync (
-        juce::AlertWindow::NoIcon,
-        "KLIPPERBIBLE",
-        message);
+        juce::AlertWindow::InfoIcon,
+        "BYPASS – HOW IT WORKS",
+        text,
+        "OK",
+        this);
+}
+
+void FruityClipAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
+{
+    // Only react if the GAIN label was clicked
+    if (e.eventComponent == &gainLabel || e.originalComponent == &gainLabel)
+    {
+        isGainBypass = ! isGainBypass;
+        processor.setGainBypass (isGainBypass);
+
+        // Visual cue on the label itself
+        gainLabel.setColour (juce::Label::textColourId,
+                             isGainBypass ? juce::Colours::grey : juce::Colours::white);
+    }
 }
