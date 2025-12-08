@@ -77,6 +77,19 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
                  0, 0, knobImage.getWidth(), knobImage.getHeight());
 }
 
+juce::ComboBox::PopupMenuOptions DownwardComboBoxLookAndFeel::getOptionsForComboBoxPopupMenu (
+    juce::ComboBox& box,
+    const juce::ComboBox::PopupMenuOptions& options)
+{
+    auto opts = juce::LookAndFeel_V4::getOptionsForComboBoxPopupMenu (box, options);
+
+    auto area = box.getScreenBounds();
+    area.setY (area.getBottom());
+    opts = opts.withTargetScreenArea (area);
+
+    return opts;
+}
+
 //==============================================================
 // Editor
 //==============================================================
@@ -207,7 +220,8 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // ----------------------
     // LOOK DROPDOWN (top-left)
     // ----------------------
-    lookBox.addSectionHeading ("BYPASS (tap the gain logo)");
+    lookBox.addSectionHeading ("BYPASS");
+    lookBox.addItem ("BYPASS",        100);
     lookBox.addItem ("LOOK : COOKED", 1);
     lookBox.addItem ("LOOK : LUFS",   2);
     lookBox.addItem ("LOOK : STATIC", 3);
@@ -238,7 +252,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
-    oversampleBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (oversampleBox);
 
     // ----------------------
@@ -261,13 +274,31 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "oversampleMode", oversampleBox);
 
+    lastLookId = juce::jlimit (1, 3, processor.getStoredLookMode() + 1);
+    lookBox.setSelectedId (lastLookId, juce::dontSendNotification);
+
     lookAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "lookMode", lookBox);
 
     lookBox.onChange = [this]
     {
+        if (isRestoringLook)
+            return;
+
         const int selectedId = lookBox.getSelectedId();
-        processor.setStoredLookMode (juce::jlimit (0, 2, selectedId - 1));
+
+        if (selectedId == 100)
+        {
+            isRestoringLook = true;
+            showBypassInfoPopup();
+            lookBox.setSelectedId (lastLookId, juce::sendNotificationSync);
+            isRestoringLook = false;
+            return;
+        }
+
+        lastLookId = selectedId;
+        const int lookMode = juce::jlimit (0, 2, selectedId - 1);
+        processor.setStoredLookMode (lookMode);
     };
 
     // Initial state from param
@@ -316,7 +347,7 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     const float burnRaw = juce::jlimit (0.0f, 1.0f, lastBurn);
 
     // Visual slam comes in later – you really have to hit it
-    const float burnShaped = std::pow (burnRaw, 2.0f);
+    const float burnShaped = std::pow (burnRaw, 1.3f);
 
     // 1) Base background
     if (bgImage.isValid())
@@ -385,7 +416,7 @@ void FruityClipAudioProcessorEditor::resized()
 
     const int lookW = juce::jmax (80, w / 6);
     const int lookH = juce::jmax (16, h / 20);
-    const int lookX = 6;
+    const int lookX = 2;
     const int lookY = 6;
 
     lookBox.setBounds (lookX, lookY, lookW, lookH);
@@ -494,6 +525,23 @@ void FruityClipAudioProcessorEditor::timerCallback()
     }
 
     repaint();
+}
+
+void FruityClipAudioProcessorEditor::showBypassInfoPopup()
+{
+    juce::String text;
+    text << "Tap the GAIN logo to bypass the clipping and saturation circuit.\n\n";
+    text << "• The input gain stays active, so your level doesn’t jump.\n";
+    text << "• Only the LOVE (OTT), DEATH, limiter, oversampling and ceiling are parked.\n";
+    text << "• This lets you A/B the circuit tone at the same loudness instead of “louder vs quieter”.\n\n";
+    text << "Tap the GAIN logo again to drop back into full GORE mode.";
+
+    juce::AlertWindow::showMessageBoxAsync (
+        juce::AlertWindow::InfoIcon,
+        "BYPASS – HOW IT WORKS",
+        text,
+        "OK",
+        this);
 }
 
 void FruityClipAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
