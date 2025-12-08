@@ -840,9 +840,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Smooth and gate using hasSignalNow so it falls quickly when music stops
     float prevBurnLufs = guiBurnLufs.load();
 
-    // Fast rise, moderately quick fall:
-    float alphaOn  = 0.8f;   // when we have signal
-    float alphaOff = 0.3f;   // when signal disappears
+    // Slow rise for a "vibe" meter, faster fall when signal disappears
+    float alphaOn  = 0.12f;  // when we have signal (very smooth, slow change)
+    float alphaOff = 0.55f;  // when signal disappears (drops back fairly quickly)
 
     float alpha = hasSignalNow ? alphaOn : alphaOff;
     float newBurnLufs = (1.0f - alpha) * prevBurnLufs + alpha * targetBurnLufs;

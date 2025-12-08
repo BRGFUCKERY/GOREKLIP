@@ -205,14 +205,15 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     addAndMakeVisible (lufsLabel);
 
     // ----------------------
-    // LOOK DROPDOWN (top-left)
+    // LOOK / SETTINGS DROPDOWN (top-left)
     // ----------------------
-    lookBox.addSectionHeading ("BYPASS");
-    lookBox.addItem ("BYPASS",        100);
+    lookBox.addSectionHeading ("SETTINGS");
     lookBox.addItem ("LOOK : COOKED", 1);
     lookBox.addItem ("LOOK : LUFS",   2);
     lookBox.addItem ("LOOK : STATIC", 3);
-    lookBox.setTextWhenNothingSelected ("");
+    lookBox.addSeparator();
+    lookBox.addItem ("KLIPERBIBLE",   100);
+    lookBox.setTextWhenNothingSelected ("SETTINGS");
     lookBox.setJustificationType (juce::Justification::centred);
     lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
     lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
@@ -403,8 +404,8 @@ void FruityClipAudioProcessorEditor::resized()
 
     const int lookW = juce::jmax (80, w / 6);
     const int lookH = juce::jmax (16, h / 20);
-    const int lookX = 2;
-    const int lookY = 6;
+    const int lookX = 0;
+    const int lookY = 0;
 
     lookBox.setBounds (lookX, lookY, lookW, lookH);
 
@@ -517,19 +518,32 @@ void FruityClipAudioProcessorEditor::timerCallback()
 void FruityClipAudioProcessorEditor::showBypassInfoPopup()
 {
     juce::String text;
-    text << "Tap the GAIN logo to bypass the clipping and saturation circuit.\n\n";
-    text << "• The input gain stays active, so your level doesn’t jump.\n";
-    text << "• Only the LOVE (OTT), DEATH, limiter, oversampling and ceiling are parked.\n";
-    text << "• This lets you A/B the circuit tone at the same loudness instead of “louder vs quieter”.\n\n";
-    text << "Tap the GAIN logo again to drop back into full GORE mode.";
 
-    juce::AlertWindow::showMessageBoxAsync (
+    text << "• BYPASS\n";
+    text << "Tap the GAIN label to temporarily bypass the clipping and saturation circuit.\n";
+    text << "Only the input gain stays active, so your A/B comparison is at the same loudness,\n";
+    text << "not just louder vs quieter.\n\n";
+
+    text << "• Limiter Mode\n";
+    text << "Flick the last finger knob (the CLIPPER finger) up and down to switch\n";
+    text << "between Clipper and Limiter modes.\n\n";
+
+    text << "• Fine-Tune Control\n";
+    text << "Hold SHIFT while turning any knob for tiny mastering adjustments -\n";
+    text << "normal drag = big moves, SHIFT drag = precise control.\n\n";
+
+    text << "—\n\n";
+    text << "FOLLOW ME ON INSTAGRAM\n";
+    text << "@BORGORE\n";
+
+    juce::AlertWindow::showMessageBoxAsync(
         juce::AlertWindow::InfoIcon,
-        "BYPASS – HOW IT WORKS",
+        "KLIPERBIBLE",
         text,
         "OK",
         this);
 }
+
 
 void FruityClipAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
 {
