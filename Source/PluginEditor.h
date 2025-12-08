@@ -149,6 +149,9 @@ private:
     // GUI burn value (cached from processor)
     float lastBurn = 0.0f;
 
+    int lastLookId = 1;
+    bool isRestoringLook = false;
+
     // Local GUI state for gain-bypass toggle
     bool isGainBypass = false;
 
@@ -156,6 +159,8 @@ private:
 
     // Timer for GUI updates
     void timerCallback() override;
+
+    void showBypassInfoPopup();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessorEditor)
 };

@@ -828,13 +828,13 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         (blockLufs > -60.0f) ||
         (blockMax > 0.01f);
 
-    // LUFS-based burn: -20 LUFS -> 0, -1 LUFS -> 1
+    // LUFS-based burn: -20 LUFS -> 0, -2 LUFS -> 1
     float targetBurnLufs = 0.0f;
     {
-        float t = (blockLufs + 20.0f) / 19.0f;  // -20..-1 -> 0..1
+        float t = (blockLufs + 20.0f) / 18.0f;  // -20..-2 -> 0..1
         t = juce::jlimit (0.0f, 1.0f, t);
-        // emphasise the top end so it stays calm until loud
-        targetBurnLufs = std::pow (t, 3.0f);
+        // gentler curve so mid-LUFS still show some burn
+        targetBurnLufs = std::pow (t, 1.6f);
     }
 
     // Smooth and gate using hasSignalNow so it falls quickly when music stops
@@ -861,10 +861,10 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     guiSignalEnv.store (newEnv);
 
     //==========================================================
-    // GUI LUFS readout – slower bar so it feels like a ST meter
+    // GUI LUFS readout – slower rise with signal, reasonably quick decay when silent
     //==========================================================
     const float prevLufs  = guiLufs.load();
-    const float lufsAlpha = hasSignalNow ? 0.20f : 0.75f; // slower with signal, fast drop when silent
+    const float lufsAlpha = hasSignalNow ? 0.12f : 0.50f; // mastering-style ballistics with faster falloff when silent
     const float lufsSmooth = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
 
     guiLufs.store (lufsSmooth);
