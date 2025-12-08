@@ -93,11 +93,29 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
     if (auto* choiceParam = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("lookMode")))
     {
         const int storedIndex = juce::jlimit (0, choiceParam->choices.size() - 1, getStoredLookMode());
-        *choiceParam = storedIndex; // sets the choice index without host automation
+        setLookModeIndex (storedIndex);
     }
 }
 
 FruityClipAudioProcessor::~FruityClipAudioProcessor() = default;
+
+int FruityClipAudioProcessor::getLookModeIndex() const
+{
+    if (auto* p = parameters.getRawParameterValue ("lookMode"))
+        return (int) p->load();
+
+    return 0;
+}
+
+void FruityClipAudioProcessor::setLookModeIndex (int newIndex)
+{
+    newIndex = juce::jlimit (0, 2, newIndex);
+
+    if (auto* p = parameters.getRawParameterValue ("lookMode"))
+        p->store ((float) newIndex);
+
+    setStoredLookMode (newIndex);
+}
 
 int FruityClipAudioProcessor::getStoredLookMode() const
 {
@@ -214,6 +232,12 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
 
     // Reset GUI signal envelope for LUFS gating
     guiSignalEnv.store (0.0f);
+
+    const int currentLookMode = getLookModeIndex();
+    const int clampedLook     = juce::jlimit (0, 2, currentLookMode);
+
+    if (clampedLook != currentLookMode)
+        setLookModeIndex (clampedLook);
 }
 
 void FruityClipAudioProcessor::releaseResources() {}
