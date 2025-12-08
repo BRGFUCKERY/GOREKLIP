@@ -246,7 +246,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         int lookModeIndex = juce::jlimit(0, 2, selectedId - 1);
 
         // Write parameter safely
-        if (auto* p = processor.apvts.getParameter("lookMode"))
+        if (auto* p = processor.getParametersState().getParameter("lookMode"))
             p->setValueNotifyingHost((float)lookModeIndex);
     };
 
