@@ -92,18 +92,6 @@ private:
 class DownwardComboBoxLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    juce::PopupMenu::Options getOptionsForComboBoxPopupMenu (juce::ComboBox& box,
-                                                             juce::Label& label) override
-    {
-        auto options = juce::LookAndFeel_V4::getOptionsForComboBoxPopupMenu (box, label);
-
-        options = options
-            .withTargetComponent (&box)
-            .withPreferredPopupDirection (juce::PopupMenu::Options::PopupDirection::downwards)
-            .withInitiallySelectedItem (-1);
-
-        return options;
-    }
 };
 
 //==============================================================

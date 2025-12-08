@@ -840,12 +840,12 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Smooth and gate using hasSignalNow so it falls quickly when music stops
     float prevBurnLufs = guiBurnLufs.load();
 
-    // Very slow rise while signal is present, fast drop when it disappears:
-    const float alphaOn  = 0.10f;  // slow movement with signal
-    const float alphaOff = 0.55f;  // quicker drop when signal disappears
+    // Fast rise, moderately quick fall:
+    float alphaOn  = 0.8f;   // when we have signal
+    float alphaOff = 0.3f;   // when signal disappears
 
-    const float alpha = hasSignalNow ? alphaOn : alphaOff;
-    const float newBurnLufs = (1.0f - alpha) * prevBurnLufs + alpha * targetBurnLufs;
+    float alpha = hasSignalNow ? alphaOn : alphaOff;
+    float newBurnLufs = (1.0f - alpha) * prevBurnLufs + alpha * targetBurnLufs;
 
     // If there is no signal and targetBurnLufs is 0, ensure it decays toward 0
     if (! hasSignalNow && targetBurnLufs <= 0.0f)

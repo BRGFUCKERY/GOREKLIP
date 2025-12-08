@@ -205,16 +205,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     addAndMakeVisible (lufsLabel);
 
     // ----------------------
-  
     // LOOK DROPDOWN (top-left)
     // ----------------------
-    lookBox.addSectionHeading ("SETTINGS");
-    lookBox.addItem ("LOOK : COOKED",   1);
-    lookBox.addItem ("LOOK : LOUDNESS", 2);
-    lookBox.addItem ("LOOK : STATIC",   3);
-    lookBox.addSeparator();
-    lookBox.addItem ("KLIPERBIBLE",     100);
-    lookBox.setTextWhenNothingSelected ("SETTINGS");
+    lookBox.addSectionHeading ("BYPASS");
+    lookBox.addItem ("BYPASS",        100);
+    lookBox.addItem ("LOOK : COOKED", 1);
+    lookBox.addItem ("LOOK : LUFS",   2);
+    lookBox.addItem ("LOOK : STATIC", 3);
+    lookBox.setTextWhenNothingSelected ("");
     lookBox.setJustificationType (juce::Justification::centred);
     lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
     lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
@@ -223,7 +221,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     lookBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (lookBox);
-
 
     // ----------------------
     // OVERSAMPLE DROPDOWN (top-right, tiny, white "x1" etc.)
@@ -242,7 +239,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
-    oversampleBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (oversampleBox);
 
     // ----------------------
@@ -407,7 +403,7 @@ void FruityClipAudioProcessorEditor::resized()
 
     const int lookW = juce::jmax (80, w / 6);
     const int lookH = juce::jmax (16, h / 20);
-    const int lookX = 0;
+    const int lookX = 2;
     const int lookY = 6;
 
     lookBox.setBounds (lookX, lookY, lookW, lookH);
@@ -523,15 +519,13 @@ void FruityClipAudioProcessorEditor::showBypassInfoPopup()
     juce::String text;
     text << "Tap the GAIN logo to bypass the clipping and saturation circuit.\n\n";
     text << "• The input gain stays active, so your level doesn’t jump.\n";
-    text << "• Only the LOVE, DEATH, limiter, oversampling and ceiling are parked.\n";
-    text << "• This lets you A/B the circuit tone at the same loudness instead of \"louder vs quieter\".\n\n";
-    text << "Hold SHIFT while moving a finger for fine control.\n";
-    text << "Flick the last finger up or down to switch between LIMITER and CLIPPER mode.\n\n";
-    text << "FOLLOW ME ON INSTAGRAM @BORGORE";
+    text << "• Only the LOVE (OTT), DEATH, limiter, oversampling and ceiling are parked.\n";
+    text << "• This lets you A/B the circuit tone at the same loudness instead of “louder vs quieter”.\n\n";
+    text << "Tap the GAIN logo again to drop back into full GORE mode.";
 
     juce::AlertWindow::showMessageBoxAsync (
         juce::AlertWindow::InfoIcon,
-        "KLIPERBIBLE",
+        "BYPASS – HOW IT WORKS",
         text,
         "OK",
         this);
