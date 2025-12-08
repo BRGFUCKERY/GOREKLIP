@@ -77,19 +77,6 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
                  0, 0, knobImage.getWidth(), knobImage.getHeight());
 }
 
-juce::ComboBox::PopupMenuOptions DownwardComboBoxLookAndFeel::getOptionsForComboBoxPopupMenu (
-    juce::ComboBox& box,
-    const juce::ComboBox::PopupMenuOptions& options)
-{
-    auto opts = juce::LookAndFeel_V4::getOptionsForComboBoxPopupMenu (box, options);
-
-    auto area = box.getScreenBounds();
-    area.setY (area.getBottom());
-    opts = opts.withTargetScreenArea (area);
-
-    return opts;
-}
-
 //==============================================================
 // Editor
 //==============================================================
