@@ -205,20 +205,15 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     addAndMakeVisible (lufsLabel);
 
     // ----------------------
-    // LOOK / SETTINGS DROPDOWN (top-left)
+    // LOOK / SETTINGS (top-left, opens popup menu)
     // ----------------------
-    lookBox.addSectionHeading ("SETTINGS");
-    lookBox.addItem ("LOOK : COOKED", 1);
-    lookBox.addItem ("LOOK : LUFS",   2);
-    lookBox.addItem ("LOOK : STATIC", 3);
-    lookBox.addSeparator();
-    lookBox.addItem ("KLIPERBIBLE",   100);
     lookBox.setTextWhenNothingSelected ("SETTINGS");
     lookBox.setJustificationType (juce::Justification::centred);
     lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
     lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
     lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
     lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
+    lookBox.setInterceptsMouseClicks (false, false);
 
     lookBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (lookBox);
@@ -262,33 +257,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "oversampleMode", oversampleBox);
 
-    lastLookId = juce::jlimit (1, 3, processor.getStoredLookMode() + 1);
-    lookBox.setSelectedId (lastLookId, juce::dontSendNotification);
-
-    lookAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
-                        apvts, "lookMode", lookBox);
-
-    lookBox.onChange = [this]
-    {
-        if (isRestoringLook)
-            return;
-
-        const int selectedId = lookBox.getSelectedId();
-
-        if (selectedId == 100)
-        {
-            isRestoringLook = true;
-            showBypassInfoPopup();
-            lookBox.setSelectedId (lastLookId, juce::sendNotificationSync);
-            isRestoringLook = false;
-            return;
-        }
-
-        lastLookId = selectedId;
-        const int lookMode = juce::jlimit (0, 2, selectedId - 1);
-        processor.setStoredLookMode (lookMode);
-    };
-
     // Initial state from param
     if (auto* modeParam = apvts.getRawParameterValue ("useLimiter"))
     {
@@ -307,6 +275,8 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     // Now the LNF knows which slider is which for special angles
     fingerLnf.setControlledSliders (&gainSlider, &modeSlider, &satSlider);
+
+    currentLookMode = getLookMode();
 
     // Start GUI update timer (for burn animation / LUFS text)
     startTimerHz (30);
@@ -470,7 +440,8 @@ void FruityClipAudioProcessorEditor::resized()
 void FruityClipAudioProcessorEditor::timerCallback()
 {
     const bool bypassNow = processor.getGainBypass();
-    const int lookMode = processor.getLookMode(); // 0=COOKED, 1=LUFS, 2=STATIC
+    const LookMode lookMode = getLookMode(); // 0=COOKED, 1=LUFS, 2=STATIC
+    currentLookMode = lookMode;
 
     if (bypassNow)
     {
@@ -483,15 +454,15 @@ void FruityClipAudioProcessorEditor::timerCallback()
         // Normal reactive background and LUFS display
         switch (lookMode)
         {
-            case 1: // LUFS
+            case LookMode::Lufs:
                 lastBurn = processor.getGuiBurnLufs();
                 break;
 
-            case 2: // STATIC
+            case LookMode::Static:
                 lastBurn = 0.0f; // no burn, static background
                 break;
 
-            case 0: // COOKED
+            case LookMode::Cooked:
             default:
                 lastBurn = processor.getGuiBurn();
                 break;
@@ -542,6 +513,121 @@ void FruityClipAudioProcessorEditor::showBypassInfoPopup()
         text,
         "OK",
         this);
+}
+
+
+LookMode FruityClipAudioProcessorEditor::getLookMode() const
+{
+    const int modeIndex = processor.getLookModeIndex();
+
+    switch (modeIndex)
+    {
+        case 0:  return LookMode::Cooked;
+        case 1:  return LookMode::Lufs;
+        case 2:  return LookMode::Static;
+        default: return LookMode::Cooked;
+    }
+}
+
+void FruityClipAudioProcessorEditor::setLookMode (LookMode mode)
+{
+    currentLookMode = mode;
+
+    int index = 0;
+    switch (mode)
+    {
+        case LookMode::Cooked: index = 0; break;
+        case LookMode::Lufs:   index = 1; break;
+        case LookMode::Static: index = 2; break;
+    }
+
+    processor.setLookModeIndex (index);
+
+    repaint();
+}
+
+void FruityClipAudioProcessorEditor::openKlipBible()
+{
+    showBypassInfoPopup();
+}
+
+void FruityClipAudioProcessorEditor::showSettingsMenu()
+{
+    juce::PopupMenu menu;
+
+    // Title
+    menu.addSectionHeader ("SETTINGS");
+
+    // Current mode from processor / cached state
+    const LookMode mode = getLookMode();
+
+    // Stable IDs for items
+    constexpr int idLookCooked = 1;
+    constexpr int idLookLufs   = 2;
+    constexpr int idLookStatic = 3;
+    constexpr int idKlipBible  = 4;
+
+    // LOOK modes – mutually exclusive, ticked based on current mode
+    menu.addItem (idLookCooked,
+                  "LOOK - COOKED",
+                  true,
+                  mode == LookMode::Cooked);
+
+    menu.addItem (idLookLufs,
+                  "LOOK - LUFS",
+                  true,
+                  mode == LookMode::Lufs);
+
+    menu.addItem (idLookStatic,
+                  "LOOK - STATIC",
+                  true,
+                  mode == LookMode::Static);
+
+    // Separator line
+    menu.addSeparator();
+
+    // KLIPBIBLE – clickable, NEVER checkable (no tick flag)
+    menu.addItem (idKlipBible,
+                  "KLIPBIBLE",
+                  true); // enabled, but not a toggle
+
+    // Handle selection
+    menu.showMenuAsync (juce::PopupMenu::Options(),
+                        [this] (int result)
+                        {
+                            switch (result)
+                            {
+                                case idLookCooked:
+                                    setLookMode (LookMode::Cooked);
+                                    break;
+
+                                case idLookLufs:
+                                    setLookMode (LookMode::Lufs);
+                                    break;
+
+                                case idLookStatic:
+                                    setLookMode (LookMode::Static);
+                                    break;
+
+                                case idKlipBible:
+                                    openKlipBible();
+                                    break;
+
+                                default:
+                                    break; // user cancelled
+                            }
+                        });
+}
+
+void FruityClipAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
+{
+    if (lookBox.getBounds().contains (e.getPosition().toInt()))
+    {
+        showSettingsMenu();
+        return;
+    }
+
+    juce::AudioProcessorEditor::mouseDown (e);
 }
 
 
