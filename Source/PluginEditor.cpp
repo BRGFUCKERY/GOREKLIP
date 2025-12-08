@@ -205,22 +205,50 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     addAndMakeVisible (lufsLabel);
 
     // ----------------------
-    // LOOK DROPDOWN (top-left)
+    // LEFT SETTINGS MENU
     // ----------------------
-    lookBox.addSectionHeading ("BYPASS");
-    lookBox.addItem ("BYPASS",        100);
-    lookBox.addItem ("LOOK : COOKED", 1);
-    lookBox.addItem ("LOOK : LUFS",   2);
-    lookBox.addItem ("LOOK : STATIC", 3);
-    lookBox.setTextWhenNothingSelected ("");
-    lookBox.setJustificationType (juce::Justification::centred);
-    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
-    lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
+    // LEFT SETTINGS MENU
+    settingsBox.addItem("COOKED", 1);
+    settingsBox.addItem("LOUDNESS", 2);
+    settingsBox.addItem("STATIC", 3);
+    settingsBox.addSeparator();
+    settingsBox.addItem("KLIPERBIBLE", 100);
 
-    lookBox.setLookAndFeel (&comboLnf);
-    addAndMakeVisible (lookBox);
+    settingsBox.setText("SETTINGS");
+    settingsBox.setJustificationType(juce::Justification::centred);
+    settingsBox.setEditableText(false);
+    settingsBox.setScrollWheelEnabled(true);
+    addAndMakeVisible(settingsBox);
+
+    settingsBox.setSelectedId(1, juce::dontSendNotification);
+    lastLookId = 1;
+
+    settingsBox.onChange = [this]
+    {
+        if (isRestoringLook)
+            return;
+
+        int selectedId = settingsBox.getSelectedId();
+
+        if (selectedId == 100)
+        {
+            isRestoringLook = true;
+            showBiblePopup();
+            settingsBox.setSelectedId(lastLookId, juce::dontSendNotification);
+            isRestoringLook = false;
+            return;
+        }
+
+        // Save previous look selection
+        lastLookId = selectedId;
+
+        // Map 1/2/3 → 0/1/2
+        int lookModeIndex = juce::jlimit(0, 2, selectedId - 1);
+
+        // Write parameter safely
+        if (auto* p = processor.getParametersState().getParameter("lookMode"))
+            p->setValueNotifyingHost((float)lookModeIndex);
+    };
 
     // ----------------------
     // OVERSAMPLE DROPDOWN (top-right, tiny, white "x1" etc.)
@@ -261,32 +289,12 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "oversampleMode", oversampleBox);
 
-    lastLookId = juce::jlimit (1, 3, processor.getStoredLookMode() + 1);
-    lookBox.setSelectedId (lastLookId, juce::dontSendNotification);
-
-    lookAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
-                        apvts, "lookMode", lookBox);
-
-    lookBox.onChange = [this]
+    if (auto* lookParam = apvts.getRawParameterValue ("lookMode"))
     {
-        if (isRestoringLook)
-            return;
-
-        const int selectedId = lookBox.getSelectedId();
-
-        if (selectedId == 100)
-        {
-            isRestoringLook = true;
-            showBypassInfoPopup();
-            lookBox.setSelectedId (lastLookId, juce::sendNotificationSync);
-            isRestoringLook = false;
-            return;
-        }
-
-        lastLookId = selectedId;
-        const int lookMode = juce::jlimit (0, 2, selectedId - 1);
-        processor.setStoredLookMode (lookMode);
-    };
+        const int lookModeIndex = juce::jlimit (0, 2, (int) std::round (lookParam->load()));
+        lastLookId = lookModeIndex + 1;
+        settingsBox.setSelectedId (lastLookId, juce::dontSendNotification);
+    }
 
     // Initial state from param
     if (auto* modeParam = apvts.getRawParameterValue ("useLimiter"))
@@ -318,7 +326,7 @@ FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
     ottSlider .setLookAndFeel (nullptr);
     satSlider .setLookAndFeel (nullptr);
     modeSlider.setLookAndFeel (nullptr);
-    lookBox.setLookAndFeel (nullptr);
+    settingsBox.setLookAndFeel (nullptr);
     oversampleBox.setLookAndFeel (nullptr);
 }
 
@@ -401,12 +409,7 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    const int lookW = juce::jmax (80, w / 6);
-    const int lookH = juce::jmax (16, h / 20);
-    const int lookX = 2;
-    const int lookY = 6;
-
-    lookBox.setBounds (lookX, lookY, lookW, lookH);
+    settingsBox.setBounds(10, 10, 120, 24);
 
     // OVERSAMPLE BOX – tiny top-right
     const int osW = juce::jmax (60, w / 10);
@@ -471,19 +474,39 @@ void FruityClipAudioProcessorEditor::timerCallback()
     const bool bypassNow = processor.getGainBypass();
     const int lookMode = processor.getLookMode(); // 0=COOKED, 1=LUFS, 2=STATIC
 
+    const int desiredLookId = juce::jlimit (1, 3, lookMode + 1);
+    if (! isRestoringLook && settingsBox.getSelectedId() != desiredLookId)
+    {
+        isRestoringLook = true;
+        settingsBox.setSelectedId (desiredLookId, juce::dontSendNotification);
+        lastLookId = desiredLookId;
+        isRestoringLook = false;
+    }
+
     if (bypassNow)
     {
         // In bypass mode, keep background static and hide LUFS
         lastBurn = 0.0f;
+        previousBurn = 0.0f;
         lufsLabel.setVisible (false);
     }
     else
     {
         // Normal reactive background and LUFS display
+        const float lufs      = processor.getGuiLufs();
+        const bool  hasSignal = processor.getGuiHasSignal();
+
         switch (lookMode)
         {
             case 1: // LUFS
-                lastBurn = processor.getGuiBurnLufs();
+                {
+                    float burn = juce::jlimit(0.0f, 1.0f,
+                        juce::jmap(lufs, -20.0f, -2.0f, 0.0f, 1.0f));
+
+                    float smooth = (0.95f * previousBurn) + (0.05f * burn);
+                    previousBurn = smooth;
+                    lastBurn = smooth;
+                }
                 break;
 
             case 2: // STATIC
@@ -495,9 +518,6 @@ void FruityClipAudioProcessorEditor::timerCallback()
                 lastBurn = processor.getGuiBurn();
                 break;
         }
-
-        const float lufs      = processor.getGuiLufs();
-        const bool  hasSignal = processor.getGuiHasSignal();
 
         if (! hasSignal)
         {
@@ -512,6 +532,18 @@ void FruityClipAudioProcessorEditor::timerCallback()
     }
 
     repaint();
+}
+
+void FruityClipAudioProcessorEditor::showBiblePopup()
+{
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::AlertWindow::InfoIcon,
+        "KLIPERBIBLE",
+        "BYPASS = circuit-only A/B.\n"
+        "Hold SHIFT for fine knob control.\n"
+        "Flick the last finger up/down for LIMITER mode.\n"
+        "FOLLOW ME ON INSTAGRAM @BORGORE",
+        "OK");
 }
 
 void FruityClipAudioProcessorEditor::showBypassInfoPopup()
