@@ -124,18 +124,25 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
                           1);
     }
 
-    // Both boxes: draw a small white downward arrow on the right
+    // Both boxes: draw a small white chevron "V" arrow on the right
     const float arrowSize    = (float) height * 0.35f;
     const float arrowCenterX = bounds.getRight() - arrowSize * 0.9f;
     const float arrowCenterY = bounds.getCentreY();
 
+    const float halfWidth = arrowSize * 0.6f;
+    const float halfHeight = arrowSize * 0.45f;
+
     juce::Path arrow;
-    arrow.addTriangle (arrowCenterX - arrowSize * 0.6f, arrowCenterY - arrowSize * 0.3f,
-                       arrowCenterX + arrowSize * 0.6f, arrowCenterY - arrowSize * 0.3f,
-                       arrowCenterX,                   arrowCenterY + arrowSize * 0.7f);
+    // Left upper point → bottom point → right upper point (a thin V shape)
+    arrow.startNewSubPath (arrowCenterX - halfWidth, arrowCenterY - halfHeight);
+    arrow.lineTo          (arrowCenterX,             arrowCenterY + halfHeight);
+    arrow.lineTo          (arrowCenterX + halfWidth, arrowCenterY - halfHeight);
 
     g.setColour (juce::Colours::white);
-    g.fillPath (arrow);
+    juce::PathStrokeType stroke (arrowSize * 0.18f,
+                                 juce::PathStrokeType::curved,
+                                 juce::PathStrokeType::rounded);
+    g.strokePath (arrow, stroke);
 }
 
 //==============================================================
