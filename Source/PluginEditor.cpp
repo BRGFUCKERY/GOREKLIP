@@ -96,6 +96,53 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 }
 
 //==============================================================
+// DownwardComboBoxLookAndFeel – transparent, arrow-only look
+//==============================================================
+void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
+                                                int width, int height,
+                                                bool isButtonDown,
+                                                int buttonX, int buttonY,
+                                                int buttonW, int buttonH,
+                                                juce::ComboBox& box)
+{
+    juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
+
+    auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
+                                          (float) width, (float) height);
+
+    // Fully transparent background – see-through over your video
+    g.setColour (juce::Colours::transparentBlack);
+    g.fillRect (bounds);
+
+    const bool isOversample = (box.getName() == "oversampleBox");
+
+    // Oversample box: draw "x1 / x2 / ..." text
+    if (isOversample)
+    {
+        auto textBounds = bounds.withTrimmedRight ((float) height * 1.2f).reduced (2.0f);
+        g.setColour (juce::Colours::white);
+        g.setFont ((float) height * 0.55f);
+        g.drawFittedText (box.getText(),
+                          textBounds.toNearestInt(),
+                          juce::Justification::centredRight,
+                          1);
+    }
+
+    // Both boxes: draw a small white downward arrow on the right
+    const float arrowSize    = (float) height * 0.35f;
+    const float arrowCenterX = bounds.getRight() - arrowSize * 0.9f;
+    const float arrowCenterY = bounds.getCentreY();
+
+    juce::Path arrow;
+    arrow.addTriangle (arrowCenterX - arrowSize * 0.6f, arrowCenterY - arrowSize * 0.3f,
+                       arrowCenterX + arrowSize * 0.6f, arrowCenterY - arrowSize * 0.3f,
+                       arrowCenterX,                   arrowCenterY + arrowSize * 0.7f);
+
+    g.setColour (juce::Colours::white);
+    g.fillPath (arrow);
+}
+
+//==============================================================
 // Editor
 //==============================================================
 FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
@@ -240,14 +287,25 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // ----------------------
     // LOOK / SETTINGS (top-left, opens popup menu)
     // ----------------------
-    lookBox.setTextWhenNothingSelected ("SETTINGS");
+    lookBox.setName ("lookBox");
+    lookBox.setTextWhenNothingSelected ("SETTINGS"); // logic name only – we don't draw the text
     lookBox.setJustificationType (juce::Justification::centred);
+    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
+    lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::buttonColourId,      juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
+
+    // Combo itself doesn’t eat the click – editor handles it
     lookBox.setInterceptsMouseClicks (false, false);
+
+    lookBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (lookBox);
 
     // ----------------------
     // OVERSAMPLE DROPDOWN (top-right, tiny, white "x1" etc.)
     // ----------------------
+    oversampleBox.setName ("oversampleBox");
     oversampleBox.addItem ("x1",  1);
     oversampleBox.addItem ("x2",  2);
     oversampleBox.addItem ("x4",  3);
@@ -257,7 +315,13 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setTextWhenNothingSelected ("x1");
 
     oversampleBox.setJustificationType (juce::Justification::centred);
+    oversampleBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
+    oversampleBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::buttonColourId,      juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
+    oversampleBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (oversampleBox);
 
     // ----------------------
@@ -394,19 +458,20 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    const int lookW = juce::jmax (80, w / 6);
-    const int lookH = juce::jmax (16, h / 20);
-    const int lookX = 0;
-    const int lookY = 0;
+    const int topMargin = 6;
+    const int barH      = juce::jmax (16, h / 20);
 
-    lookBox.setBounds (lookX, lookY, lookW, lookH);
+    // Left: square arrow-only box
+    const int lookSize = barH;
+    const int lookX    = topMargin;
+    const int lookY    = topMargin;
+    lookBox.setBounds (lookX, lookY, lookSize, barH);
 
-    // OVERSAMPLE BOX – tiny top-right
+    // Right: oversample text + arrow, same top margin, pinned right
     const int osW = juce::jmax (60, w / 10);
-    const int osH = juce::jmax (16, h / 20);
-    const int osX = w - osW - 6;
-    const int osY = 6;
-
+    const int osH = barH;
+    const int osX = w - osW - topMargin;
+    const int osY = topMargin;
     oversampleBox.setBounds (osX, osY, osW, osH);
 
     // 4 knobs in a row (GAIN, OTT, SAT, MODE)
