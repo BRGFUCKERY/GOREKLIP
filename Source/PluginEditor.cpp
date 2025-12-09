@@ -222,6 +222,18 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lookBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (lookBox);
 
+    // Invisible button over the logo to toggle bypass without opening menus
+    gainLogoButton.setButtonText ("");
+    gainLogoButton.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    gainLogoButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+    gainLogoButton.setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    gainLogoButton.setWantsKeyboardFocus (false);
+    gainLogoButton.onClick = [this]()
+    {
+        toggleGainBypass();
+    };
+    addAndMakeVisible (gainLogoButton);
+
     // ----------------------
     // OVERSAMPLE DROPDOWN (top-right, tiny, white "x1" etc.)
     // ----------------------
@@ -309,6 +321,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     // Start GUI update timer (for burn animation / LUFS text)
     startTimerHz (30);
+
+    isGainBypass = processor.getGainBypass();
+    updateGainBypassUi (isGainBypass);
 }
 
 FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
@@ -461,6 +476,28 @@ void FruityClipAudioProcessorEditor::resized()
                          lufsY,
                          modeSlider.getWidth(),
                          lufsHeight);
+
+    if (logoImage.isValid())
+    {
+        const float targetW = w * 0.80f;
+        const float scale   = targetW / logoImage.getWidth();
+
+        const int drawW = (int) (logoImage.getWidth()  * scale);
+        const int drawH = (int) (logoImage.getHeight() * scale);
+
+        const int x = (w - drawW) / 2;
+        const int y = 0;
+
+        const int reduceX = drawW / 10;
+        const int reduceY = drawH / 6;
+
+        gainLogoButton.setBounds (juce::Rectangle<int> (x, y, drawW, drawH)
+                                      .reduced (reduceX, reduceY));
+    }
+    else
+    {
+        gainLogoButton.setBounds (juce::Rectangle<int>());
+    }
 }
 
 //==============================================================
@@ -470,6 +507,8 @@ void FruityClipAudioProcessorEditor::timerCallback()
 {
     const bool bypassNow = processor.getGainBypass();
     const int lookMode = processor.getLookMode(); // 0=COOKED, 1=LUFS, 2=STATIC
+
+    updateGainBypassUi (bypassNow);
 
     if (bypassNow)
     {
@@ -536,11 +575,21 @@ void FruityClipAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
     // Only react if the GAIN label was clicked
     if (e.eventComponent == &gainLabel || e.originalComponent == &gainLabel)
     {
-        isGainBypass = ! isGainBypass;
-        processor.setGainBypass (isGainBypass);
-
-        // Visual cue on the label itself
-        gainLabel.setColour (juce::Label::textColourId,
-                             isGainBypass ? juce::Colours::grey : juce::Colours::white);
+        toggleGainBypass();
     }
+}
+
+void FruityClipAudioProcessorEditor::toggleGainBypass()
+{
+    const bool nextBypass = ! processor.getGainBypass();
+    processor.setGainBypass (nextBypass);
+    updateGainBypassUi (nextBypass);
+}
+
+void FruityClipAudioProcessorEditor::updateGainBypassUi (bool bypassNow)
+{
+    isGainBypass = bypassNow;
+
+    gainLabel.setColour (juce::Label::textColourId,
+                         bypassNow ? juce::Colours::grey : juce::Colours::white);
 }
