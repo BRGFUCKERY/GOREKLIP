@@ -133,15 +133,46 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
         (int) std::round (iconSize),
         (int) std::round (iconSize));
 
-    g.setColour (juce::Colours::white);
-    juce::Font starFont (iconSize, juce::Font::plain);
-    g.setFont (starFont);
+    // Draw an inverted pentagram (two spikes up) using a Path
+    const float cx = starBounds.getCentreX();
+    const float cy = starBounds.getCentreY();
 
-    // Draw a single "*" character centred in starBounds.
-    g.drawFittedText ("*",
-                      starBounds,
-                      juce::Justification::centred,
-                      1);
+    const float outerR = (float) starBounds.getWidth()  * 0.48f;
+    const float innerR = outerR * 0.45f;
+
+    juce::Path pent;
+
+    // Base angle: normal star would have one spike up at -pi/2.
+    // Add pi to invert it so we get one spike down, two up.
+    const float baseAngle = -juce::MathConstants<float>::halfPi
+                          + juce::MathConstants<float>::pi;
+    const float step = juce::MathConstants<float>::twoPi / 5.0f;
+
+    for (int i = 0; i < 5; ++i)
+    {
+        const float outerAngle = baseAngle + step * (float) i;
+        const float innerAngle = baseAngle + step * (float) i + step * 0.5f;
+
+        const float ox = cx + outerR * std::cos (outerAngle);
+        const float oy = cy + outerR * std::sin (outerAngle);
+        const float ix = cx + innerR * std::cos (innerAngle);
+        const float iy = cy + innerR * std::sin (innerAngle);
+
+        if (i == 0)
+            pent.startNewSubPath (ox, oy);
+        else
+            pent.lineTo (ox, oy);
+
+        pent.lineTo (ix, iy);
+    }
+
+    pent.closeSubPath();
+
+    g.setColour (juce::Colours::black);
+    const float strokeThickness = (float) starBounds.getWidth() * 0.09f;
+    g.strokePath (pent, juce::PathStrokeType (strokeThickness,
+                                              juce::PathStrokeType::mitered,
+                                              juce::PathStrokeType::square));
 }
 
 //==============================================================
