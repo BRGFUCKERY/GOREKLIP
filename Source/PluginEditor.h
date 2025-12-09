@@ -158,6 +158,7 @@ private:
     // Oversample mode (x1/x2/x4/x8/x16) – tiny top-right dropdown
     juce::ComboBox oversampleBox;
     juce::ComboBox lookBox;
+    juce::TextButton gainLogoButton;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
@@ -175,6 +176,9 @@ private:
 
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
+
+    void toggleGainBypass();
+    void updateGainBypassUi (bool bypassNow);
 
     // Timer for GUI updates
     void timerCallback() override;
