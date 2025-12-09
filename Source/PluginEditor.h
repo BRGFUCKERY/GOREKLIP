@@ -94,6 +94,14 @@ class DownwardComboBoxLookAndFeel : public juce::LookAndFeel_V4
 public:
 };
 
+class InvisibleLogoButton : public juce::Button
+{
+public:
+    InvisibleLogoButton() : juce::Button ("gainLogoButton") {}
+
+    void paintButton (juce::Graphics&, bool, bool) override {}
+};
+
 //==============================================================
 //  Main Editor
 //==============================================================
@@ -138,6 +146,7 @@ private:
     // Oversample mode (x1/x2/x4/x8/x16) – tiny top-right dropdown
     juce::ComboBox oversampleBox;
     juce::ComboBox lookBox;
+    InvisibleLogoButton gainLogoButton;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
@@ -159,6 +168,9 @@ private:
 
     // Timer for GUI updates
     void timerCallback() override;
+
+    juce::Rectangle<int> getLogoBounds() const;
+    void updateBypassUI();
 
     void showBypassInfoPopup();
 

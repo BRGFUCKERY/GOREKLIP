@@ -132,6 +132,16 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     else
         setSize (600, 400);
 
+    // Invisible hit area for the GOREKLIP logo (bypass toggle)
+    addAndMakeVisible (gainLogoButton);
+    gainLogoButton.setWantsKeyboardFocus (false);
+    gainLogoButton.onClick = [this]
+    {
+        isGainBypass = ! processor.getGainBypass();
+        processor.setGainBypass (isGainBypass);
+        updateBypassUI();
+    };
+
     // ----------------------
     // SLIDERS
     // ----------------------
@@ -307,6 +317,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // Now the LNF knows which slider is which for special angles
     fingerLnf.setControlledSliders (&gainSlider, &modeSlider, &satSlider);
 
+    isGainBypass = processor.getGainBypass();
+    updateBypassUI();
+
     // Start GUI update timer (for burn animation / LUFS text)
     startTimerHz (30);
 }
@@ -354,14 +367,14 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     // 3) Logo – normal at low slam, fades to white as you pin it
     if (logoImage.isValid())
     {
-        const float targetW = w * 0.80f;
-        const float scale   = targetW / logoImage.getWidth();
+        const auto logoBounds = getLogoBounds();
+        const float scale = (float) logoBounds.getWidth() / (float) logoImage.getWidth();
 
-        const int drawW = (int) (logoImage.getWidth()  * scale);
-        const int drawH = (int) (logoImage.getHeight() * scale);
+        const int drawW = logoBounds.getWidth();
+        const int drawH = logoBounds.getHeight();
 
-        const int x = (w - drawW) / 2;
-        const int y = 0; // absolutely top
+        const int x = logoBounds.getX();
+        const int y = logoBounds.getY();
 
         // Crop top 20% of source logo (remove invisible padding)
         const int cropY      = (int) (logoImage.getHeight() * 0.20f); // remove top 20%
@@ -400,6 +413,8 @@ void FruityClipAudioProcessorEditor::resized()
 {
     const int w = getWidth();
     const int h = getHeight();
+
+    gainLogoButton.setBounds (getLogoBounds());
 
     const int lookW = juce::jmax (80, w / 6);
     const int lookH = juce::jmax (16, h / 20);
@@ -473,9 +488,8 @@ void FruityClipAudioProcessorEditor::timerCallback()
 
     if (bypassNow)
     {
-        // In bypass mode, keep background static and hide LUFS
+        // In bypass mode, keep background static and freeze LUFS
         lastBurn = 0.0f;
-        lufsLabel.setVisible (false);
     }
     else
     {
@@ -514,6 +528,39 @@ void FruityClipAudioProcessorEditor::timerCallback()
     repaint();
 }
 
+juce::Rectangle<int> FruityClipAudioProcessorEditor::getLogoBounds() const
+{
+    if (! logoImage.isValid())
+        return {};
+
+    const int w = getWidth();
+    const float targetW = w * 0.80f;
+    const float scale   = targetW / (float) logoImage.getWidth();
+
+    const int drawW = (int) (logoImage.getWidth()  * scale);
+    const int drawH = (int) (logoImage.getHeight() * scale);
+
+    const int x = (w - drawW) / 2;
+    const int y = 0;
+
+    return { x, y, drawW, drawH };
+}
+
+void FruityClipAudioProcessorEditor::updateBypassUI()
+{
+    isGainBypass = processor.getGainBypass();
+
+    gainLabel.setColour (juce::Label::textColourId,
+                         isGainBypass ? juce::Colours::grey : juce::Colours::white);
+
+    lufsLabel.setAlpha (isGainBypass ? 0.6f : 1.0f);
+
+    if (isGainBypass)
+        lastBurn = 0.0f;
+
+    repaint();
+}
+
 void FruityClipAudioProcessorEditor::showBypassInfoPopup()
 {
     juce::String text;
@@ -539,8 +586,6 @@ void FruityClipAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
         isGainBypass = ! isGainBypass;
         processor.setGainBypass (isGainBypass);
 
-        // Visual cue on the label itself
-        gainLabel.setColour (juce::Label::textColourId,
-                             isGainBypass ? juce::Colours::grey : juce::Colours::white);
+        updateBypassUI();
     }
 }
