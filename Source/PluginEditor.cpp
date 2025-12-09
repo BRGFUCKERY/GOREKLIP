@@ -110,8 +110,13 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
                                           (float) width, (float) height);
 
-    // Fully transparent background – see-through over your video
-    g.setColour (juce::Colours::transparentBlack);
+    // Fully transparent background – see-through over your video (except for the left SETTINGS box)
+    auto bgColour = juce::Colours::transparentBlack;
+
+    if (! isOversample)
+        bgColour = juce::Colours::black.withAlpha (0.85f);
+
+    g.setColour (bgColour);
     g.fillRect (bounds);
 
     const bool isOversample = (box.getName() == "oversampleBox");
@@ -121,7 +126,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     {
         auto textBounds = bounds.withTrimmedRight ((float) height * 1.2f).reduced (2.0f);
         g.setColour (juce::Colours::white);
-        g.setFont ((float) height * 0.55f);
+        g.setFont (juce::FontOptions ((float) height * 0.65f).withStyle ("Bold"));
         g.drawFittedText (box.getText(),
                           textBounds.toNearestInt(),
                           juce::Justification::centredRight,
@@ -129,14 +134,18 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     }
 
     // Both boxes: draw a small white downward arrow on the right
-    const float arrowSize    = (float) height * 0.35f;
+    const float arrowSize    = (float) height * 0.38f;
     const float arrowCenterX = bounds.getRight() - arrowSize * 0.9f;
     const float arrowCenterY = bounds.getCentreY();
 
+    // Symmetrical, equilateral-ish triangle for both dropdowns
     juce::Path arrow;
-    arrow.addTriangle (arrowCenterX - arrowSize * 0.6f, arrowCenterY - arrowSize * 0.3f,
-                       arrowCenterX + arrowSize * 0.6f, arrowCenterY - arrowSize * 0.3f,
-                       arrowCenterX,                   arrowCenterY + arrowSize * 0.7f);
+    arrow.addTriangle (arrowCenterX,
+                       arrowCenterY + arrowSize * 0.65f,
+                       arrowCenterX - arrowSize * 0.6f,
+                       arrowCenterY - arrowSize * 0.55f,
+                       arrowCenterX + arrowSize * 0.6f,
+                       arrowCenterY - arrowSize * 0.55f);
 
     g.setColour (juce::Colours::white);
     g.fillPath (arrow);
@@ -290,10 +299,10 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lookBox.setName ("lookBox");
     lookBox.setTextWhenNothingSelected ("SETTINGS"); // logic name only – we don't draw the text
     lookBox.setJustificationType (juce::Justification::centred);
-    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
-    lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::buttonColourId,      juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
+    lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::black);
+    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::black);
+    lookBox.setColour (juce::ComboBox::buttonColourId,      juce::Colours::black);
     lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
     // Combo itself doesn’t eat the click – editor handles it
