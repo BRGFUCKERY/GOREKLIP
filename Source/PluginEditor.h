@@ -5,6 +5,21 @@
 #include "CustomLookAndFeel.h"
 
 //==============================================================
+//  Timer helper for finger animation
+//==============================================================
+class AnimationTimer : public juce::Timer
+{
+public:
+    std::function<void()> onTimer;
+
+    void timerCallback() override
+    {
+        if (onTimer)
+            onTimer();
+    }
+};
+
+//==============================================================
 //  Custom LookAndFeel for the finger knobs
 //==============================================================
 class MiddleFingerLookAndFeel : public juce::LookAndFeel_V4
@@ -48,6 +63,8 @@ class FineControlSlider : public juce::Slider
 public:
     FineControlSlider() = default;
 
+    std::function<void()> onClick;
+
     void setDragSensitivities (int normal, int fine)
     {
         normalSensitivity = (float) normal;
@@ -58,12 +75,15 @@ public:
     {
         juce::Slider::mouseDown (e);
         lastDragPos = e.position;
+        wasDragged = false;
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
         const auto delta   = e.position - lastDragPos;
         const float motion = delta.x - delta.y;
+
+        wasDragged = true;
 
         lastDragPos = e.position;
 
@@ -82,12 +102,16 @@ public:
     void mouseUp (const juce::MouseEvent& e) override
     {
         juce::Slider::mouseUp (e);
+
+        if (! wasDragged && onClick)
+            onClick();
     }
 
 private:
     juce::Point<float> lastDragPos;
     float normalSensitivity = 250.0f;
     float fineSensitivity   = 1000.0f;
+    bool wasDragged = false;
 };
 
 class DownwardComboBoxLookAndFeel : public juce::LookAndFeel_V4
@@ -173,13 +197,22 @@ private:
     // Local GUI state for gain-bypass toggle
     bool isGainBypass = false;
 
+    float targetFingerAngle = 0.0f;
+    float currentFingerAngle = 0.0f;
+    float fingerAnimSpeed = 0.15f; // seconds
+    AnimationTimer animationTimer;
+
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
     // Timer for GUI updates
     void timerCallback() override;
 
+    void startFingerAnimation (bool limiterMode);
+
     void showBypassInfoPopup();
+
+    friend class MiddleFingerLookAndFeel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessorEditor)
 };
