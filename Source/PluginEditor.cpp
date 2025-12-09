@@ -110,6 +110,8 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
                                           (float) width, (float) height);
 
+    const bool isOversample = (box.getName() == "oversampleBox");
+
     // Fully transparent background – see-through over your video (except for the left SETTINGS box)
     auto bgColour = juce::Colours::transparentBlack;
 
@@ -118,8 +120,6 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 
     g.setColour (bgColour);
     g.fillRect (bounds);
-
-    const bool isOversample = (box.getName() == "oversampleBox");
 
     // Oversample box: draw "x1 / x2 / ..." text
     if (isOversample)
