@@ -138,7 +138,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     g.setFont (starFont);
 
     // Draw a single "*" character centred in starBounds.
-    g.drawFittedText ("*",
+    g.drawFittedText ("⛧",
                       starBounds,
                       juce::Justification::centred,
                       1);
