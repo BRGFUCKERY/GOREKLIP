@@ -621,7 +621,12 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
 
 void FruityClipAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 {
-    if (lookBox.getBounds().contains (e.getPosition().toInt()))
+    // IMPORTANT FIX:
+    // Convert click from child component space (like GAIN label)
+    // into editor coordinates before hit-testing the SETTINGS area.
+    auto posInEditor = e.getEventRelativeTo (this).getPosition();
+
+    if (lookBox.getBounds().contains (posInEditor.toInt()))
     {
         showSettingsMenu();
         return;
@@ -629,7 +634,6 @@ void FruityClipAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 
     juce::AudioProcessorEditor::mouseDown (e);
 }
-
 
 void FruityClipAudioProcessorEditor::mouseUp (const juce::MouseEvent& e)
 {
