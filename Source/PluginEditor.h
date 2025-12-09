@@ -93,6 +93,8 @@ private:
 class DownwardComboBoxLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    DownwardComboBoxLookAndFeel();
+
     void drawComboBox (juce::Graphics& g,
                        int width, int height,
                        bool isButtonDown,

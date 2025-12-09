@@ -72,6 +72,21 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 // DownwardComboBoxLookAndFeel – transparent, arrow-only look
 // (now with subtle hollow arrows, menus are handled via colours)
 //==============================================================
+DownwardComboBoxLookAndFeel::DownwardComboBoxLookAndFeel()
+{
+    // Make ALL dropdowns / popup menus black with white text
+    setColour (juce::PopupMenu::backgroundColourId,            juce::Colours::black);
+    setColour (juce::PopupMenu::textColourId,                  juce::Colours::white);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colours::darkgrey);
+    setColour (juce::PopupMenu::highlightedTextColourId,       juce::Colours::white);
+
+    // Combo collapsed boxes are transparent over the video, white text
+    setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
+    setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+    setColour (juce::ComboBox::buttonColourId,     juce::Colours::transparentBlack);
+}
+
 void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
                                                 int width, int height,
                                                 bool isButtonDown,
@@ -79,33 +94,55 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
                                                 int buttonW, int buttonH,
                                                 juce::ComboBox& box)
 {
-    juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH, box);
+    juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
 
     auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
                                           (float) width, (float) height);
 
-    // Fully transparent body - we only draw the tiny arrow overlay.
+    // Transparent bar over the video
     g.setColour (juce::Colours::transparentBlack);
     g.fillRect (bounds);
 
-    // Subtle hollow arrow on the right, same for all dropdowns
-    const float arrowSize    = (float) height * 0.35f;
+    // Is this the OVERSAMPLE box?
+    const bool isOversample = (box.getName() == "oversampleBox");
+
+    // Get current text (or the placeholder)
+    juce::String text = box.getText();
+    if (text.isEmpty())
+        text = box.getTextWhenNothingSelected();
+
+    // Arrow geometry (same for both boxes, symmetrical)
+    const float arrowSize    = (float) height * 0.28f;
     const float arrowCenterX = bounds.getRight() - arrowSize * 0.9f;
     const float arrowCenterY = bounds.getCentreY();
 
-    juce::Path arrow;
-    arrow.startNewSubPath (arrowCenterX - arrowSize * 0.55f,
-                           arrowCenterY - arrowSize * 0.25f);
-    arrow.lineTo          (arrowCenterX,
-                           arrowCenterY + arrowSize * 0.55f);
-    arrow.lineTo          (arrowCenterX + arrowSize * 0.55f,
-                           arrowCenterY - arrowSize * 0.25f);
+    // Text area: left side, leaving room for the arrow
+    auto textArea = bounds;
+    textArea.setLeft  (textArea.getX() + 4.0f);
+    textArea.setRight (arrowCenterX - arrowSize * 0.9f);
 
-    g.setColour (juce::Colours::white);
-    g.strokePath (arrow,
-                  juce::PathStrokeType ((float) height * 0.09f,
-                                        juce::PathStrokeType::curved,
-                                        juce::PathStrokeType::rounded));
+    g.setColour (juce::Colours::white.withAlpha (0.9f));
+    g.setFont (juce::Font ((float) height * (isOversample ? 0.55f : 0.45f),
+                           juce::Font::bold));
+
+    g.drawFittedText (text,
+                      textArea.toNearestInt(),
+                      juce::Justification::centredLeft,
+                      1);
+
+    // Hollow, subtle white arrow on the right
+    juce::Path arrow;
+    arrow.addTriangle (arrowCenterX - arrowSize * 0.6f, arrowCenterY - arrowSize * 0.3f,
+                       arrowCenterX + arrowSize * 0.6f, arrowCenterY - arrowSize * 0.3f,
+                       arrowCenterX,                   arrowCenterY + arrowSize * 0.7f);
+
+    juce::Path stroked;
+    juce::PathStrokeType stroke ((float) height * 0.06f);
+    stroke.setJoinStyle (juce::PathStrokeType::mitered);
+    stroke.createStrokedPath (stroked, arrow);
+
+    g.setColour (juce::Colours::white.withAlpha (0.85f));
+    g.fillPath (stroked);
 }
 
 //==============================================================
