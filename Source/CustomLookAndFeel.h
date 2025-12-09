@@ -1,3 +1,5 @@
+#pragma once
+
 class CustomLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
