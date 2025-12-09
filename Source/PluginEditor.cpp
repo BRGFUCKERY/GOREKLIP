@@ -119,29 +119,61 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     // We DO NOT draw any text here.
     // The ComboBox/Label handles text, so oversample isn't doubled.
 
-    // Bigger star icon, same geometry for ALL combo boxes
-    // so they are visually symmetrical inside their own boxes.
-    const float iconSize   = (float) height * 0.70f;   // bigger star
-    const float iconMargin = (float) height * 0.15f;   // padding from the right edge
+    // IMPORTANT:
+    // We DO NOT draw any text here.
+    // ComboBox / Label will handle drawing the current text once.
+    // This prevents the OVERSAMPLE text from appearing "doubled".
 
-    const float starRight  = bounds.getRight() - iconMargin;
-    const float starTop    = bounds.getCentreY() - iconSize * 0.5f;
+    // Star icon (replaces chevron) – same math for ALL combo boxes,
+    // so left and right stars are perfectly symmetrical in position.
+    const float iconSize    = (float) height * 0.55f; // smaller than before
+    const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
+    const float iconCenterY = bounds.getCentreY();
+    const float iconRadius  = iconSize * 0.5f;
 
     juce::Rectangle<int> starBounds (
-        (int) std::round (starRight - iconSize),
-        (int) std::round (starTop),
-        (int) std::round (iconSize),
-        (int) std::round (iconSize));
+        (int) std::round (iconCenterX - iconRadius),
+        (int) std::round (iconCenterY - iconRadius),
+        (int) std::round (iconRadius * 2.0f),
+        (int) std::round (iconRadius * 2.0f));
 
-    g.setColour (juce::Colours::white);
-    juce::Font starFont (iconSize, juce::Font::plain);
-    g.setFont (starFont);
+    // Draw an inverted pentagram (two spikes up, one down)
+    const float cx = (float) starBounds.getCentreX();
+    const float cy = (float) starBounds.getCentreY();
 
-    // Draw a single "*" character centred in starBounds.
-    g.drawFittedText ("*",
-                      starBounds,
-                      juce::Justification::centred,
-                      1);
+    const float radius = (float) starBounds.getWidth() * 0.45f;
+
+    juce::Point<float> pts[5];
+
+    // Screen coordinates: +Y goes down.
+    // baseAngle = +pi/2 -> first point straight DOWN (one spike down),
+    // which gives us an inverted pentagram, so two spikes are up.
+    const float baseAngle = juce::MathConstants<float>::halfPi;
+    const float step      = juce::MathConstants<float>::twoPi / 5.0f;
+
+    for (int i = 0; i < 5; ++i)
+    {
+        const float angle = baseAngle + step * (float) i;
+        const float x = cx + radius * std::cos (angle);
+        const float y = cy + radius * std::sin (angle);
+        pts[i].setXY (x, y);
+    }
+
+    juce::Path pent;
+    // Connect every second point: 0 -> 2 -> 4 -> 1 -> 3 -> back to 0
+    pent.startNewSubPath (pts[0]);
+    pent.lineTo (pts[2]);
+    pent.lineTo (pts[4]);
+    pent.lineTo (pts[1]);
+    pent.lineTo (pts[3]);
+    pent.closeSubPath();
+
+    g.setColour (juce::Colours::black);
+    const float strokeThickness = (float) starBounds.getWidth() * 0.10f;
+    juce::PathStrokeType stroke (strokeThickness,
+                                 juce::PathStrokeType::mitered,
+                                 juce::PathStrokeType::square);
+    g.strokePath (pent, stroke);
 }
 
 //==============================================================
