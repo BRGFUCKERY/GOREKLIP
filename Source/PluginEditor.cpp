@@ -108,46 +108,40 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 {
     juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
 
+    // Local bounds of this combo box
     auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
                                           (float) width, (float) height);
 
-    // Fully transparent background – see-through over your video
+    // Fully transparent background – video shows through
     g.setColour (juce::Colours::transparentBlack);
     g.fillRect (bounds);
 
-    const bool isOversample = (box.getName() == "oversampleBox");
+    // We DO NOT draw any text here.
+    // The ComboBox/Label handles text, so oversample isn't doubled.
 
-    // Oversample box: draw "x1 / x2 / ..." text
-    if (isOversample)
-    {
-        auto textBounds = bounds.withTrimmedRight ((float) height * 1.2f).reduced (2.0f);
-        g.setColour (juce::Colours::white);
-        g.setFont ((float) height * 0.55f);
-        g.drawFittedText (box.getText(),
-                          textBounds.toNearestInt(),
-                          juce::Justification::centredRight,
-                          1);
-    }
+    // Bigger star icon, same geometry for ALL combo boxes
+    // so they are visually symmetrical inside their own boxes.
+    const float iconSize   = (float) height * 0.70f;   // bigger star
+    const float iconMargin = (float) height * 0.15f;   // padding from the right edge
 
-    // Both boxes: draw a small white chevron "V" arrow on the right
-    const float arrowSize    = (float) height * 0.35f;
-    const float arrowCenterX = bounds.getRight() - arrowSize * 0.9f;
-    const float arrowCenterY = bounds.getCentreY();
+    const float starRight  = bounds.getRight() - iconMargin;
+    const float starTop    = bounds.getCentreY() - iconSize * 0.5f;
 
-    const float halfWidth = arrowSize * 0.6f;
-    const float halfHeight = arrowSize * 0.45f;
-
-    juce::Path arrow;
-    // Left upper point → bottom point → right upper point (a thin V shape)
-    arrow.startNewSubPath (arrowCenterX - halfWidth, arrowCenterY - halfHeight);
-    arrow.lineTo          (arrowCenterX,             arrowCenterY + halfHeight);
-    arrow.lineTo          (arrowCenterX + halfWidth, arrowCenterY - halfHeight);
+    juce::Rectangle<int> starBounds (
+        (int) std::round (starRight - iconSize),
+        (int) std::round (starTop),
+        (int) std::round (iconSize),
+        (int) std::round (iconSize));
 
     g.setColour (juce::Colours::white);
-    juce::PathStrokeType stroke (arrowSize * 0.18f,
-                                 juce::PathStrokeType::curved,
-                                 juce::PathStrokeType::rounded);
-    g.strokePath (arrow, stroke);
+    juce::Font starFont (iconSize, juce::Font::plain);
+    g.setFont (starFont);
+
+    // Draw a single "*" character centred in starBounds.
+    g.drawFittedText ("*",
+                      starBounds,
+                      juce::Justification::centred,
+                      1);
 }
 
 //==============================================================
