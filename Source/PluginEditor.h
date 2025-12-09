@@ -75,12 +75,15 @@ public:
     {
         juce::Slider::mouseDown (e);
         lastDragPos = e.position;
+        wasDragged = false;
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
         const auto delta   = e.position - lastDragPos;
         const float motion = delta.x - delta.y;
+
+        wasDragged = true;
 
         lastDragPos = e.position;
 
@@ -100,7 +103,7 @@ public:
     {
         juce::Slider::mouseUp (e);
 
-        if (onClick)
+        if (! wasDragged && onClick)
             onClick();
     }
 
@@ -108,6 +111,7 @@ private:
     juce::Point<float> lastDragPos;
     float normalSensitivity = 250.0f;
     float fineSensitivity   = 1000.0f;
+    bool wasDragged = false;
 };
 
 class DownwardComboBoxLookAndFeel : public juce::LookAndFeel_V4
