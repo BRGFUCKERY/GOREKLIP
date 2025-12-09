@@ -5,6 +5,21 @@
 #include "CustomLookAndFeel.h"
 
 //==============================================================
+//  Timer helper for finger animation
+//==============================================================
+class AnimationTimer : public juce::Timer
+{
+public:
+    std::function<void()> onTimer;
+
+    void timerCallback() override
+    {
+        if (onTimer)
+            onTimer();
+    }
+};
+
+//==============================================================
 //  Custom LookAndFeel for the finger knobs
 //==============================================================
 class MiddleFingerLookAndFeel : public juce::LookAndFeel_V4
@@ -176,7 +191,7 @@ private:
     float targetFingerAngle = 0.0f;
     float currentFingerAngle = 0.0f;
     float fingerAnimSpeed = 0.15f; // seconds
-    juce::Timer animationTimer;
+    AnimationTimer animationTimer;
 
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
