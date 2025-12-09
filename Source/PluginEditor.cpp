@@ -50,7 +50,7 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
     juce::Rectangle<float> imgRect (0.0f, 0.0f, imgW * scale, imgH * scale);
     imgRect.setCentre (knobArea.getCentre());
 
-    // Default angle mapping: ~7 o'clock to ~5 o'clock
+    // Default angle mapping for "normal" knobs: ~7 o'clock to ~5 o'clock
     const float minAngle = juce::degreesToRadians (-135.0f);
     const float maxAngle = juce::degreesToRadians ( 135.0f);
 
@@ -58,12 +58,17 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 
     if (modeSlider != nullptr && &slider == modeSlider)
     {
-        auto* ed = dynamic_cast<FruityClipAudioProcessorEditor*>(slider.getParentComponent());
-        angle = (ed != nullptr ? ed->currentFingerAngle : (slider.getValue() >= 0.5f ? juce::MathConstants<float>::pi : 0.0f));
+        // MODE FINGER: hard 2-position switch
+        // slider value: 0.0 = CLIPPER (up, 12 o'clock)
+        //               1.0 = LIMITER (down, 6 o'clock)
+        const bool useLimiter = (slider.getValue() >= 0.5f);
+
+        const float angleDegrees = useLimiter ? 180.0f : 0.0f;
+        angle = juce::degreesToRadians (angleDegrees);
     }
     else if (gainSlider != nullptr && &slider == gainSlider)
     {
-        // GAIN FINGER: show ONLY the real gain param
+        // GAIN FINGER: show ONLY the real gain in dB
         const auto& range = slider.getRange();
         const float minDb = (float) range.getStart(); // -12
         const float maxDb = (float) range.getEnd();   // +12
@@ -151,37 +156,34 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    auto& lookSelector = lookBox;
+    auto& lookSelector         = lookBox;
     auto& oversamplingSelector = oversampleBox;
-    auto& menuSelector = lookBox;
+    auto& menuSelector         = lookBox;
 
     setLookAndFeel (&customLookAndFeel);
 
+    // Basic combo colours (we mostly draw via custom LNF)
     lookSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    lookSelector.setColour (juce::ComboBox::textColourId, juce::Colours::white);
+    lookSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
 
     oversamplingSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    oversamplingSelector.setColour (juce::ComboBox::textColourId, juce::Colours::white);
+    oversamplingSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
 
     menuSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    menuSelector.setColour (juce::ComboBox::textColourId, juce::Colours::white);
+    menuSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
 
-    // Load background
-    bgImage = juce::ImageCache::getFromMemory (
-        BinaryData::bg_png,
-        BinaryData::bg_pngSize);
+    // --------------------------------------------------
+    // BACKGROUND + LOGO
+    // --------------------------------------------------
+    bgImage = juce::ImageCache::getFromMemory (BinaryData::bg_png,
+                                               BinaryData::bg_pngSize);
 
-    // SLAM background
-    slamImage = juce::ImageCache::getFromMemory (
-        BinaryData::slam_jpg,
-        BinaryData::slam_jpgSize);
+    slamImage = juce::ImageCache::getFromMemory (BinaryData::slam_jpg,
+                                                 BinaryData::slam_jpgSize);
 
-    // Load GOREKLIPER logo
-    logoImage = juce::ImageCache::getFromMemory (
-        BinaryData::gorekliper_logo_png,
-        BinaryData::gorekliper_logo_pngSize);
+    logoImage = juce::ImageCache::getFromMemory (BinaryData::gorekliper_logo_png,
+                                                 BinaryData::gorekliper_logo_pngSize);
 
-    // Precompute a white version of the logo (same alpha)
     if (logoImage.isValid())
     {
         logoWhiteImage = logoImage.createCopy();
@@ -194,30 +196,24 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
                 auto c = data.getPixelColour (x, y);
                 auto a = c.getAlpha();
                 if (a > 0)
-                {
-                    data.setPixelColour (x, y,
-                                         juce::Colour::fromRGBA (255, 255, 255, a));
-                }
+                    data.setPixelColour (x, y, juce::Colour::fromRGBA (255, 255, 255, a));
             }
         }
     }
 
-    // Load finger knob image
-    juce::Image fingerImage = juce::ImageCache::getFromMemory (
-        BinaryData::finger_png,
-        BinaryData::finger_pngSize);
-
+    juce::Image fingerImage = juce::ImageCache::getFromMemory (BinaryData::finger_png,
+                                                               BinaryData::finger_pngSize);
     fingerLnf.setKnobImage (fingerImage);
 
     if (bgImage.isValid())
-        setSize ((int)(bgImage.getWidth() * bgScale),
-                 (int)(bgImage.getHeight() * bgScale));
+        setSize ((int) (bgImage.getWidth()  * bgScale),
+                 (int) (bgImage.getHeight() * bgScale));
     else
         setSize (600, 400);
 
-    // ----------------------
+    // --------------------------------------------------
     // SLIDERS
-    // ----------------------
+    // --------------------------------------------------
     auto setupKnob01 = [] (FineControlSlider& s)
     {
         s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
@@ -227,7 +223,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         s.setDragSensitivities (250, 800);
     };
 
-    // GAIN uses dB range
+    // GAIN uses a dB range
     gainSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     gainSlider.setMouseDragSensitivity (250);
@@ -236,17 +232,10 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     setupKnob01 (ottSlider);
     setupKnob01 (satSlider);
-    modeSlider.setRange (0.0, 1.0, 1.0);     // ONLY 0 OR 1
-    modeSlider.setSliderStyle (juce::Slider::Rotary);
-    modeSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-    modeSlider.setDoubleClickReturnValue (true, 0.0);
-    modeSlider.setValue (0.0, juce::dontSendNotification);
+    setupKnob01 (modeSlider);
 
-    modeSlider.onClick = [this]
-    {
-        float newVal = (modeSlider.getValue() >= 0.5f ? 0.0f : 1.0f);
-        modeSlider.setValue (newVal, juce::sendNotification);
-    };
+    // MODE is a hard 0/1 switch
+    modeSlider.setRange (0.0, 1.0, 1.0); // ONLY 0 or 1
 
     gainSlider.setLookAndFeel (&fingerLnf);
     ottSlider .setLookAndFeel (&fingerLnf);
@@ -258,9 +247,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     addAndMakeVisible (satSlider);
     addAndMakeVisible (modeSlider);
 
-    // ----------------------
+    // --------------------------------------------------
     // LABELS
-    // ----------------------
+    // --------------------------------------------------
     auto setupLabel = [] (juce::Label& lbl, const juce::String& text)
     {
         lbl.setText (text, juce::dontSendNotification);
@@ -275,18 +264,18 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     setupLabel (gainLabel, "GAIN");
     setupLabel (ottLabel,  "LOVE");
     setupLabel (satLabel,  "DEATH");
-    setupLabel (modeLabel, "CLIPPER"); // will switch to LIMITER in runtime
+    setupLabel (modeLabel, "CLIPPER"); // will flip to LIMITER in runtime
 
     addAndMakeVisible (gainLabel);
     addAndMakeVisible (ottLabel);
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
 
-    // Make GAIN label clickable to toggle bypass-after-gain
+    // GAIN label click = bypass after gain
     gainLabel.setInterceptsMouseClicks (true, false);
     gainLabel.addMouseListener (this, false);
 
-    // LUFS label – white bold font, slightly smaller
+    // LUFS label
     lufsLabel.setJustificationType (juce::Justification::centred);
     lufsLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     {
@@ -297,49 +286,47 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lufsLabel.setText ("0.00 LUFS", juce::dontSendNotification);
     addAndMakeVisible (lufsLabel);
 
-    // ----------------------
-    // LOOK / SETTINGS (top-left, opens popup menu)
-    // ----------------------
+    // --------------------------------------------------
+    // LOOK / SETTINGS (top-left)
+    // --------------------------------------------------
     lookBox.setName ("lookBox");
-    lookBox.setTextWhenNothingSelected ("SETTINGS"); // logic name only – we don't draw the text
+    lookBox.setTextWhenNothingSelected ("SETTINGS");
     lookBox.setJustificationType (juce::Justification::centred);
-    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
-    lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::buttonColourId,      juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
+    lookBox.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
+    lookBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::buttonColourId,     juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::arrowColourId,      juce::Colours::white);
 
-    // Combo itself doesn’t eat the click – editor handles it
     lookBox.setInterceptsMouseClicks (false, false);
-
     lookBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (lookBox);
 
-    // ----------------------
-    // OVERSAMPLE DROPDOWN (top-right, tiny, white "x1" etc.)
-    // ----------------------
+    // --------------------------------------------------
+    // OVERSAMPLE DROPDOWN (top-right)
+    // --------------------------------------------------
     oversampleBox.setName ("oversampleBox");
     oversampleBox.addItem ("x1",  1);
     oversampleBox.addItem ("x2",  2);
     oversampleBox.addItem ("x4",  3);
     oversampleBox.addItem ("x8",  4);
     oversampleBox.addItem ("x16", 5);
-    oversampleBox.setSelectedId (1, juce::dontSendNotification); // default x1
+    oversampleBox.setSelectedId (1, juce::dontSendNotification);
     oversampleBox.setTextWhenNothingSelected ("x1");
 
     oversampleBox.setJustificationType (juce::Justification::centred);
-    oversampleBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
-    oversampleBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
-    oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
-    oversampleBox.setColour (juce::ComboBox::buttonColourId,      juce::Colours::transparentBlack);
-    oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
+    oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+    oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::buttonColourId,     juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::arrowColourId,      juce::Colours::white);
 
     oversampleBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (oversampleBox);
 
-    // ----------------------
+    // --------------------------------------------------
     // PARAMETER ATTACHMENTS
-    // ----------------------
+    // --------------------------------------------------
     auto& apvts = processor.getParametersState();
 
     gainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
@@ -349,7 +336,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
                         apvts, "ottAmount", ottSlider);
 
     satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                        apvts, "satAmount",  satSlider);
+                        apvts, "satAmount", satSlider);
 
     modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "useLimiter", modeSlider);
@@ -357,45 +344,42 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "oversampleMode", oversampleBox);
 
-    // Initial state from param
+    // Small helper to keep SAT enable + label in sync with the mode value
+    auto updateModeUI = [this]()
+    {
+        const bool useLimiter = (modeSlider.getValue() >= 0.5f);
+        satSlider.setEnabled (! useLimiter);
+        modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
+    };
+
+    // Initial state from parameter
     if (auto* modeParam = apvts.getRawParameterValue ("useLimiter"))
     {
         const bool useLimiter = (modeParam->load() >= 0.5f);
-
-        // Make sure the MODE slider matches the parameter (0 = clipper, 1 = limiter)
         modeSlider.setValue (useLimiter ? 1.0f : 0.0f, juce::dontSendNotification);
-
-        // Make sure the finger graphic starts in the correct position
-        currentFingerAngle = useLimiter ? juce::MathConstants<float>::pi : 0.0f;
-        targetFingerAngle  = currentFingerAngle;
-
-        // SAT enabled only in clipper mode, and label text reflects current mode
-        satSlider.setEnabled (! useLimiter);
-        modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
+        updateModeUI();
     }
 
-    // When MODE changes, update SAT enable + text
-    modeSlider.onValueChange = [this]
+    // Whenever the slider changes (attachment or user), update UI only.
+    // DO NOT call setValueNotifyingHost here – the attachment already handles the parameter.
+    modeSlider.onValueChange = [this, updateModeUI]()
     {
-        const bool limiterMode = (modeSlider.getValue() >= 0.5f);
-
-        // Animate the finger between CLIPPER (0 rad) and LIMITER (pi rad)
-        startFingerAnimation (limiterMode);
-
-        // SAT knob is only active in clipper mode
-        satSlider.setEnabled (! limiterMode);
-
-        // Update label text to match the current mode
-        modeLabel.setText (limiterMode ? "LIMITER" : "CLIPPER",
-                           juce::dontSendNotification);
+        updateModeUI();
     };
 
-    // Now the LNF knows which slider is which for special angles
+    // Click on the finger = toggle 0 <-> 1 and notify attachment/host
+    modeSlider.onClick = [this]()
+    {
+        const float newVal = (modeSlider.getValue() >= 0.5f ? 0.0f : 1.0f);
+        modeSlider.setValue (newVal, juce::sendNotificationSync);
+    };
+
+    // Tell the finger LNF which sliders are special
     fingerLnf.setControlledSliders (&gainSlider, &modeSlider, &satSlider);
 
     currentLookMode = getLookMode();
 
-    // Start GUI update timer (for burn animation / LUFS text)
+    // Burn / LUFS update timer
     startTimerHz (30);
 }
 
