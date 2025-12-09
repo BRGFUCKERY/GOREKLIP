@@ -108,38 +108,36 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 {
     juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
 
-    // Full bounds of the combo box
+    // Local bounds of this combo box
     auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
                                           (float) width, (float) height);
 
-    // Fully transparent background – UI video underneath stays visible
+    // Fully transparent background – video shows through
     g.setColour (juce::Colours::transparentBlack);
     g.fillRect (bounds);
 
-    // IMPORTANT:
     // We DO NOT draw any text here.
-    // ComboBox / Label will handle drawing the current text once.
-    // This prevents the OVERSAMPLE text from appearing "doubled".
+    // The ComboBox/Label handles text, so oversample isn't doubled.
 
-    // Star icon (replaces chevron) – same math for ALL combo boxes,
-    // so left and right stars are perfectly symmetrical in position.
-    const float iconSize    = (float) height * 0.35f;
-    const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
-    const float iconCenterY = bounds.getCentreY();
-    const float iconRadius  = iconSize * 0.5f;
+    // Bigger star icon, same geometry for ALL combo boxes
+    // so they are visually symmetrical inside their own boxes.
+    const float iconSize   = (float) height * 0.70f;   // bigger star
+    const float iconMargin = (float) height * 0.15f;   // padding from the right edge
+
+    const float starRight  = bounds.getRight() - iconMargin;
+    const float starTop    = bounds.getCentreY() - iconSize * 0.5f;
 
     juce::Rectangle<int> starBounds (
-        (int) std::round (iconCenterX - iconRadius),
-        (int) std::round (iconCenterY - iconRadius),
-        (int) std::round (iconRadius * 2.0f),
-        (int) std::round (iconRadius * 2.0f));
+        (int) std::round (starRight - iconSize),
+        (int) std::round (starTop),
+        (int) std::round (iconSize),
+        (int) std::round (iconSize));
 
     g.setColour (juce::Colours::white);
     juce::Font starFont (iconSize, juce::Font::plain);
     g.setFont (starFont);
 
-    // Draw a single "*" character centred in the starBounds.
-    // This replaces the old chevron / V-path arrow.
+    // Draw a single "*" character centred in starBounds.
     g.drawFittedText ("*",
                       starBounds,
                       juce::Justification::centred,
