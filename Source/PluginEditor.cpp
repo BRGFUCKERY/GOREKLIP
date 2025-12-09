@@ -1,25 +1,7 @@
 #include "BinaryData.h"
 #include "PluginEditor.h"
-#include "CustomLookAndFeel.h"
 
 #include <cmath>
-
-class KlipBibleComponent : public juce::Component
-{
-public:
-    explicit KlipBibleComponent (juce::String textToShow) : text (std::move (textToShow)) {}
-
-    void paint (juce::Graphics& g) override
-    {
-        g.fillAll (juce::Colours::black);
-        g.setColour (juce::Colours::white);
-        g.setFont (16.0f);
-        g.drawFittedText (text, getLocalBounds().reduced(20), juce::Justification::topLeft, 20);
-    }
-
-private:
-    juce::String text;
-};
 
 //==============================================================
 // Custom Middle-Finger Knob LookAndFeel
@@ -101,21 +83,6 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    auto& lookSelector = lookBox;
-    auto& oversamplingSelector = oversampleBox;
-    auto& menuSelector = lookBox;
-
-    setLookAndFeel (&customLookAndFeel);
-
-    lookSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    lookSelector.setColour (juce::ComboBox::textColourId, juce::Colours::white);
-
-    oversamplingSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    oversamplingSelector.setColour (juce::ComboBox::textColourId, juce::Colours::white);
-
-    menuSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    menuSelector.setColour (juce::ComboBox::textColourId, juce::Colours::white);
-
     // Load background
     bgImage = juce::ImageCache::getFromMemory (
         BinaryData::bg_png,
@@ -240,9 +207,19 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // ----------------------
     // LOOK / SETTINGS (top-left, opens popup menu)
     // ----------------------
-    lookBox.setTextWhenNothingSelected ("SETTINGS");
+    // Arrow-only SETTINGS control on the left – no label, fully transparent,
+    // we open the popup manually from mouseDown when this area is clicked.
+    lookBox.setTextWhenNothingSelected ("");
     lookBox.setJustificationType (juce::Justification::centred);
+    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
+    lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::buttonColourId,      juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
     lookBox.setInterceptsMouseClicks (false, false);
+    lookBox.setTooltip ("SETTINGS");
+
+    lookBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (lookBox);
 
     // ----------------------
@@ -257,8 +234,21 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setTextWhenNothingSelected ("x1");
 
     oversampleBox.setJustificationType (juce::Justification::centred);
+    oversampleBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
+    oversampleBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::buttonColourId,      juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
     addAndMakeVisible (oversampleBox);
+
+    // Popup menu colours – black, no blue highlight, semi-transparent
+    comboLnf.setColour (juce::PopupMenu::backgroundColourId,           juce::Colours::black.withAlpha (0.90f));
+    comboLnf.setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colours::transparentBlack);
+    comboLnf.setColour (juce::PopupMenu::textColourId,                 juce::Colours::white);
+    comboLnf.setColour (juce::PopupMenu::highlightedTextColourId,      juce::Colours::white);
+    comboLnf.setColour (juce::PopupMenu::headerBackgroundColourId,     juce::Colours::black.withAlpha (0.90f));
+    comboLnf.setColour (juce::PopupMenu::headerTextColourId,           juce::Colours::white);
 
     // ----------------------
     // PARAMETER ATTACHMENTS
@@ -312,7 +302,8 @@ FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
     ottSlider .setLookAndFeel (nullptr);
     satSlider .setLookAndFeel (nullptr);
     modeSlider.setLookAndFeel (nullptr);
-    setLookAndFeel (nullptr);
+    lookBox.setLookAndFeel (nullptr);
+    oversampleBox.setLookAndFeel (nullptr);
 }
 
 //==============================================================
@@ -396,8 +387,8 @@ void FruityClipAudioProcessorEditor::resized()
 
     const int lookW = juce::jmax (80, w / 6);
     const int lookH = juce::jmax (16, h / 20);
-    const int lookX = 0;
-    const int lookY = 0;
+    const int lookX = 6;
+    const int lookY = 6;
 
     lookBox.setBounds (lookX, lookY, lookW, lookH);
 
@@ -529,17 +520,12 @@ void FruityClipAudioProcessorEditor::showBypassInfoPopup()
     text << "FOLLOW ME ON INSTAGRAM\n";
     text << "@BORGORE\n";
 
-    auto bibleComponent = std::make_unique<KlipBibleComponent> (text);
-    bibleComponent->setSize (500, 340);
-
-    juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = "KLIPERBIBLE";
-    options.dialogBackgroundColour = juce::Colours::black;
-    options.content.setOwned (bibleComponent.release());
-    options.componentToCentreAround = this;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
-    options.launchAsync();
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::AlertWindow::InfoIcon,
+        "KLIPERBIBLE",
+        text,
+        "OK",
+        this);
 }
 
 
@@ -581,6 +567,9 @@ void FruityClipAudioProcessorEditor::openKlipBible()
 void FruityClipAudioProcessorEditor::showSettingsMenu()
 {
     juce::PopupMenu menu;
+
+    // Use our black, non-blue popup look
+    menu.setLookAndFeel (&comboLnf);
 
     // Title
     menu.addSectionHeader ("SETTINGS");
@@ -648,9 +637,7 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
 
 void FruityClipAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 {
-    // IMPORTANT FIX:
-    // Convert click from child component space (like GAIN label)
-    // into editor coordinates before hit-testing the SETTINGS area.
+    // Convert child clicks (like GAIN label) into editor coordinates
     auto posInEditor = e.getEventRelativeTo (this).getPosition();
 
     if (lookBox.getBounds().contains (posInEditor.toInt()))
