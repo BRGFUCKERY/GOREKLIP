@@ -63,6 +63,8 @@ class FineControlSlider : public juce::Slider
 public:
     FineControlSlider() = default;
 
+    std::function<void()> onClick;
+
     void setDragSensitivities (int normal, int fine)
     {
         normalSensitivity = (float) normal;
@@ -97,6 +99,9 @@ public:
     void mouseUp (const juce::MouseEvent& e) override
     {
         juce::Slider::mouseUp (e);
+
+        if (onClick)
+            onClick();
     }
 
 private:
@@ -202,6 +207,8 @@ private:
     void startFingerAnimation (bool limiterMode);
 
     void showBypassInfoPopup();
+
+    friend class MiddleFingerLookAndFeel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessorEditor)
 };
