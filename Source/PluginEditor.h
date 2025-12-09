@@ -2,6 +2,7 @@
 
 #include "JuceHeader.h"
 #include "PluginProcessor.h"
+#include "CustomLookAndFeel.h"
 
 //==============================================================
 //  Custom LookAndFeel for the finger knobs
@@ -131,6 +132,7 @@ private:
 
     // LookAndFeel + knobs
     MiddleFingerLookAndFeel fingerLnf;
+    CustomLookAndFeel customLookAndFeel;
     DownwardComboBoxLookAndFeel comboLnf;
 
     // 4 knobs: GAIN, OTT, SAT, MODE

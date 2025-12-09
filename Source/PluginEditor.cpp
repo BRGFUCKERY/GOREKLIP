@@ -1,7 +1,25 @@
 #include "BinaryData.h"
 #include "PluginEditor.h"
+#include "CustomLookAndFeel.h"
 
 #include <cmath>
+
+class KlipBibleComponent : public juce::Component
+{
+public:
+    explicit KlipBibleComponent (juce::String textToShow) : text (std::move (textToShow)) {}
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colours::black);
+        g.setColour (juce::Colours::white);
+        g.setFont (16.0f);
+        g.drawFittedText (text, getLocalBounds().reduced(20), juce::Justification::topLeft, 20);
+    }
+
+private:
+    juce::String text;
+};
 
 //==============================================================
 // Custom Middle-Finger Knob LookAndFeel
@@ -83,6 +101,21 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
+    auto& lookSelector = lookBox;
+    auto& oversamplingSelector = oversampleBox;
+    auto& menuSelector = lookBox;
+
+    setLookAndFeel (&customLookAndFeel);
+
+    lookSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
+    lookSelector.setColour (juce::ComboBox::textColourId, juce::Colours::white);
+
+    oversamplingSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
+    oversamplingSelector.setColour (juce::ComboBox::textColourId, juce::Colours::white);
+
+    menuSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
+    menuSelector.setColour (juce::ComboBox::textColourId, juce::Colours::white);
+
     // Load background
     bgImage = juce::ImageCache::getFromMemory (
         BinaryData::bg_png,
@@ -209,13 +242,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // ----------------------
     lookBox.setTextWhenNothingSelected ("SETTINGS");
     lookBox.setJustificationType (juce::Justification::centred);
-    lookBox.setColour (juce::ComboBox::textColourId,        juce::Colours::transparentWhite);
-    lookBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
     lookBox.setInterceptsMouseClicks (false, false);
-
-    lookBox.setLookAndFeel (&comboLnf);
     addAndMakeVisible (lookBox);
 
     // ----------------------
@@ -230,10 +257,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setTextWhenNothingSelected ("x1");
 
     oversampleBox.setJustificationType (juce::Justification::centred);
-    oversampleBox.setColour (juce::ComboBox::textColourId,        juce::Colours::white);
-    oversampleBox.setColour (juce::ComboBox::outlineColourId,     juce::Colours::transparentBlack);
-    oversampleBox.setColour (juce::ComboBox::backgroundColourId,  juce::Colours::transparentBlack);
-    oversampleBox.setColour (juce::ComboBox::arrowColourId,       juce::Colours::white);
 
     addAndMakeVisible (oversampleBox);
 
@@ -289,8 +312,7 @@ FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
     ottSlider .setLookAndFeel (nullptr);
     satSlider .setLookAndFeel (nullptr);
     modeSlider.setLookAndFeel (nullptr);
-    lookBox.setLookAndFeel (nullptr);
-    oversampleBox.setLookAndFeel (nullptr);
+    setLookAndFeel (nullptr);
 }
 
 //==============================================================
@@ -507,12 +529,17 @@ void FruityClipAudioProcessorEditor::showBypassInfoPopup()
     text << "FOLLOW ME ON INSTAGRAM\n";
     text << "@BORGORE\n";
 
-    juce::AlertWindow::showMessageBoxAsync(
-        juce::AlertWindow::InfoIcon,
-        "KLIPERBIBLE",
-        text,
-        "OK",
-        this);
+    auto bibleComponent = std::make_unique<KlipBibleComponent> (text);
+    bibleComponent->setSize (500, 340);
+
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle = "KLIPERBIBLE";
+    options.dialogBackgroundColour = juce::Colours::black;
+    options.content.setOwned (bibleComponent.release());
+    options.componentToCentreAround = this;
+    options.useNativeTitleBar = true;
+    options.resizable = false;
+    options.launchAsync();
 }
 
 
