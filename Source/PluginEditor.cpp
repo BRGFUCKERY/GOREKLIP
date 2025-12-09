@@ -354,6 +354,15 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     if (auto* modeParam = apvts.getRawParameterValue ("useLimiter"))
     {
         const bool useLimiter = (modeParam->load() >= 0.5f);
+
+        // Make sure the MODE slider matches the parameter (0 = clipper, 1 = limiter)
+        modeSlider.setValue (useLimiter ? 1.0f : 0.0f, juce::dontSendNotification);
+
+        // Make sure the finger graphic starts in the correct position
+        currentFingerAngle = useLimiter ? juce::MathConstants<float>::pi : 0.0f;
+        targetFingerAngle  = currentFingerAngle;
+
+        // SAT enabled only in clipper mode, and label text reflects current mode
         satSlider.setEnabled (! useLimiter);
         modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
     }
@@ -361,15 +370,17 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // When MODE changes, update SAT enable + text
     modeSlider.onValueChange = [this]
     {
-        bool limiterMode = (modeSlider.getValue() >= 0.5f);
+        const bool limiterMode = (modeSlider.getValue() >= 0.5f);
 
-        if (auto* p = processor.getParametersState().getParameter("useLimiter"))
-            p->setValueNotifyingHost (limiterMode ? 1.0f : 0.0f);
-
+        // Animate the finger between CLIPPER (0 rad) and LIMITER (pi rad)
         startFingerAnimation (limiterMode);
 
+        // SAT knob is only active in clipper mode
         satSlider.setEnabled (! limiterMode);
-        modeLabel.setText (limiterMode ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
+
+        // Update label text to match the current mode
+        modeLabel.setText (limiterMode ? "LIMITER" : "CLIPPER",
+                           juce::dontSendNotification);
     };
 
     // Now the LNF knows which slider is which for special angles
