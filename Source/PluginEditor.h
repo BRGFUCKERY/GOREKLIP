@@ -94,6 +94,13 @@ class DownwardComboBoxLookAndFeel : public juce::LookAndFeel_V4
 public:
 };
 
+enum class LookMode
+{
+    Cooked = 0,
+    Lufs,
+    Static
+};
+
 //==============================================================
 //  Main Editor
 //==============================================================
@@ -106,6 +113,11 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    void showSettingsMenu();          // opens the left SETTINGS menu
+    void setLookMode (LookMode mode); // updates processor + UI
+    LookMode getLookMode() const;     // reads current mode from processor
+    void openKlipBible();             // opens the Bible/help resource
 
 private:
     FruityClipAudioProcessor& processor;
@@ -144,17 +156,16 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> lookAttachment;
 
     // GUI burn value (cached from processor)
     float lastBurn = 0.0f;
 
-    int lastLookId = 1;
-    bool isRestoringLook = false;
+    LookMode currentLookMode { LookMode::Cooked };
 
     // Local GUI state for gain-bypass toggle
     bool isGainBypass = false;
 
+    void mouseDown (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
     // Timer for GUI updates

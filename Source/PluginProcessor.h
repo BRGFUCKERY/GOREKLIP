@@ -67,6 +67,9 @@ public:
     // True if we currently have enough signal to show LUFS
     bool getGuiHasSignal() const { return guiSignalEnv.load() > 0.2f; }
 
+    int  getLookModeIndex() const;
+    void setLookModeIndex (int newIndex);
+
     int getLookMode() const
     {
         if (auto* p = parameters.getRawParameterValue ("lookMode"))
