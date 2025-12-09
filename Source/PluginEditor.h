@@ -173,11 +173,18 @@ private:
     // Local GUI state for gain-bypass toggle
     bool isGainBypass = false;
 
+    float targetFingerAngle = 0.0f;
+    float currentFingerAngle = 0.0f;
+    float fingerAnimSpeed = 0.15f; // seconds
+    juce::Timer animationTimer;
+
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
     // Timer for GUI updates
     void timerCallback() override;
+
+    void startFingerAnimation (bool limiterMode);
 
     void showBypassInfoPopup();
 

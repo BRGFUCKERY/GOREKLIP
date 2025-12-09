@@ -526,6 +526,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     //   - No metering here; meters are computed later at base rate
     //==========================================================
     const bool useOversampling = (oversampler != nullptr && currentOversampleIndex > 0);
+    const bool limiterOn = *parameters.getRawParameterValue("useLimiter") > 0.5f;
 
     if (useOversampling)
     {
@@ -533,84 +534,58 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         auto osBlock = oversampler->processSamplesUp (block);
         const int osNumSamples = (int) osBlock.getNumSamples();
 
-        if (useLimiter)
+        for (int ch = 0; ch < numChannels; ++ch)
         {
-            // LIMIT MODE (oversampled)
-            for (int ch = 0; ch < numChannels; ++ch)
+            float* samples = osBlock.getChannelPointer (ch);
+
+            for (int i = 0; i < osNumSamples; ++i)
             {
-                float* samples = osBlock.getChannelPointer (ch);
+                float sample = samples[i];
 
-                for (int i = 0; i < osNumSamples; ++i)
+                if (! limiterOn && satAmount > 0.0f)
                 {
-                    float y = samples[i];
+                    auto& sat = satStates[(size_t) ch];
 
-                    // Limiter (0 lookahead)
-                    y = processLimiterSample (y);
+                    // --- STATIC INPUT TRIM ---
+                    // At SAT = 0  -> 0 dB
+                    // At SAT = 1  -> ~-0.5 dB
+                    const float inputTrimDb = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, -0.5f);
+                    const float inputTrim   = juce::Decibels::decibelsToGain (inputTrimDb);
 
-                    // Alignment + final hard safety in OS world
-                    y *= g;
+                    float samplePre = sample * inputTrim;
 
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
+                    // --- BASS TILT ---
+                    sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * samplePre;
+                    const float low = sat.low;
 
-                    samples[i] = y;
+                    const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
+                    const float tilted     = samplePre + tiltAmount * (low - samplePre);
+
+                    // --- DRIVE ---
+                    const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
+
+                    float driven = std::tanh (tilted * drive);
+
+                    // --- STATIC NORMALISATION (UNITY) ---
+                    const float norm = 1.0f / std::tanh (drive);
+                    driven *= norm;
+
+                    // --- DRY/WET ---
+                    const float mix = std::pow (satAmount, 1.0f);
+                    sample = samplePre + mix * (driven - samplePre);
                 }
-            }
-        }
-        else
-        {
-            // CLIP / SAT MODE (oversampled)
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* samples = osBlock.getChannelPointer (ch);
 
-                for (int i = 0; i < osNumSamples; ++i)
-                {
-                    float y = samples[i];
+                if (limiterOn)
+                    sample = processLimiterSample (sample);
+                else
+                    sample = fruitySoftClipSample (sample, thresholdLinear);
 
-                    // SATURATION (pre-clip), only active when satAmount > 0
-                    if (satAmount > 0.0f)
-                    {
-                        auto& sat = satStates[(size_t) ch];
+                sample *= g;
 
-                        // --- STATIC INPUT TRIM ---
-                        // At SAT = 0  -> 0 dB
-                        // At SAT = 1  -> ~-0.5 dB
-                        const float inputTrimDb = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, -0.5f);
-                        const float inputTrim   = juce::Decibels::decibelsToGain (inputTrimDb);
+                if (sample >  1.0f) sample =  1.0f;
+                if (sample < -1.0f) sample = -1.0f;
 
-                        float yPre = y * inputTrim;
-
-                        // --- BASS TILT ---
-                        sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * yPre;
-                        const float low = sat.low;
-
-                        const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
-                        const float tilted     = yPre + tiltAmount * (low - yPre);
-
-                        // --- DRIVE ---
-                        const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
-
-                        float driven = std::tanh (tilted * drive);
-
-                        // --- STATIC NORMALISATION (UNITY) ---
-                        const float norm = 1.0f / std::tanh (drive);
-                        driven *= norm;
-
-                        // --- DRY/WET ---
-                        const float mix = std::pow (satAmount, 1.0f);
-                        y = yPre + mix * (driven - yPre);
-                    }
-
-                    // Post-gain (Fruity-null alignment)
-                    y *= g;
-
-                    // Hard ceiling in OS world
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
-
-                    samples[i] = y;
-                }
+                samples[i] = sample;
             }
         }
 
@@ -636,84 +611,58 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     else
     {
         // NO OVERSAMPLING – original behaviour at base rate
-        if (useLimiter)
+        for (int ch = 0; ch < numChannels; ++ch)
         {
-            // LIMIT MODE
-            for (int ch = 0; ch < numChannels; ++ch)
+            float* samples = buffer.getWritePointer (ch);
+
+            for (int i = 0; i < numSamples; ++i)
             {
-                float* samples = buffer.getWritePointer (ch);
+                float sample = samples[i];
 
-                for (int i = 0; i < numSamples; ++i)
+                if (! limiterOn && satAmount > 0.0f)
                 {
-                    float y = samples[i];
+                    auto& sat = satStates[(size_t) ch];
 
-                    // Limiter (0 lookahead)
-                    y = processLimiterSample (y);
+                    // --- STATIC INPUT TRIM ---
+                    // At SAT = 0  -> 0 dB
+                    // At SAT = 1  -> ~-0.5 dB
+                    const float inputTrimDb = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, -0.5f);
+                    const float inputTrim   = juce::Decibels::decibelsToGain (inputTrimDb);
 
-                    // Alignment + final hard safety
-                    y *= g;
+                    float samplePre = sample * inputTrim;
 
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
+                    // --- BASS TILT ---
+                    sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * samplePre;
+                    const float low = sat.low;
 
-                    samples[i] = y;
+                    const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
+                    const float tilted     = samplePre + tiltAmount * (low - samplePre);
+
+                    // --- DRIVE ---
+                    const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
+
+                    float driven = std::tanh (tilted * drive);
+
+                    // --- STATIC NORMALISATION (UNITY) ---
+                    const float norm = 1.0f / std::tanh (drive);
+                    driven *= norm;
+
+                    // --- DRY/WET ---
+                    const float mix = std::pow (satAmount, 1.0f);
+                    sample = samplePre + mix * (driven - samplePre);
                 }
-            }
-        }
-        else
-        {
-            // CLIP / SAT MODE
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* samples = buffer.getWritePointer (ch);
 
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    float y = samples[i];
+                if (limiterOn)
+                    sample = processLimiterSample (sample);
+                else
+                    sample = fruitySoftClipSample (sample, thresholdLinear);
 
-                    // SATURATION (pre-clip), only active when satAmount > 0
-                    if (satAmount > 0.0f)
-                    {
-                        auto& sat = satStates[(size_t) ch];
+                sample *= g;
 
-                        // --- STATIC INPUT TRIM ---
-                        // At SAT = 0  -> 0 dB
-                        // At SAT = 1  -> ~-0.5 dB
-                        const float inputTrimDb = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, -0.5f);
-                        const float inputTrim   = juce::Decibels::decibelsToGain (inputTrimDb);
+                if (sample >  1.0f) sample =  1.0f;
+                if (sample < -1.0f) sample = -1.0f;
 
-                        float yPre = y * inputTrim;
-
-                        // --- BASS TILT ---
-                        sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * yPre;
-                        const float low = sat.low;
-
-                        const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
-                        const float tilted     = yPre + tiltAmount * (low - yPre);
-
-                        // --- DRIVE ---
-                        const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
-
-                        float driven = std::tanh (tilted * drive);
-
-                        // --- STATIC NORMALISATION (UNITY) ---
-                        const float norm = 1.0f / std::tanh (drive);
-                        driven *= norm;
-
-                        // --- DRY/WET ---
-                        const float mix = std::pow (satAmount, 1.0f);
-                        y = yPre + mix * (driven - yPre);
-                    }
-
-                    // Post-gain (Fruity-null alignment)
-                    y *= g;
-
-                    // Hard ceiling
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
-
-                    samples[i] = y;
-                }
+                samples[i] = sample;
             }
         }
     }

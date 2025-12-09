@@ -58,12 +58,8 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 
     if (modeSlider != nullptr && &slider == modeSlider)
     {
-        // MODE FINGER: two positions only
-        const bool useLimiter = (slider.getValue() >= 0.5f);
-
-        // 12 o'clock (up) = CLIPPER, 6 o'clock (down) = LIMITER
-        const float angleDegrees = useLimiter ? 180.0f : 0.0f;
-        angle = juce::degreesToRadians (angleDegrees);
+        auto* ed = dynamic_cast<FruityClipAudioProcessorEditor*>(slider.getParentComponent());
+        angle = (ed != nullptr ? ed->currentFingerAngle : (slider.getValue() >= 0.5f ? juce::MathConstants<float>::pi : 0.0f));
     }
     else if (gainSlider != nullptr && &slider == gainSlider)
     {
@@ -233,7 +229,17 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     setupKnob01 (ottSlider);
     setupKnob01 (satSlider);
-    setupKnob01 (modeSlider); // MODE finger – param is bool, but we use 0..1
+    modeSlider.setRange (0.0, 1.0, 1.0);     // ONLY 0 OR 1
+    modeSlider.setSliderStyle (juce::Slider::Rotary);
+    modeSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    modeSlider.setDoubleClickReturnValue (true, 0.0);
+    modeSlider.setValue (0.0, juce::dontSendNotification);
+
+    modeSlider.onClick = [this]
+    {
+        float newVal = (modeSlider.getValue() >= 0.5f ? 0.0f : 1.0f);
+        modeSlider.setValue (newVal, juce::sendNotification);
+    };
 
     gainSlider.setLookAndFeel (&fingerLnf);
     ottSlider .setLookAndFeel (&fingerLnf);
@@ -355,9 +361,15 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // When MODE changes, update SAT enable + text
     modeSlider.onValueChange = [this]
     {
-        const bool useLimiter = (modeSlider.getValue() >= 0.5f);
-        satSlider.setEnabled (! useLimiter);
-        modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
+        bool limiterMode = (modeSlider.getValue() >= 0.5f);
+
+        if (auto* p = processor.getParametersState().getParameter("useLimiter"))
+            p->setValueNotifyingHost (limiterMode ? 1.0f : 0.0f);
+
+        startFingerAnimation (limiterMode);
+
+        satSlider.setEnabled (! limiterMode);
+        modeLabel.setText (limiterMode ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
     };
 
     // Now the LNF knows which slider is which for special angles
@@ -367,6 +379,31 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     // Start GUI update timer (for burn animation / LUFS text)
     startTimerHz (30);
+}
+
+void FruityClipAudioProcessorEditor::startFingerAnimation (bool limiterMode)
+{
+    targetFingerAngle = limiterMode ? juce::MathConstants<float>::pi : 0.0f;
+
+    currentFingerAngle = currentFingerAngle; // keep current
+    const int fps = 60;
+    const float step = (targetFingerAngle - currentFingerAngle) / (fingerAnimSpeed * fps);
+
+    animationTimer.stopTimer();
+    animationTimer.startTimerHz (fps);
+
+    animationTimer.onTimer = [this, step]()
+    {
+        currentFingerAngle += step;
+
+        if ((step > 0.0f && currentFingerAngle >= targetFingerAngle)
+         || (step < 0.0f && currentFingerAngle <= targetFingerAngle))
+        {
+            currentFingerAngle = targetFingerAngle;
+            animationTimer.stopTimer();
+        }
+        repaint();
+    };
 }
 
 FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
