@@ -125,6 +125,7 @@ public:
     void setLookMode (LookMode mode); // updates processor + UI
     LookMode getLookMode() const;     // reads current mode from processor
     void openKlipBible();             // opens the Bible/help resource
+    void startFingerAnimation (bool limiterMode);
 
 private:
     FruityClipAudioProcessor& processor;
@@ -167,6 +168,11 @@ private:
 
     // GUI burn value (cached from processor)
     float lastBurn = 0.0f;
+
+    float targetFingerAngle = 0.0f;
+    float currentFingerAngle = 0.0f;
+    float fingerAnimSpeed = 0.15f; // seconds
+    juce::Timer animationTimer;
 
     LookMode currentLookMode { LookMode::Cooked };
 
