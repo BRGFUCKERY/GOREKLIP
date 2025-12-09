@@ -108,46 +108,42 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 {
     juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
 
+    // Full bounds of the combo box
     auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
                                           (float) width, (float) height);
 
-    // Fully transparent background – see-through over your video
+    // Fully transparent background – UI video underneath stays visible
     g.setColour (juce::Colours::transparentBlack);
     g.fillRect (bounds);
 
-    const bool isOversample = (box.getName() == "oversampleBox");
+    // IMPORTANT:
+    // We DO NOT draw any text here.
+    // ComboBox / Label will handle drawing the current text once.
+    // This prevents the OVERSAMPLE text from appearing "doubled".
 
-    // Oversample box: draw "x1 / x2 / ..." text
-    if (isOversample)
-    {
-        auto textBounds = bounds.withTrimmedRight ((float) height * 1.2f).reduced (2.0f);
-        g.setColour (juce::Colours::white);
-        g.setFont ((float) height * 0.55f);
-        g.drawFittedText (box.getText(),
-                          textBounds.toNearestInt(),
-                          juce::Justification::centredRight,
-                          1);
-    }
+    // Star icon (replaces chevron) – same math for ALL combo boxes,
+    // so left and right stars are perfectly symmetrical in position.
+    const float iconSize    = (float) height * 0.35f;
+    const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
+    const float iconCenterY = bounds.getCentreY();
+    const float iconRadius  = iconSize * 0.5f;
 
-    // Both boxes: draw a small white chevron "V" arrow on the right
-    const float arrowSize    = (float) height * 0.35f;
-    const float arrowCenterX = bounds.getRight() - arrowSize * 0.9f;
-    const float arrowCenterY = bounds.getCentreY();
-
-    const float halfWidth = arrowSize * 0.6f;
-    const float halfHeight = arrowSize * 0.45f;
-
-    juce::Path arrow;
-    // Left upper point → bottom point → right upper point (a thin V shape)
-    arrow.startNewSubPath (arrowCenterX - halfWidth, arrowCenterY - halfHeight);
-    arrow.lineTo          (arrowCenterX,             arrowCenterY + halfHeight);
-    arrow.lineTo          (arrowCenterX + halfWidth, arrowCenterY - halfHeight);
+    juce::Rectangle<int> starBounds (
+        (int) std::round (iconCenterX - iconRadius),
+        (int) std::round (iconCenterY - iconRadius),
+        (int) std::round (iconRadius * 2.0f),
+        (int) std::round (iconRadius * 2.0f));
 
     g.setColour (juce::Colours::white);
-    juce::PathStrokeType stroke (arrowSize * 0.18f,
-                                 juce::PathStrokeType::curved,
-                                 juce::PathStrokeType::rounded);
-    g.strokePath (arrow, stroke);
+    juce::Font starFont (iconSize, juce::Font::plain);
+    g.setFont (starFont);
+
+    // Draw a single "*" character centred in the starBounds.
+    // This replaces the old chevron / V-path arrow.
+    g.drawFittedText ("*",
+                      starBounds,
+                      juce::Justification::centred,
+                      1);
 }
 
 //==============================================================
