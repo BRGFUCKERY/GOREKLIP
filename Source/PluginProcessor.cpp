@@ -782,22 +782,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
         // Downsample once for the whole block.
         oversampler->processSamplesDown (block);
-
-        // FINAL SAFETY CEILING AT BASE RATE (catches any residual intersample overs)
-        for (int ch = 0; ch < numChannels; ++ch)
-        {
-            float* s = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
-            {
-                float y = s[i];
-
-                if (y >  1.0f) y =  1.0f;
-                if (y < -1.0f) y = -1.0f;
-
-                s[i] = y;
-            }
-        }
     }
     else
     {
@@ -825,6 +809,22 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                 samples[i] = sample;
             }
+        }
+    }
+
+    // FINAL SAFETY CEILING AT BASE RATE (catches any residual intersample overs)
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        float* s = buffer.getWritePointer (ch);
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            float y = s[i];
+
+            if (y >  1.0f) y =  1.0f;
+            if (y < -1.0f) y = -1.0f;
+
+            s[i] = y;
         }
     }
 
