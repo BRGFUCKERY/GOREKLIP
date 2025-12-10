@@ -3,6 +3,7 @@
 #include "CustomLookAndFeel.h"
 
 #include <cmath>
+#include <cstdint>
 
 class KlipBibleComponent : public juce::Component
 {
@@ -163,8 +164,13 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     pent.lineTo (pts[3]);
     pent.closeSubPath();
 
-    // WHITE pentagram for both left and right combo boxes
-    g.setColour (juce::Colours::white);
+    // Pentagram colour follows burnAmount: 0 = black, 1 = white
+    const float v = juce::jlimit (0.0f, 1.0f, burnAmount);
+    const std::uint8_t level = (std::uint8_t) juce::jlimit (0, 255, (int) std::round (v * 255.0f));
+    auto starColour = juce::Colour::fromRGB (level, level, level);
+
+    g.setColour (starColour);
+
     const float strokeThickness = (float) starBounds.getWidth() * 0.10f;
     juce::PathStrokeType stroke (strokeThickness,
                                  juce::PathStrokeType::mitered,
@@ -411,7 +417,6 @@ void FruityClipAudioProcessorEditor::startFingerAnimation (bool limiterMode)
 {
     targetFingerAngle = limiterMode ? juce::MathConstants<float>::pi : 0.0f;
 
-    currentFingerAngle = currentFingerAngle; // keep current
     const int fps = 60;
     const float step = (targetFingerAngle - currentFingerAngle) / (fingerAnimSpeed * fps);
 
@@ -524,20 +529,25 @@ void FruityClipAudioProcessorEditor::resized()
     const int topMargin = 6;
     const int barH      = juce::jmax (16, h / 20);
 
-    // Left: square arrow-only box
+    // Left: SETTINGS box (square, arrow + pentagram only)
     const int lookSize = barH;
     const int lookX    = topMargin;
     const int lookY    = topMargin;
-    lookBox.setBounds (lookX, lookY, lookSize, barH);
 
-    // Right: oversample text + arrow, same top margin, pinned right
+    // Right: oversample text + pentagram, pinned to the right
     const int osW = juce::jmax (60, w / 10);
     const int osH = barH;
     const int osX = w - osW - topMargin;
     const int osY = topMargin;
-    oversampleBox.setBounds (osX, osY, osW, osH);
 
-    // 4 knobs in a row (GAIN, OTT, SAT, MODE)
+    // IMPORTANT: same height + same Y so pentagrams are perfectly aligned
+    lookBox.setBounds       (lookX, lookY, lookSize, barH);
+    oversampleBox.setBounds (osX,  osY,  osW,       osH);
+
+    // --------------------------------------------------
+    // (leave the rest of resized() exactly as it was)
+    // 4 knobs, labels, LUFS label, etc.
+    // --------------------------------------------------
     const int knobSize = juce::jmin (w / 7, h / 3);
     const int spacing  = knobSize / 2;
 
@@ -632,6 +642,24 @@ void FruityClipAudioProcessorEditor::timerCallback()
             lufsLabel.setText (text, juce::dontSendNotification);
         }
     }
+
+    // --- NEW: drive pentagram + x1 colour from lastBurn (0..1) ---
+    const float burnForIcons = juce::jlimit (0.0f, 1.0f, lastBurn);
+    comboLnf.setBurnAmount (burnForIcons);
+
+    // Greyscale 0 = black, 1 = white
+    const std::uint8_t level = (std::uint8_t) juce::jlimit (0, 255, (int) std::round (burnForIcons * 255.0f));
+    auto burnColour = juce::Colour::fromRGB (level, level, level);
+
+    // Left SETTINGS pentagram (arrow colour only, text stays transparent)
+    lookBox.setColour (juce::ComboBox::arrowColourId, burnColour);
+
+    // Right OVERSAMPLE: make the "x1/x2/..." text follow the same burn
+    oversampleBox.setColour (juce::ComboBox::textColourId, burnColour);
+
+    // Ensure both combo boxes repaint with the new colour
+    lookBox.repaint();
+    oversampleBox.repaint();
 
     repaint();
 }

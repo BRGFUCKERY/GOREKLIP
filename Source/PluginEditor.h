@@ -127,12 +127,21 @@ public:
         setColour (juce::PopupMenu::highlightedTextColourId,     juce::Colours::white);
     }
 
+    // 0.0 = black pentagram, 1.0 = white pentagram
+    void setBurnAmount (float amount)
+    {
+        burnAmount = juce::jlimit (0.0f, 1.0f, amount);
+    }
+
     void drawComboBox (juce::Graphics& g,
                        int width, int height,
                        bool isButtonDown,
                        int buttonX, int buttonY,
                        int buttonW, int buttonH,
                        juce::ComboBox& box) override;
+
+private:
+    float burnAmount = 0.0f;
 };
 
 enum class LookMode
