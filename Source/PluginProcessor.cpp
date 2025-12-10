@@ -828,6 +828,44 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
     }
 
+    {
+        const int numChannels = buffer.getNumChannels();
+        const int numSamples  = buffer.getNumSamples();
+
+        // We quantize to 24-bit domain: ±2^23 discrete steps.
+        constexpr float quantSteps = 8388608.0f;       // 2^23
+        constexpr float ditherAmp  = 1.0f / quantSteps; // ~ -138 dBFS
+
+        // Simple random generator (LCG) per block.
+        static uint32_t ditherState = 0x12345678u;
+        auto randFloat = [&]() noexcept
+        {
+            ditherState = ditherState * 1664525u + 1013904223u;
+            return (ditherState & 0x00FFFFFFu) / 16777216.0f;
+        };
+
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float* samples = buffer.getWritePointer (ch);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float s = samples[i];
+
+                // inaudible Fruity-style TPDF dither
+                const float r1 = randFloat();
+                const float r2 = randFloat();
+                const float tpdf = (r1 - r2) * ditherAmp;
+                s += tpdf;
+
+                // 24-bit style quantization
+                const float q = std::round (s * quantSteps) / quantSteps;
+
+                samples[i] = q;
+            }
+        }
+    }
+
     //==========================================================
     // METERING PASS (base rate, after distortion + final ceiling)
     //   - blockMax for burn + LUFS gate
