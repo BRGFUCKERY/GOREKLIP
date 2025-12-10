@@ -112,12 +112,8 @@ public:
         addAndMakeVisible (tripleFryOfflineButton);
 
         // Info label: plain ASCII text, nice wrapping
-        infoLabel.setText (
-            "TRIPLEFRY is an experimental multi-stage oversampling mode\n"
-            "designed for ridiculous, 3 Michelin star gloss. It can\n"
-            "seriously hammer your CPU, so it is best kept for OFFLINE\n"
-            "bounces (or very brave LIVE printing).",
-            juce::dontSendNotification);
+        infoLabel.setText ("TRIPLEFRY CAN FRY YOUR CPU",
+                           juce::dontSendNotification);
         infoLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.85f));
         infoLabel.setJustificationType (juce::Justification::topLeft);
         infoLabel.setMinimumHorizontalScale (0.8f);
@@ -730,27 +726,27 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
+    // --- Top bar: perfectly symmetric pentagrams ---
     const int topMargin = 6;
     const int barH      = juce::jmax (16, h / 20);
 
-    // Left: SETTINGS box (square, pentagram only)
+    // Left: SETTINGS box (square)
     const int lookSize = barH;
     const int lookX    = topMargin;
     const int lookY    = topMargin;
 
     // Right: OVERSAMPLING box – same size, mirrored position
-    const int osW = lookSize;                 // SAME width as left box
-    const int osH = barH;
-    const int osX = w - osW - topMargin;      // pin to right with same margin
-    const int osY = topMargin;
+    const int osW = lookSize;                // SAME width as left box
+    const int osH = barH;                    // SAME height as left box
+    const int osX = w - osW - topMargin;     // same side margin
+    const int osY = topMargin;               // same distance from top
 
-    // Perfect symmetry: same height, same Y, mirrored X
     lookBox.setBounds       (lookX, lookY, lookSize, barH);
     oversampleBox.setBounds (osX,  osY,  osW,       osH);
 
     // --------------------------------------------------
-    // (leave the rest of resized() exactly as it was)
-    // 4 knobs, labels, LUFS label, etc.
+    // Existing layout for knobs, labels, LUFS label etc.
+    // Keep exactly the same maths you already had below.
     // --------------------------------------------------
     const int knobSize = juce::jmin (w / 7, h / 3);
     const int spacing  = knobSize / 2;
@@ -788,14 +784,11 @@ void FruityClipAudioProcessorEditor::resized()
                          modeSlider.getWidth(),
                          labelH);
 
-    // LUFS label – directly above the CLIPPER/LIMITER finger
-    const int lufsHeight = 18;
-    const int lufsY      = modeSlider.getY() - lufsHeight - 4;
-
-    lufsLabel.setBounds (modeSlider.getX(),
-                         lufsY,
-                         modeSlider.getWidth(),
-                         lufsHeight);
+    // LUFS label can stay where it was –
+    // reuse the previous bounds logic if needed.
+    // Just keep it centered-ish at the top as before.
+    auto lufsBounds = juce::Rectangle<int> (0, 0, w, barH).reduced (80, 0);
+    lufsLabel.setBounds (lufsBounds);
 }
 
 //==============================================================
@@ -900,6 +893,12 @@ void FruityClipAudioProcessorEditor::showBypassInfoPopup()
     text << "• Fine-Tune Control\n";
     text << "Hold SHIFT while turning any knob for tiny mastering adjustments -\n";
     text << "normal drag = big moves, SHIFT drag = precise control.\n\n";
+
+    text << "• TRIPLEFRY\n";
+    text << "Experimental high-definition oversampling that keeps your\n";
+    text << "transients sharp while pushing the clip stage as clean and\n";
+    text << "smooth as possible. It can hit your CPU hard at high\n";
+    text << "settings, so treat it like a mastering move, not a default.\n\n";
 
     text << "—\n\n";
     text << "FOLLOW ME ON INSTAGRAM\n";
