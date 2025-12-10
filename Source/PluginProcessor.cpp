@@ -488,27 +488,20 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         oversampler->initProcessing ((size_t) maxBlockSize);
     }
 
+    const bool useOversampling = (oversampler != nullptr && currentOversampleIndex > 0);
+
+    const bool fruityNullMode =
+        (! gainBypass.load())
+        && (ottAmount <= 0.0f)
+        && (satAmount <= 0.0f)
+        && (! useLimiter)
+        && (! useOversampling);
+
     //==========================================================
     // PRE-CHAIN: GAIN + OTT (always at base rate)
     //==========================================================
 
-    if (ottAmount <= 0.0f)
-    {
-        // OTT fully bypassed: apply only INPUT GAIN in place.
-        for (int ch = 0; ch < numChannels; ++ch)
-        {
-            float* samples = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
-            {
-                float y = samples[i] * inputGain;
-                samples[i] = y;
-            }
-        }
-
-        lastOttGain = 1.0f; // 1.0 = no trim
-    }
-    else
+    if (! fruityNullMode && ottAmount > 0.0f)
     {
         // OTT active: process on temp buffer, then apply static trim to main buffer
         juce::AudioBuffer<float> preChain;
@@ -609,13 +602,37 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         buffer.makeCopyOf (preChain);
         buffer.applyGain (staticTrim);
     }
+    else
+    {
+        // OTT fully bypassed: apply only INPUT GAIN in place.
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float* samples = buffer.getWritePointer (ch);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float y = samples[i] * inputGain;
+                samples[i] = y;
+            }
+        }
+
+        lastOttGain = 1.0f; // 1.0 = no trim
+
+        if (fruityNullMode)
+            resetOttState (numChannels);
+    }
 
     //==========================================================
     // BASE-RATE SATURATION (always before oversampling)
     //==========================================================
     const bool limiterOn = useLimiter;
 
-    if (! limiterOn && satAmount > 0.0f)
+    if (fruityNullMode)
+    {
+        // Make sure SAT state cannot leak into future processing
+        resetSatState (numChannels);
+    }
+    else if (! limiterOn && satAmount > 0.0f)
     {
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -664,37 +681,66 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     //   - In oversampled mode, this runs at higher rate
     //   - No metering here; meters are computed later at base rate
     //==========================================================
-    const bool useOversampling = (oversampler != nullptr && currentOversampleIndex > 0);
-
-    // TRIPLEFRY flags are still stored per live/offline in the processor.
-    const bool tripleFryActive = isOffline
-        ? getStoredTripleFryOfflineEnabled()
-        : getStoredTripleFryLiveEnabled();
-
-    // TripleFry is a clipper-only refinement mode. If limiter is on,
-    // we ignore TripleFry and behave like the normal single-pass limiter.
-    const bool tripleFryEnabled = (useOversampling && tripleFryActive && ! limiterOn);
-
-    if (useOversampling)
+    if (! fruityNullMode)
     {
-        juce::dsp::AudioBlock<float> block (buffer);
+        // TRIPLEFRY flags are still stored per live/offline in the processor.
+        const bool tripleFryActive = isOffline
+            ? getStoredTripleFryOfflineEnabled()
+            : getStoredTripleFryLiveEnabled();
 
-        // Single oversample up/down for the whole block.
-        auto osBlock      = oversampler->processSamplesUp (block);
-        const int osNumSamples  = (int) osBlock.getNumSamples();
-        const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
+        // TripleFry is a clipper-only refinement mode. If limiter is on,
+        // we ignore TripleFry and behave like the normal single-pass limiter.
+        const bool tripleFryEnabled = (useOversampling && tripleFryActive && ! limiterOn);
 
-        if (tripleFryEnabled)
+        if (useOversampling)
         {
-            //======================================================
-            // TRIPLEFRY – multi-stage CLIP refinement in OS domain
-            //   - No limiter involved
-            //   - One oversample pass, multiple clip stages
-            //======================================================
-            const int refinePasses = 3; // "TRIPLE" fry
+            juce::dsp::AudioBlock<float> block (buffer);
 
-            for (int pass = 0; pass < refinePasses; ++pass)
+            // Single oversample up/down for the whole block.
+            auto osBlock      = oversampler->processSamplesUp (block);
+            const int osNumSamples  = (int) osBlock.getNumSamples();
+            const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
+
+            if (tripleFryEnabled)
             {
+                //======================================================
+                // TRIPLEFRY – multi-stage CLIP refinement in OS domain
+                //   - No limiter involved
+                //   - One oversample pass, multiple clip stages
+                //======================================================
+                const int refinePasses = 3; // "TRIPLE" fry
+
+                for (int pass = 0; pass < refinePasses; ++pass)
+                {
+                    for (int ch = 0; ch < osNumChannels; ++ch)
+                    {
+                        float* samples = osBlock.getChannelPointer (ch);
+
+                        for (int i = 0; i < osNumSamples; ++i)
+                        {
+                            float sample = samples[i];
+
+                            // Stage 1 (pass == 0): main GOREKLIP clip tone.
+                            // Later passes: slightly higher threshold so they mostly
+                            // act as gentle refinement on hotter peaks rather than
+                            // completely re-shaping the transient.
+                            float localThreshold = thresholdLinear;
+
+                            if (pass > 0)
+                            {
+                                const float extra = 0.05f * (float) pass;   // up to +0.10
+                                localThreshold = juce::jlimit (0.0f, 0.99f,
+                                                               thresholdLinear + extra);
+                            }
+
+                            sample = fruitySoftClipSample (sample, localThreshold);
+
+                            samples[i] = sample;
+                        }
+                    }
+                }
+
+                // Apply Fruity-null post gain + hard ceiling ONCE at the end, after refinement.
                 for (int ch = 0; ch < osNumChannels; ++ch)
                 {
                     float* samples = osBlock.getChannelPointer (ch);
@@ -703,61 +749,81 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         float sample = samples[i];
 
-                        // Stage 1 (pass == 0): main GOREKLIP clip tone.
-                        // Later passes: slightly higher threshold so they mostly
-                        // act as gentle refinement on hotter peaks rather than
-                        // completely re-shaping the transient.
-                        float localThreshold = thresholdLinear;
+                        sample *= g;
 
-                        if (pass > 0)
-                        {
-                            const float extra = 0.05f * (float) pass;   // up to +0.10
-                            localThreshold = juce::jlimit (0.0f, 0.99f,
-                                                           thresholdLinear + extra);
-                        }
+                        if (sample >  1.0f) sample =  1.0f;
+                        if (sample < -1.0f) sample = -1.0f;
 
-                        sample = fruitySoftClipSample (sample, localThreshold);
+                        samples[i] = sample;
+                    }
+                }
+            }
+            else
+            {
+                //======================================================
+                // NORMAL oversampled path:
+                //   - Single pass of limiter OR clipper in OS domain
+                //   - Behavior stays the same as the original code
+                //======================================================
+                for (int ch = 0; ch < osNumChannels; ++ch)
+                {
+                    float* samples = osBlock.getChannelPointer (ch);
+
+                    for (int i = 0; i < osNumSamples; ++i)
+                    {
+                        float sample = samples[i];
+
+                        // SAT has ALREADY been applied at base rate above.
+                        // Here we ONLY run limiter/clipper + g and hard clamp.
+                        if (limiterOn)
+                            sample = processLimiterSample (sample);
+                        else
+                            sample = fruitySoftClipSample (sample, thresholdLinear);
+
+                        sample *= g;
+
+                        if (sample >  1.0f) sample =  1.0f;
+                        if (sample < -1.0f) sample = -1.0f;
 
                         samples[i] = sample;
                     }
                 }
             }
 
-            // Apply Fruity-null post gain + hard ceiling ONCE at the end, after refinement.
-            for (int ch = 0; ch < osNumChannels; ++ch)
+            // Downsample once for the whole block.
+            oversampler->processSamplesDown (block);
+
+            // FINAL SAFETY CEILING AT BASE RATE (catches any residual intersample overs)
+            for (int ch = 0; ch < numChannels; ++ch)
             {
-                float* samples = osBlock.getChannelPointer (ch);
+                float* s = buffer.getWritePointer (ch);
 
-                for (int i = 0; i < osNumSamples; ++i)
+                for (int i = 0; i < numSamples; ++i)
                 {
-                    float sample = samples[i];
+                    float y = s[i];
 
-                    sample *= g;
+                    if (y >  1.0f) y =  1.0f;
+                    if (y < -1.0f) y = -1.0f;
 
-                    if (sample >  1.0f) sample =  1.0f;
-                    if (sample < -1.0f) sample = -1.0f;
-
-                    samples[i] = sample;
+                    s[i] = y;
                 }
             }
         }
         else
         {
             //======================================================
-            // NORMAL oversampled path:
-            //   - Single pass of limiter OR clipper in OS domain
-            //   - Behavior stays the same as the original code
+            // NO OVERSAMPLING – process at base rate only
+            // (unchanged behavior)
             //======================================================
-            for (int ch = 0; ch < osNumChannels; ++ch)
+            for (int ch = 0; ch < numChannels; ++ch)
             {
-                float* samples = osBlock.getChannelPointer (ch);
+                float* samples = buffer.getWritePointer (ch);
 
-                for (int i = 0; i < osNumSamples; ++i)
+                for (int i = 0; i < numSamples; ++i)
                 {
                     float sample = samples[i];
 
-                    // SAT has ALREADY been applied at base rate above.
-                    // Here we ONLY run limiter/clipper + g and hard clamp.
+                    // SAT already applied previously if needed.
                     if (limiterOn)
                         sample = processLimiterSample (sample);
                     else
@@ -772,32 +838,21 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 }
             }
         }
-
-        // Downsample once for the whole block.
-        oversampler->processSamplesDown (block);
-
-        // FINAL SAFETY CEILING AT BASE RATE (catches any residual intersample overs)
-        for (int ch = 0; ch < numChannels; ++ch)
-        {
-            float* s = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
-            {
-                float y = s[i];
-
-                if (y >  1.0f) y =  1.0f;
-                if (y < -1.0f) y = -1.0f;
-
-                s[i] = y;
-            }
-        }
     }
     else
     {
-        //======================================================
-        // NO OVERSAMPLING – process at base rate only
-        // (unchanged behavior)
-        //======================================================
+        // =======================================================
+        // FRUITY NULL MODE (no OTT, no SAT, no limiter, no OS)
+        // =======================================================
+        //
+        // At this point we already:
+        //   - reset OTT and SAT state above
+        //   - know that useOversampling == false
+        //   - know limiterOn == false
+        //
+        // So we just run:
+        //   inputGain -> fruitySoftClipSample -> postGain -> clamp
+        //
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* samples = buffer.getWritePointer (ch);
@@ -806,14 +861,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             {
                 float sample = samples[i];
 
-                // SAT already applied previously if needed.
-                if (limiterOn)
-                    sample = processLimiterSample (sample);
-                else
-                    sample = fruitySoftClipSample (sample, thresholdLinear);
+                // 1) INPUT GAIN (identical to OTT-bypass path)
+                sample *= inputGain;
 
+                // 2) Fruity soft clip curve
+                sample = fruitySoftClipSample (sample, thresholdLinear);
+
+                // 3) Fruity post-gain for null alignment
                 sample *= g;
 
+                // 4) Hard safety clamp
                 if (sample >  1.0f) sample =  1.0f;
                 if (sample < -1.0f) sample = -1.0f;
 
