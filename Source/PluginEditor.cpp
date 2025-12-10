@@ -209,14 +209,13 @@ juce::Font DownwardComboBoxLookAndFeel::getComboBoxFont (juce::ComboBox& box)
     // Give the oversample readout a slightly heavier look without overpowering the pentagram.
     if (box.getName() == "oversampleBox")
     {
-        const float fontHeight = (float) box.getHeight() * 0.52f;
+        // Push a little more weight into the oversample readout without relying on deprecated APIs.
+        const float fontHeight = (float) box.getHeight() * 0.52f * 1.2f;
 
-        juce::Font font;
-        font.setHeight (fontHeight);
-        font.setStyleFlags (juce::Font::plain);
-        font.setTypefaceStyle ("Medium");
+        juce::FontOptions opts (fontHeight);
+        opts = opts.withStyle ("SemiBold");
 
-        return font;
+        return juce::Font (opts);
     }
 
     return juce::LookAndFeel_V4::getComboBoxFont (box);
@@ -581,8 +580,8 @@ void FruityClipAudioProcessorEditor::resized()
     // Right: oversample text + pentagram, pinned to the right
     const int osW = juce::jmax (60, w / 10);
     const int osH = barH;
-    const int osX = w - osW - topMargin;
-    const int osY = lookY; // explicitly align the oversample text with the pentagram height
+    const int osX = w - osW; // push the oversample readout further right, leaving the pentagram anchored
+    const int osY = lookY;   // explicitly align the oversample text with the pentagram height
 
     // IMPORTANT: same height + same Y so pentagrams are perfectly aligned
     lookBox.setBounds       (lookX, lookY, lookSize, barH);
