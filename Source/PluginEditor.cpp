@@ -580,7 +580,11 @@ void FruityClipAudioProcessorEditor::resized()
     // Right: oversample text + pentagram, pinned to the right
     const int osW = juce::jmax (60, w / 10);
     const int osH = barH;
-    const int osX = w - osW; // push the oversample readout further right, leaving the pentagram anchored
+
+    // Nudge the oversample readout right by roughly 2.5 glyph widths while keeping its top alignment.
+    const int osShift = (int) std::round (osH * 0.42f);
+
+    const int osX = w - osW + osShift;
     const int osY = lookY;   // explicitly align the oversample text with the pentagram height
 
     // IMPORTANT: same height + same Y so pentagrams are perfectly aligned
