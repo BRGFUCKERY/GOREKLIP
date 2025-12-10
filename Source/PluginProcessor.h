@@ -80,12 +80,14 @@ public:
     int getStoredLookMode() const;
     void setStoredLookMode (int modeIndex);
 
-    // Offline oversample + TRIPLEFRY preferences (UI + userSettings)
+    // Offline oversample index and TRIPLEFRY preferences (GUI + future DSP)
     int  getStoredOfflineOversampleIndex() const;
     void setStoredOfflineOversampleIndex (int index);
 
-    bool getStoredTripleFryEnabled() const;
-    void setStoredTripleFryEnabled (bool enabled);
+    bool getStoredTripleFryLiveEnabled() const;
+    bool getStoredTripleFryOfflineEnabled() const;
+    void setStoredTripleFryLiveEnabled (bool enabled);
+    void setStoredTripleFryOfflineEnabled (bool enabled);
 
     // Bypass all processing after input gain (for A/B)
     void setGainBypass (bool shouldBypass)        { gainBypass.store (shouldBypass); }
@@ -184,8 +186,9 @@ private:
     std::unique_ptr<juce::PropertiesFile> userSettings;
 
     // Offline oversample / TRIPLEFRY preferences (UI + future DSP wiring)
-    int  storedOfflineOversampleIndex = 0;   // 0:x1 .. 4:x16
-    bool storedTripleFryEnabled       = false;
+    int  storedOfflineOversampleIndex = 0; // 0:x1 .. 4:x16
+    bool storedTripleFryLiveEnabled   = false;
+    bool storedTripleFryOfflineEnabled = false;
 
     //==========================================================
     // Oversampling

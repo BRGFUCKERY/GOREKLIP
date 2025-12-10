@@ -51,7 +51,7 @@ public:
         offlineLabel.setColour (juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible (offlineLabel);
 
-        // Combo content
+        // Oversample modes
         juce::StringArray modes { "x1", "x2", "x4", "x8", "x16" };
         for (int i = 0; i < modes.size(); ++i)
         {
@@ -60,19 +60,25 @@ public:
             offlineCombo.addItem (modes[i], id);
         }
 
-        liveCombo.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-        liveCombo.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
-        offlineCombo.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-        offlineCombo.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+        // Combo appearance – black background, white text
+        auto setupCombo = [] (juce::ComboBox& c)
+        {
+            c.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
+            c.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+            c.setColour (juce::ComboBox::outlineColourId,    juce::Colours::white.withAlpha (0.2f));
+        };
+
+        setupCombo (liveCombo);
+        setupCombo (offlineCombo);
 
         addAndMakeVisible (liveCombo);
         addAndMakeVisible (offlineCombo);
 
-        // LIVE column is actually bound to oversampleMode parameter
+        // LIVE column is bound to oversampleMode parameter
         liveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
             parameters, "oversampleMode", liveCombo);
 
-        // OFFLINE column and TRIPLEFRY are stored in userSettings for now (no DSP wiring yet)
+        // OFFLINE column stored in userSettings
         const int offlineIndex = processor.getStoredOfflineOversampleIndex();
         offlineCombo.setSelectedId (offlineIndex + 1, juce::dontSendNotification);
         offlineCombo.onChange = [this]
@@ -81,24 +87,51 @@ public:
             processor.setStoredOfflineOversampleIndex (idx);
         };
 
-        tripleFryButton.setButtonText ("TRIPLEFRY");
-        tripleFryButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
-        tripleFryButton.setToggleState (processor.getStoredTripleFryEnabled(), juce::dontSendNotification);
-        tripleFryButton.onClick = [this]
-        {
-            processor.setStoredTripleFryEnabled (tripleFryButton.getToggleState());
-        };
-        addAndMakeVisible (tripleFryButton);
+        // TRIPLEFRY checkboxes
+        tripleFryLabel.setText ("TRIPLEFRY", juce::dontSendNotification);
+        tripleFryLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+        tripleFryLabel.setJustificationType (juce::Justification::centredLeft);
+        addAndMakeVisible (tripleFryLabel);
 
+        tripleFryLiveButton.setButtonText ("LIVE");
+        tripleFryLiveButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+        tripleFryLiveButton.setToggleState (processor.getStoredTripleFryLiveEnabled(), juce::dontSendNotification);
+        tripleFryLiveButton.onClick = [this]
+        {
+            processor.setStoredTripleFryLiveEnabled (tripleFryLiveButton.getToggleState());
+        };
+        addAndMakeVisible (tripleFryLiveButton);
+
+        tripleFryOfflineButton.setButtonText ("OFFLINE");
+        tripleFryOfflineButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+        tripleFryOfflineButton.setToggleState (processor.getStoredTripleFryOfflineEnabled(), juce::dontSendNotification);
+        tripleFryOfflineButton.onClick = [this]
+        {
+            processor.setStoredTripleFryOfflineEnabled (tripleFryOfflineButton.getToggleState());
+        };
+        addAndMakeVisible (tripleFryOfflineButton);
+
+        // Info label: plain ASCII text, nice wrapping
         infoLabel.setText (
-            "TRIPLEFRY is an experimental oversampling path designed\n"
-            "for obscene, 3-Michelin-star sound. It can TRIPLEFRY\n"
-            "your CPU, so it’s best kept for OFFLINE bounces.",
+            "TRIPLEFRY is an experimental multi-stage oversampling mode\n"
+            "designed for ridiculous, 3 Michelin star gloss. It can\n"
+            "seriously hammer your CPU, so it is best kept for OFFLINE\n"
+            "bounces (or very brave LIVE printing).",
             juce::dontSendNotification);
         infoLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.85f));
         infoLabel.setJustificationType (juce::Justification::topLeft);
         infoLabel.setMinimumHorizontalScale (0.8f);
         addAndMakeVisible (infoLabel);
+
+        // Make sure popup menus for these combos are also black/white
+        if (auto* lf = dynamic_cast<juce::LookAndFeel_V4*> (&getLookAndFeel()))
+        {
+            lf->setColour (juce::PopupMenu::backgroundColourId, juce::Colours::black);
+            lf->setColour (juce::PopupMenu::textColourId,       juce::Colours::white);
+            lf->setColour (juce::PopupMenu::highlightedBackgroundColourId,
+                           juce::Colours::white.withAlpha (0.15f));
+            lf->setColour (juce::PopupMenu::highlightedTextColourId, juce::Colours::black);
+        }
     }
 
     void paint (juce::Graphics& g) override
@@ -106,8 +139,8 @@ public:
         g.fillAll (juce::Colours::black);
 
         auto r = getLocalBounds().toFloat().reduced (1.0f);
-        g.setColour (juce::Colours::white.withAlpha (0.3f));
-        g.drawRect (r, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.35f));
+        g.drawRoundedRectangle (r, 6.0f, 1.0f);
     }
 
     void resized() override
@@ -119,26 +152,40 @@ public:
 
         r.removeFromTop (8);
 
+        // Header row: LIVE | OFFLINE
         auto headerRow = r.removeFromTop (20);
-        auto colWidth  = headerRow.getWidth() / 2;
+        auto halfWidth = headerRow.getWidth() / 2;
 
-        liveLabel.setBounds    (headerRow.removeFromLeft (colWidth));
-        offlineLabel.setBounds (headerRow);
+        auto liveHeader    = headerRow.removeFromLeft (halfWidth);
+        auto offlineHeader = headerRow;
+
+        liveLabel.setBounds    (liveHeader);
+        offlineLabel.setBounds (offlineHeader);
 
         r.removeFromTop (6);
 
-        auto comboRow   = r.removeFromTop (28);
-        auto comboWidth = comboRow.getWidth() / 2;
+        // Combos row
+        auto comboRow = r.removeFromTop (26);
+        auto liveArea = comboRow.removeFromLeft (halfWidth).reduced (0, 2);
+        auto offArea  = comboRow.reduced (0, 2);
 
-        liveCombo.setBounds    (comboRow.removeFromLeft (comboWidth).reduced (0, 2));
-        offlineCombo.setBounds (comboRow.reduced (0, 2));
+        liveCombo.setBounds    (liveArea);
+        offlineCombo.setBounds (offArea);
 
         r.removeFromTop (10);
 
+        // TRIPLEFRY row
         auto tripleRow = r.removeFromTop (24);
-        tripleFryButton.setBounds (tripleRow.removeFromLeft (140));
+        auto tripleLabelArea = tripleRow.removeFromLeft (90);
+        tripleFryLabel.setBounds (tripleLabelArea);
 
-        r.removeFromTop (6);
+        auto tripleLiveArea    = tripleRow.removeFromLeft (halfWidth - 90).reduced (4, 0);
+        auto tripleOfflineArea = tripleRow.reduced (4, 0);
+
+        tripleFryLiveButton.setBounds    (tripleLiveArea);
+        tripleFryOfflineButton.setBounds (tripleOfflineArea);
+
+        r.removeFromTop (8);
         infoLabel.setBounds (r);
     }
 
@@ -151,8 +198,12 @@ private:
     juce::Label     offlineLabel;
     juce::ComboBox  liveCombo;
     juce::ComboBox  offlineCombo;
-    juce::ToggleButton tripleFryButton;
-    juce::Label     infoLabel;
+
+    juce::Label        tripleFryLabel;
+    juce::ToggleButton tripleFryLiveButton;
+    juce::ToggleButton tripleFryOfflineButton;
+
+    juce::Label infoLabel;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> liveAttachment;
 };
@@ -483,44 +534,28 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lufsLabel.setText ("0.00 LUFS", juce::dontSendNotification);
     addAndMakeVisible (lufsLabel);
 
-    // --------------------------------------------------
-    // LOOK / SETTINGS (top-left)
-    // --------------------------------------------------
-    lookBox.setLookAndFeel (&comboLnf);
+    // SETTINGS (left pentagram)
     lookBox.setName ("lookBox");
-    lookBox.setTextWhenNothingSelected ("SETTINGS");
     lookBox.setJustificationType (juce::Justification::centred);
+    lookBox.setTextWhenNothingSelected ("SETTINGS");
     lookBox.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
-    lookBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
     lookBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
-    lookBox.setColour (juce::ComboBox::buttonColourId,     juce::Colours::transparentBlack);
+    lookBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
     lookBox.setColour (juce::ComboBox::arrowColourId,      juce::Colours::white);
-
-    lookBox.setInterceptsMouseClicks (false, false); // parent handles opening SETTINGS
+    lookBox.setLookAndFeel (&comboLnf);
+    lookBox.setInterceptsMouseClicks (false, false); // editor handles clicks
     addAndMakeVisible (lookBox);
 
-    // --------------------------------------------------
-    // OVERSAMPLE DROPDOWN (top-right)
-    // --------------------------------------------------
-    oversampleBox.setLookAndFeel (&comboLnf);
+    // OVERSAMPLING (right pentagram-button)
     oversampleBox.setName ("oversampleBox");
-    oversampleBox.addItem ("x1",  1);
-    oversampleBox.addItem ("x2",  2);
-    oversampleBox.addItem ("x4",  3);
-    oversampleBox.addItem ("x8",  4);
-    oversampleBox.addItem ("x16", 5);
-    oversampleBox.setSelectedId (1, juce::dontSendNotification);
-    oversampleBox.setTextWhenNothingSelected ("x1");
-
     oversampleBox.setJustificationType (juce::Justification::centred);
-
+    oversampleBox.setTextWhenNothingSelected ("x1");
     oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
-    oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
-    oversampleBox.setColour (juce::ComboBox::buttonColourId,     juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::arrowColourId,      juce::Colours::white);
-
-    oversampleBox.setInterceptsMouseClicks (false, false); // parent handles opening OVERSAMPLING window
+    oversampleBox.setLookAndFeel (&comboLnf);
+    oversampleBox.setInterceptsMouseClicks (false, false); // editor handles clicks
     addAndMakeVisible (oversampleBox);
 
     // --------------------------------------------------
@@ -698,22 +733,18 @@ void FruityClipAudioProcessorEditor::resized()
     const int topMargin = 6;
     const int barH      = juce::jmax (16, h / 20);
 
-    // Left: SETTINGS box (square, arrow + pentagram only)
+    // Left: SETTINGS box (square, pentagram only)
     const int lookSize = barH;
     const int lookX    = topMargin;
     const int lookY    = topMargin;
 
-    // Right: oversample text + pentagram, pinned to the right
-    const int osW = juce::jmax (60, w / 10);
+    // Right: OVERSAMPLING box – same size, mirrored position
+    const int osW = lookSize;                 // SAME width as left box
     const int osH = barH;
+    const int osX = w - osW - topMargin;      // pin to right with same margin
+    const int osY = topMargin;
 
-    // Nudge the oversample readout right by roughly 2.5 glyph widths while keeping its top alignment.
-    const int osShift = (int) std::round (osH * 0.42f);
-
-    const int osX = w - osW + osShift;
-    const int osY = lookY;   // explicitly align the oversample text with the pentagram height
-
-    // IMPORTANT: same height + same Y so pentagrams are perfectly aligned
+    // Perfect symmetry: same height, same Y, mirrored X
     lookBox.setBounds       (lookX, lookY, lookSize, barH);
     oversampleBox.setBounds (osX,  osY,  osW,       osH);
 

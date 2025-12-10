@@ -86,21 +86,25 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
 
     userSettings = std::make_unique<juce::PropertiesFile> (opts);
 
-    if (userSettings != nullptr)
+    if (userSettings)
     {
-        // If no explicit lookMode stored yet, default to 0 (COOKED)
         if (! userSettings->containsKey ("lookMode"))
             userSettings->setValue ("lookMode", 0);
 
         if (! userSettings->containsKey ("offlineOversampleIndex"))
             userSettings->setValue ("offlineOversampleIndex", 0);
 
-        if (! userSettings->containsKey ("tripleFryEnabled"))
-            userSettings->setValue ("tripleFryEnabled", false);
+        if (! userSettings->containsKey ("tripleFryLive"))
+            userSettings->setValue ("tripleFryLive", false);
 
-        // Cache values locally
-        storedOfflineOversampleIndex = userSettings->getIntValue ("offlineOversampleIndex", 0);
-        storedTripleFryEnabled       = userSettings->getBoolValue ("tripleFryEnabled", false);
+        if (! userSettings->containsKey ("tripleFryOffline"))
+            userSettings->setValue ("tripleFryOffline", false);
+
+        storedOfflineOversampleIndex = juce::jlimit (0, 4,
+            userSettings->getIntValue ("offlineOversampleIndex", 0));
+
+        storedTripleFryLiveEnabled    = userSettings->getBoolValue ("tripleFryLive", false);
+        storedTripleFryOfflineEnabled = userSettings->getBoolValue ("tripleFryOffline", false);
     }
 
     if (auto* choiceParam = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("lookMode")))
@@ -148,9 +152,9 @@ void FruityClipAudioProcessor::setStoredLookMode (int modeIndex)
 
 int FruityClipAudioProcessor::getStoredOfflineOversampleIndex() const
 {
-    if (userSettings != nullptr)
-        return juce::jlimit (0, 4, userSettings->getIntValue ("offlineOversampleIndex",
-                                                              storedOfflineOversampleIndex));
+    if (userSettings)
+        return juce::jlimit (0, 4,
+            userSettings->getIntValue ("offlineOversampleIndex", storedOfflineOversampleIndex));
 
     return juce::jlimit (0, 4, storedOfflineOversampleIndex);
 }
@@ -160,28 +164,47 @@ void FruityClipAudioProcessor::setStoredOfflineOversampleIndex (int index)
     index = juce::jlimit (0, 4, index);
     storedOfflineOversampleIndex = index;
 
-    if (userSettings != nullptr)
+    if (userSettings)
     {
         userSettings->setValue ("offlineOversampleIndex", index);
         userSettings->saveIfNeeded();
     }
 }
 
-bool FruityClipAudioProcessor::getStoredTripleFryEnabled() const
+bool FruityClipAudioProcessor::getStoredTripleFryLiveEnabled() const
 {
-    if (userSettings != nullptr)
-        return userSettings->getBoolValue ("tripleFryEnabled", storedTripleFryEnabled);
+    if (userSettings)
+        return userSettings->getBoolValue ("tripleFryLive", storedTripleFryLiveEnabled);
 
-    return storedTripleFryEnabled;
+    return storedTripleFryLiveEnabled;
 }
 
-void FruityClipAudioProcessor::setStoredTripleFryEnabled (bool enabled)
+bool FruityClipAudioProcessor::getStoredTripleFryOfflineEnabled() const
 {
-    storedTripleFryEnabled = enabled;
+    if (userSettings)
+        return userSettings->getBoolValue ("tripleFryOffline", storedTripleFryOfflineEnabled);
 
-    if (userSettings != nullptr)
+    return storedTripleFryOfflineEnabled;
+}
+
+void FruityClipAudioProcessor::setStoredTripleFryLiveEnabled (bool enabled)
+{
+    storedTripleFryLiveEnabled = enabled;
+
+    if (userSettings)
     {
-        userSettings->setValue ("tripleFryEnabled", enabled);
+        userSettings->setValue ("tripleFryLive", enabled);
+        userSettings->saveIfNeeded();
+    }
+}
+
+void FruityClipAudioProcessor::setStoredTripleFryOfflineEnabled (bool enabled)
+{
+    storedTripleFryOfflineEnabled = enabled;
+
+    if (userSettings)
+    {
+        userSettings->setValue ("tripleFryOffline", enabled);
         userSettings->saveIfNeeded();
     }
 }
