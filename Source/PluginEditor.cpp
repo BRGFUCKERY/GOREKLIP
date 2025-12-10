@@ -3,6 +3,7 @@
 #include "CustomLookAndFeel.h"
 
 #include <cmath>
+#include <cstdint>
 
 class KlipBibleComponent : public juce::Component
 {
@@ -165,7 +166,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 
     // Pentagram colour follows burnAmount: 0 = black, 1 = white
     const float v = juce::jlimit (0.0f, 1.0f, burnAmount);
-    const uint8 level = (uint8) juce::jlimit (0, 255, (int) std::round (v * 255.0f));
+    const std::uint8_t level = (std::uint8_t) juce::jlimit (0, 255, (int) std::round (v * 255.0f));
     auto starColour = juce::Colour::fromRGB (level, level, level);
 
     g.setColour (starColour);
@@ -416,7 +417,6 @@ void FruityClipAudioProcessorEditor::startFingerAnimation (bool limiterMode)
 {
     targetFingerAngle = limiterMode ? juce::MathConstants<float>::pi : 0.0f;
 
-    currentFingerAngle = currentFingerAngle; // keep current
     const int fps = 60;
     const float step = (targetFingerAngle - currentFingerAngle) / (fingerAnimSpeed * fps);
 
@@ -648,7 +648,7 @@ void FruityClipAudioProcessorEditor::timerCallback()
     comboLnf.setBurnAmount (burnForIcons);
 
     // Greyscale 0 = black, 1 = white
-    const uint8 level = (uint8) juce::jlimit (0, 255, (int) std::round (burnForIcons * 255.0f));
+    const std::uint8_t level = (std::uint8_t) juce::jlimit (0, 255, (int) std::round (burnForIcons * 255.0f));
     auto burnColour = juce::Colour::fromRGB (level, level, level);
 
     // Left SETTINGS pentagram (arrow colour only, text stays transparent)
