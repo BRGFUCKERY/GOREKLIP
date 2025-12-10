@@ -102,35 +102,28 @@ void MiddleFingerLookAndFeel::drawRotarySlider (juce::Graphics& g,
 //==============================================================
 void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
                                                 int width, int height,
-                                                bool isButtonDown,
-                                                int buttonX, int buttonY,
-                                                int buttonW, int buttonH,
+                                                bool /*isButtonDown*/,
+                                                int /*buttonX*/, int /*buttonY*/,
+                                                int /*buttonW*/, int /*buttonH*/,
                                                 juce::ComboBox& box)
 {
-    juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
+    auto bounds = juce::Rectangle<int> (0, 0, width, height);
 
-    // Local bounds of this combo box
-    auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
-                                          (float) width, (float) height);
-
-    // Fully transparent background – video shows through
+    // Transparent background – the editor handles the overall look.
     g.setColour (juce::Colours::transparentBlack);
     g.fillRect (bounds);
 
-    // Decide behavior based on the ComboBox name
-    const auto name = box.getName();
+    const juce::String name = box.getName();
 
-    // =========================
-    // LEFT: SETTINGS (lookBox)
-    // =========================
+    // ===================================
+    // LEFT: SETTINGS (lookBox) – pentagram
+    // ===================================
     if (name == "lookBox")
     {
-        // Pentagram icon – math shared for all combo boxes,
-        // but we only draw it for lookBox now.
-        const float iconSize    = (float) height * 0.55f;
-        const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
-        const float iconCenterY = bounds.getCentreY();
-        const float iconRadius  = iconSize * 0.5f;
+        const float h = (float) height;
+        const float iconRadius = h * 0.45f;
+        const float iconCenterX = (float) bounds.getRight() - iconRadius * 0.9f;
+        const float iconCenterY = (float) bounds.getCentreY();
 
         juce::Rectangle<int> starBounds (
             (int) std::round (iconCenterX - iconRadius),
@@ -191,10 +184,11 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     // ===================================
     else if (name == "oversampleBox")
     {
-        // We intentionally draw NOTHING extra here:
-        // no pentagram, no custom arrow.
-        // The ComboBox text (x1/x2/x4/etc.) will be drawn by JUCE
-        // using its textColour.
+        // IMPORTANT:
+        // Do NOT draw any custom text here.
+        // We let JUCE draw the "x1/x2/x4/x8/x16" once,
+        // using the custom font from getComboBoxFont() and textColour
+        // set in the editor/timer. This avoids the double-text bug.
     }
     else
     {
@@ -202,6 +196,21 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
         // transparent background and default text drawing,
         // but no pentagram.
     }
+}
+
+juce::Font DownwardComboBoxLookAndFeel::getComboBoxFont (juce::ComboBox& box)
+{
+    // Start from the default JUCE combo box font
+    auto font = juce::LookAndFeel_V4::getComboBoxFont (box);
+
+    // For the oversampleBox, make "x1/x2/..." slightly larger and bold
+    if (box.getName() == "oversampleBox")
+    {
+        font = font.withHeight (font.getHeight() * 1.2f)
+                   .boldened();
+    }
+
+    return font;
 }
 
 //==============================================================
@@ -552,21 +561,19 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    const int topMargin = 6;
+    const int topMargin = 10;
     const int barH      = juce::jmax (16, h / 20);
+    const int lookSize  = barH;
 
-    // Left: SETTINGS box (square, arrow + pentagram only)
-    const int lookSize = barH;
-    const int lookX    = topMargin;
-    const int lookY    = topMargin;
+    const int lookX = topMargin;
+    const int lookY = topMargin;
 
-    // Right: oversample text + pentagram, pinned to the right
-    const int osW = juce::jmax (60, w / 10);
-    const int osH = barH;
-    const int osX = w - osW - topMargin;
-    const int osY = topMargin;
+    // Make oversample box the same width/height as lookBox
+    const int osW  = lookSize;
+    const int osH  = barH;
+    const int osX  = w - osW - topMargin;
+    const int osY  = topMargin;
 
-    // IMPORTANT: same height + same Y so pentagrams are perfectly aligned
     lookBox.setBounds       (lookX, lookY, lookSize, barH);
     oversampleBox.setBounds (osX,  osY,  osW,       osH);
 
