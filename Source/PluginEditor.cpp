@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstdint>
 
+namespace
+{
 class KlipBibleComponent : public juce::Component
 {
 public:
@@ -21,6 +23,140 @@ public:
 private:
     juce::String text;
 };
+
+class OversampleSettingsComponent : public juce::Component
+{
+public:
+    OversampleSettingsComponent (FruityClipAudioProcessor& proc,
+                                 juce::AudioProcessorValueTreeState& vts)
+        : processor (proc), parameters (vts)
+    {
+        setOpaque (true);
+
+        // Title
+        titleLabel.setText ("OVERSAMPLING", juce::dontSendNotification);
+        titleLabel.setJustificationType (juce::Justification::centred);
+        titleLabel.setFont (juce::Font (18.0f, juce::Font::bold));
+        titleLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible (titleLabel);
+
+        // Column headers
+        liveLabel.setText ("LIVE", juce::dontSendNotification);
+        liveLabel.setJustificationType (juce::Justification::centred);
+        liveLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible (liveLabel);
+
+        offlineLabel.setText ("OFFLINE", juce::dontSendNotification);
+        offlineLabel.setJustificationType (juce::Justification::centred);
+        offlineLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible (offlineLabel);
+
+        // Combo content
+        juce::StringArray modes { "x1", "x2", "x4", "x8", "x16" };
+        for (int i = 0; i < modes.size(); ++i)
+        {
+            const int id = i + 1;
+            liveCombo.addItem    (modes[i], id);
+            offlineCombo.addItem (modes[i], id);
+        }
+
+        liveCombo.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
+        liveCombo.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+        offlineCombo.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
+        offlineCombo.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+
+        addAndMakeVisible (liveCombo);
+        addAndMakeVisible (offlineCombo);
+
+        // LIVE column is actually bound to oversampleMode parameter
+        liveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            parameters, "oversampleMode", liveCombo);
+
+        // OFFLINE column and TRIPLEFRY are stored in userSettings for now (no DSP wiring yet)
+        const int offlineIndex = processor.getStoredOfflineOversampleIndex();
+        offlineCombo.setSelectedId (offlineIndex + 1, juce::dontSendNotification);
+        offlineCombo.onChange = [this]
+        {
+            const int idx = juce::jlimit (0, 4, offlineCombo.getSelectedId() - 1);
+            processor.setStoredOfflineOversampleIndex (idx);
+        };
+
+        tripleFryButton.setButtonText ("TRIPLEFRY");
+        tripleFryButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+        tripleFryButton.setToggleState (processor.getStoredTripleFryEnabled(), juce::dontSendNotification);
+        tripleFryButton.onClick = [this]
+        {
+            processor.setStoredTripleFryEnabled (tripleFryButton.getToggleState());
+        };
+        addAndMakeVisible (tripleFryButton);
+
+        infoLabel.setText (
+            "TRIPLEFRY is an experimental oversampling path designed\n"
+            "for obscene, 3-Michelin-star sound. It can TRIPLEFRY\n"
+            "your CPU, so it’s best kept for OFFLINE bounces.",
+            juce::dontSendNotification);
+        infoLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.85f));
+        infoLabel.setJustificationType (juce::Justification::topLeft);
+        infoLabel.setMinimumHorizontalScale (0.8f);
+        addAndMakeVisible (infoLabel);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colours::black);
+
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.3f));
+        g.drawRect (r, 1.0f);
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (10);
+
+        auto titleArea = r.removeFromTop (28);
+        titleLabel.setBounds (titleArea);
+
+        r.removeFromTop (8);
+
+        auto headerRow = r.removeFromTop (20);
+        auto colWidth  = headerRow.getWidth() / 2;
+
+        liveLabel.setBounds    (headerRow.removeFromLeft (colWidth));
+        offlineLabel.setBounds (headerRow);
+
+        r.removeFromTop (6);
+
+        auto comboRow   = r.removeFromTop (28);
+        auto comboWidth = comboRow.getWidth() / 2;
+
+        liveCombo.setBounds    (comboRow.removeFromLeft (comboWidth).reduced (0, 2));
+        offlineCombo.setBounds (comboRow.reduced (0, 2));
+
+        r.removeFromTop (10);
+
+        auto tripleRow = r.removeFromTop (24);
+        tripleFryButton.setBounds (tripleRow.removeFromLeft (140));
+
+        r.removeFromTop (6);
+        infoLabel.setBounds (r);
+    }
+
+private:
+    FruityClipAudioProcessor& processor;
+    juce::AudioProcessorValueTreeState& parameters;
+
+    juce::Label     titleLabel;
+    juce::Label     liveLabel;
+    juce::Label     offlineLabel;
+    juce::ComboBox  liveCombo;
+    juce::ComboBox  offlineCombo;
+    juce::ToggleButton tripleFryButton;
+    juce::Label     infoLabel;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> liveAttachment;
+};
+}
 
 //==============================================================
 // Custom Middle-Finger Knob LookAndFeel
@@ -109,28 +245,29 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 {
     juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
 
-    // Local bounds of this combo box
     auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
                                           (float) width, (float) height);
 
-    // Fully transparent background – video shows through
+    // Transparent background – we draw icons only, ComboBox handles text if we let it
     g.setColour (juce::Colours::transparentBlack);
     g.fillRect (bounds);
 
-    // Decide behavior based on the ComboBox name
-    const auto name = box.getName();
+    const auto name           = box.getName();
+    const bool isLookBox      = (name == "lookBox");
+    const bool isOversampBox  = (name == "oversampleBox");
 
-    // =========================
-    // LEFT: SETTINGS (lookBox)
-    // =========================
-    if (name == "lookBox")
+    // Both top combos (SETTINGS + OVERSAMPLE) use the same pentagram icon,
+    // mirrored horizontally so they are perfectly symmetrical.
+    if (isLookBox || isOversampBox)
     {
-        // Pentagram icon – math shared for all combo boxes,
-        // but we only draw it for lookBox now.
-        const float iconSize    = (float) height * 0.55f;
-        const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
+        const float iconSize   = (float) height * 0.55f;
+        const float iconRadius = iconSize * 0.5f;
+
+        const float iconCenterX = isLookBox
+            ? bounds.getRight() - iconSize * 0.9f      // hug the right edge
+            : bounds.getX()     + iconSize * 0.9f;     // hug the left edge (mirror)
+
         const float iconCenterY = bounds.getCentreY();
-        const float iconRadius  = iconSize * 0.5f;
 
         juce::Rectangle<int> starBounds (
             (int) std::round (iconCenterX - iconRadius),
@@ -138,8 +275,8 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
             (int) std::round (iconRadius * 2.0f),
             (int) std::round (iconRadius * 2.0f));
 
-        const float cx = (float) starBounds.getCentreX();
-        const float cy = (float) starBounds.getCentreY();
+        const float cx     = (float) starBounds.getCentreX();
+        const float cy     = (float) starBounds.getCentreY();
         const float radius = (float) starBounds.getWidth() * 0.45f;
 
         juce::Point<float> pts[5];
@@ -153,8 +290,8 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
         for (int i = 0; i < 5; ++i)
         {
             const float angle = baseAngle + step * (float) i;
-            const float x = cx + radius * std::cos (angle);
-            const float y = cy + radius * std::sin (angle);
+            const float x     = cx + radius * std::cos (angle);
+            const float y     = cy + radius * std::sin (angle);
             pts[i].setXY (x, y);
         }
 
@@ -167,10 +304,11 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
         pent.closeSubPath();
 
         // Pentagram colour follows burnAmount: 0 = black, 1 = white
-        const float v = juce::jlimit (0.0f, 1.0f, burnAmount);
-        const std::uint8_t level = (std::uint8_t) juce::jlimit (0, 255,
-            (int) std::round (v * 255.0f));
-        auto starColour = juce::Colour::fromRGB (level, level, level);
+        const float burn = juce::jlimit (0.0f, 1.0f, burnAmount);
+
+        auto starColour = juce::Colours::white
+            .interpolatedWith (juce::Colours::black, 1.0f - burn)
+            .withAlpha (0.8f + 0.2f * burn);
 
         g.setColour (starColour);
 
@@ -183,25 +321,13 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
         g.strokePath (pent, stroke);
 
         // Text is still handled by ComboBox itself.
-        // For lookBox we already set textColour to transparent,
-        // so only the pentagram will be visible.
+        // For both top combos, we'll set textColour to transparent from the editor,
+        // so only the pentagrams are visible.
+        return;
     }
-    // ===================================
-    // RIGHT: OVERSAMPLE (oversampleBox)
-    // ===================================
-    else if (name == "oversampleBox")
-    {
-        // We intentionally draw NOTHING extra here:
-        // no pentagram, no custom arrow.
-        // The ComboBox text (x1/x2/x4/etc.) will be drawn by JUCE
-        // using its textColour.
-    }
-    else
-    {
-        // Any other ComboBox using this LNF gets the same
-        // transparent background and default text drawing,
-        // but no pentagram.
-    }
+
+    // Any other ComboBox using this LNF just gets the transparent
+    // background; JUCE will draw its text normally.
 }
 
 juce::Font DownwardComboBoxLookAndFeel::getComboBoxFont (juce::ComboBox& box)
@@ -235,13 +361,13 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     // Basic combo colours (we mostly draw via custom LNF)
     lookSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    lookSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+    lookSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
 
     oversamplingSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    oversamplingSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+    oversamplingSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
 
     menuSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    menuSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+    menuSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
 
     // --------------------------------------------------
     // BACKGROUND + LOGO
@@ -360,6 +486,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // --------------------------------------------------
     // LOOK / SETTINGS (top-left)
     // --------------------------------------------------
+    lookBox.setLookAndFeel (&comboLnf);
     lookBox.setName ("lookBox");
     lookBox.setTextWhenNothingSelected ("SETTINGS");
     lookBox.setJustificationType (juce::Justification::centred);
@@ -369,13 +496,13 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lookBox.setColour (juce::ComboBox::buttonColourId,     juce::Colours::transparentBlack);
     lookBox.setColour (juce::ComboBox::arrowColourId,      juce::Colours::white);
 
-    lookBox.setInterceptsMouseClicks (false, false);
-    lookBox.setLookAndFeel (&comboLnf);
+    lookBox.setInterceptsMouseClicks (false, false); // parent handles opening SETTINGS
     addAndMakeVisible (lookBox);
 
     // --------------------------------------------------
     // OVERSAMPLE DROPDOWN (top-right)
     // --------------------------------------------------
+    oversampleBox.setLookAndFeel (&comboLnf);
     oversampleBox.setName ("oversampleBox");
     oversampleBox.addItem ("x1",  1);
     oversampleBox.addItem ("x2",  2);
@@ -385,16 +512,15 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setSelectedId (1, juce::dontSendNotification);
     oversampleBox.setTextWhenNothingSelected ("x1");
 
-    // Move the text towards the pentagram: top-right aligned to match its anchor
-    oversampleBox.setJustificationType (juce::Justification::topRight);
+    oversampleBox.setJustificationType (juce::Justification::centred);
 
-    oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+    oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
     oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::buttonColourId,     juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::arrowColourId,      juce::Colours::white);
 
-    oversampleBox.setLookAndFeel (&comboLnf);
+    oversampleBox.setInterceptsMouseClicks (false, false); // parent handles opening OVERSAMPLING window
     addAndMakeVisible (oversampleBox);
 
     // --------------------------------------------------
@@ -694,21 +820,37 @@ void FruityClipAudioProcessorEditor::timerCallback()
     const float burnForIcons = juce::jlimit (0.0f, 1.0f, lastBurn);
     comboLnf.setBurnAmount (burnForIcons);
 
-    // Greyscale 0 = black, 1 = white
-    const std::uint8_t level = (std::uint8_t) juce::jlimit (0, 255, (int) std::round (burnForIcons * 255.0f));
+    const std::uint8_t level = (std::uint8_t) juce::jlimit (
+        0, 255, (int) std::round (burnForIcons * 255.0f));
     auto burnColour = juce::Colour::fromRGB (level, level, level);
 
-    // Left SETTINGS pentagram (arrow colour only, text stays transparent)
-    lookBox.setColour (juce::ComboBox::arrowColourId, burnColour);
-
-    // Right OVERSAMPLE: make the "x1/x2/..." text follow the same burn
-    oversampleBox.setColour (juce::ComboBox::textColourId, burnColour);
+    // Both top pentagrams follow the same burn colour via arrowColourId.
+    // Text stays transparent, we only care about the icon.
+    lookBox.setColour      (juce::ComboBox::arrowColourId, burnColour);
+    oversampleBox.setColour (juce::ComboBox::arrowColourId, burnColour);
 
     // Ensure both combo boxes repaint with the new colour
     lookBox.repaint();
     oversampleBox.repaint();
 
     repaint();
+}
+
+void FruityClipAudioProcessorEditor::showOversampleMenu()
+{
+    auto& state = processor.getParametersState();
+
+    auto content = std::make_unique<OversampleSettingsComponent> (processor, state);
+    content->setSize (380, 210);
+
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle              = "OVERSAMPLING";
+    options.dialogBackgroundColour   = juce::Colours::black;
+    options.content.setOwned         (content.release());
+    options.componentToCentreAround  = this;
+    options.useNativeTitleBar        = true;
+    options.resizable                = false;
+    options.launchAsync();
 }
 
 void FruityClipAudioProcessorEditor::showBypassInfoPopup()
@@ -854,14 +996,19 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
 
 void FruityClipAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 {
-    // IMPORTANT FIX:
-    // Convert click from child component space (like GAIN label)
-    // into editor coordinates before hit-testing the SETTINGS area.
+    // Convert click from child component space into editor coordinates
     auto posInEditor = e.getEventRelativeTo (this).getPosition();
+    auto posInt      = posInEditor.toInt();
 
-    if (lookBox.getBounds().contains (posInEditor.toInt()))
+    if (lookBox.getBounds().contains (posInt))
     {
         showSettingsMenu();
+        return;
+    }
+
+    if (oversampleBox.getBounds().contains (posInt))
+    {
+        showOversampleMenu();
         return;
     }
 
