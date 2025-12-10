@@ -106,7 +106,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
                                                 int buttonW, int buttonH,
                                                 juce::ComboBox& box)
 {
-    juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
+    juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH, box);
 
     // Local bounds of this combo box
     auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
@@ -117,16 +117,11 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     g.fillRect (bounds);
 
     // We DO NOT draw any text here.
-    // The ComboBox/Label handles text, so oversample isn't doubled.
-
-    // IMPORTANT:
-    // We DO NOT draw any text here.
     // ComboBox / Label will handle drawing the current text once.
-    // This prevents the OVERSAMPLE text from appearing "doubled".
 
-    // Star icon (replaces chevron) – same math for ALL combo boxes,
-    // so left and right stars are perfectly symmetrical in position.
-    const float iconSize    = (float) height * 0.55f; // smaller than before
+    // Pentagram icon – exact same math for ALL combo boxes
+    // so left and right stars are perfectly symmetrical.
+    const float iconSize    = (float) height * 0.55f;
     const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
     const float iconCenterY = bounds.getCentreY();
     const float iconRadius  = iconSize * 0.5f;
@@ -137,7 +132,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
         (int) std::round (iconRadius * 2.0f),
         (int) std::round (iconRadius * 2.0f));
 
-    // Draw an inverted pentagram (two spikes up, one down)
+    // Draw an inverted pentagram (two spikes up, one spike down)
     const float cx = (float) starBounds.getCentreX();
     const float cy = (float) starBounds.getCentreY();
 
@@ -168,7 +163,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     pent.lineTo (pts[3]);
     pent.closeSubPath();
 
-    // White pentagram for both left and right combo boxes
+    // WHITE pentagram for both left and right combo boxes
     g.setColour (juce::Colours::white);
     const float strokeThickness = (float) starBounds.getWidth() * 0.10f;
     juce::PathStrokeType stroke (strokeThickness,
@@ -341,7 +336,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setSelectedId (1, juce::dontSendNotification);
     oversampleBox.setTextWhenNothingSelected ("x1");
 
-    oversampleBox.setJustificationType (juce::Justification::centred);
+    // Move the text towards the pentagram: right-aligned
+    oversampleBox.setJustificationType (juce::Justification::centredRight);
+
     oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
     oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
@@ -712,6 +709,9 @@ void FruityClipAudioProcessorEditor::openKlipBible()
 void FruityClipAudioProcessorEditor::showSettingsMenu()
 {
     juce::PopupMenu menu;
+
+    // Use the same LookAndFeel as the combo arrows – black popup, white text
+    menu.setLookAndFeel (&comboLnf);
 
     // Title
     menu.addSectionHeader ("SETTINGS");
