@@ -107,7 +107,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
                                                 int buttonW, int buttonH,
                                                 juce::ComboBox& box)
 {
-    juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH, box);
+    juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
 
     // Local bounds of this combo box
     auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
@@ -117,65 +117,91 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     g.setColour (juce::Colours::transparentBlack);
     g.fillRect (bounds);
 
-    // We DO NOT draw any text here.
-    // ComboBox / Label will handle drawing the current text once.
+    // Decide behavior based on the ComboBox name
+    const auto name = box.getName();
 
-    // Pentagram icon – exact same math for ALL combo boxes
-    // so left and right stars are perfectly symmetrical.
-    const float iconSize    = (float) height * 0.55f;
-    const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
-    const float iconCenterY = bounds.getCentreY();
-    const float iconRadius  = iconSize * 0.5f;
-
-    juce::Rectangle<int> starBounds (
-        (int) std::round (iconCenterX - iconRadius),
-        (int) std::round (iconCenterY - iconRadius),
-        (int) std::round (iconRadius * 2.0f),
-        (int) std::round (iconRadius * 2.0f));
-
-    // Draw an inverted pentagram (two spikes up, one spike down)
-    const float cx = (float) starBounds.getCentreX();
-    const float cy = (float) starBounds.getCentreY();
-
-    const float radius = (float) starBounds.getWidth() * 0.45f;
-
-    juce::Point<float> pts[5];
-
-    // Screen coordinates: +Y goes down.
-    // baseAngle = +pi/2 -> first point straight DOWN (one spike down),
-    // which gives us an inverted pentagram, so two spikes are up.
-    const float baseAngle = juce::MathConstants<float>::halfPi;
-    const float step      = juce::MathConstants<float>::twoPi / 5.0f;
-
-    for (int i = 0; i < 5; ++i)
+    // =========================
+    // LEFT: SETTINGS (lookBox)
+    // =========================
+    if (name == "lookBox")
     {
-        const float angle = baseAngle + step * (float) i;
-        const float x = cx + radius * std::cos (angle);
-        const float y = cy + radius * std::sin (angle);
-        pts[i].setXY (x, y);
+        // Pentagram icon – math shared for all combo boxes,
+        // but we only draw it for lookBox now.
+        const float iconSize    = (float) height * 0.55f;
+        const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
+        const float iconCenterY = bounds.getCentreY();
+        const float iconRadius  = iconSize * 0.5f;
+
+        juce::Rectangle<int> starBounds (
+            (int) std::round (iconCenterX - iconRadius),
+            (int) std::round (iconCenterY - iconRadius),
+            (int) std::round (iconRadius * 2.0f),
+            (int) std::round (iconRadius * 2.0f));
+
+        const float cx = (float) starBounds.getCentreX();
+        const float cy = (float) starBounds.getCentreY();
+        const float radius = (float) starBounds.getWidth() * 0.45f;
+
+        juce::Point<float> pts[5];
+
+        // Screen coordinates: +Y goes down.
+        // baseAngle = +pi/2 -> first point straight DOWN (one spike down),
+        // which gives an inverted pentagram (two spikes up).
+        const float baseAngle = juce::MathConstants<float>::halfPi;
+        const float step      = juce::MathConstants<float>::twoPi / 5.0f;
+
+        for (int i = 0; i < 5; ++i)
+        {
+            const float angle = baseAngle + step * (float) i;
+            const float x = cx + radius * std::cos (angle);
+            const float y = cy + radius * std::sin (angle);
+            pts[i].setXY (x, y);
+        }
+
+        juce::Path pent;
+        pent.startNewSubPath (pts[0]);
+        pent.lineTo (pts[2]);
+        pent.lineTo (pts[4]);
+        pent.lineTo (pts[1]);
+        pent.lineTo (pts[3]);
+        pent.closeSubPath();
+
+        // Pentagram colour follows burnAmount: 0 = black, 1 = white
+        const float v = juce::jlimit (0.0f, 1.0f, burnAmount);
+        const std::uint8_t level = (std::uint8_t) juce::jlimit (0, 255,
+            (int) std::round (v * 255.0f));
+        auto starColour = juce::Colour::fromRGB (level, level, level);
+
+        g.setColour (starColour);
+
+        const float strokeThickness =
+            (float) starBounds.getWidth() * 0.10f;
+
+        juce::PathStrokeType stroke (strokeThickness,
+                                     juce::PathStrokeType::mitered,
+                                     juce::PathStrokeType::square);
+        g.strokePath (pent, stroke);
+
+        // Text is still handled by ComboBox itself.
+        // For lookBox we already set textColour to transparent,
+        // so only the pentagram will be visible.
     }
-
-    juce::Path pent;
-    // Connect every second point: 0 -> 2 -> 4 -> 1 -> 3 -> back to 0
-    pent.startNewSubPath (pts[0]);
-    pent.lineTo (pts[2]);
-    pent.lineTo (pts[4]);
-    pent.lineTo (pts[1]);
-    pent.lineTo (pts[3]);
-    pent.closeSubPath();
-
-    // Pentagram colour follows burnAmount: 0 = black, 1 = white
-    const float v = juce::jlimit (0.0f, 1.0f, burnAmount);
-    const std::uint8_t level = (std::uint8_t) juce::jlimit (0, 255, (int) std::round (v * 255.0f));
-    auto starColour = juce::Colour::fromRGB (level, level, level);
-
-    g.setColour (starColour);
-
-    const float strokeThickness = (float) starBounds.getWidth() * 0.10f;
-    juce::PathStrokeType stroke (strokeThickness,
-                                 juce::PathStrokeType::mitered,
-                                 juce::PathStrokeType::square);
-    g.strokePath (pent, stroke);
+    // ===================================
+    // RIGHT: OVERSAMPLE (oversampleBox)
+    // ===================================
+    else if (name == "oversampleBox")
+    {
+        // We intentionally draw NOTHING extra here:
+        // no pentagram, no custom arrow.
+        // The ComboBox text (x1/x2/x4/etc.) will be drawn by JUCE
+        // using its textColour.
+    }
+    else
+    {
+        // Any other ComboBox using this LNF gets the same
+        // transparent background and default text drawing,
+        // but no pentagram.
+    }
 }
 
 //==============================================================
