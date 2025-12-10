@@ -232,6 +232,7 @@ private:
     void startFingerAnimation (bool limiterMode);
 
     void showBypassInfoPopup();
+    void showOversampleMenu();
 
     friend class MiddleFingerLookAndFeel;
 
