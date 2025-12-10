@@ -204,6 +204,23 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     }
 }
 
+juce::Font DownwardComboBoxLookAndFeel::getComboBoxFont (juce::ComboBox& box)
+{
+    // Give the oversample readout a slightly heavier look without overpowering the pentagram.
+    if (box.getName() == "oversampleBox")
+    {
+        // Push a little more weight into the oversample readout without relying on deprecated APIs.
+        const float fontHeight = (float) box.getHeight() * 0.52f * 1.2f;
+
+        juce::FontOptions opts (fontHeight);
+        opts = opts.withStyle ("SemiBold");
+
+        return juce::Font (opts);
+    }
+
+    return juce::LookAndFeel_V4::getComboBoxFont (box);
+}
+
 //==============================================================
 // Editor
 //==============================================================
@@ -368,8 +385,8 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setSelectedId (1, juce::dontSendNotification);
     oversampleBox.setTextWhenNothingSelected ("x1");
 
-    // Move the text towards the pentagram: right-aligned
-    oversampleBox.setJustificationType (juce::Justification::centredRight);
+    // Move the text towards the pentagram: top-right aligned to match its anchor
+    oversampleBox.setJustificationType (juce::Justification::topRight);
 
     oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
     oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
@@ -563,8 +580,12 @@ void FruityClipAudioProcessorEditor::resized()
     // Right: oversample text + pentagram, pinned to the right
     const int osW = juce::jmax (60, w / 10);
     const int osH = barH;
-    const int osX = w - osW - topMargin;
-    const int osY = topMargin;
+
+    // Nudge the oversample readout right by roughly 2.5 glyph widths while keeping its top alignment.
+    const int osShift = (int) std::round (osH * 0.42f);
+
+    const int osX = w - osW + osShift;
+    const int osY = lookY;   // explicitly align the oversample text with the pentagram height
 
     // IMPORTANT: same height + same Y so pentagrams are perfectly aligned
     lookBox.setBounds       (lookX, lookY, lookSize, barH);

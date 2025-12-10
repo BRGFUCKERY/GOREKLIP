@@ -133,6 +133,8 @@ public:
         burnAmount = juce::jlimit (0.0f, 1.0f, amount);
     }
 
+    juce::Font getComboBoxFont (juce::ComboBox& box) override;
+
     void drawComboBox (juce::Graphics& g,
                        int width, int height,
                        bool isButtonDown,
