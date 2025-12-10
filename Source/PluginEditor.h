@@ -117,6 +117,16 @@ private:
 class DownwardComboBoxLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    DownwardComboBoxLookAndFeel()
+    {
+        // Force all combo popups that use this LNF to be black with white text
+        setColour (juce::PopupMenu::backgroundColourId,          juce::Colours::black);
+        setColour (juce::PopupMenu::textColourId,                juce::Colours::white);
+        setColour (juce::PopupMenu::highlightedBackgroundColourId,
+                   juce::Colours::white.withAlpha (0.1f));
+        setColour (juce::PopupMenu::highlightedTextColourId,     juce::Colours::white);
+    }
+
     void drawComboBox (juce::Graphics& g,
                        int width, int height,
                        bool isButtonDown,
