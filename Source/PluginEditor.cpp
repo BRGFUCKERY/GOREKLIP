@@ -209,10 +209,12 @@ juce::Font DownwardComboBoxLookAndFeel::getComboBoxFont (juce::ComboBox& box)
     // Give the oversample readout a slightly heavier look without overpowering the pentagram.
     if (box.getName() == "oversampleBox")
     {
-        const float fontHeight = (float) box.getHeight() * 0.60f;
+        const float fontHeight = (float) box.getHeight() * 0.52f;
 
-        juce::Font font (fontHeight, juce::Font::plain);
-        font.setWeight (juce::Font::Weight::semiBold);
+        juce::Font font;
+        font.setHeight (fontHeight);
+        font.setStyleFlags (juce::Font::plain);
+        font.setTypefaceStyle ("Medium");
 
         return font;
     }
