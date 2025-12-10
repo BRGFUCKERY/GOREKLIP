@@ -534,15 +534,14 @@ void FruityClipAudioProcessorEditor::resized()
     const int lookX    = topMargin;
     const int lookY    = topMargin;
 
-    // Right: oversample text + pentagram, pinned to the right
-    const int osW = juce::jmax (60, w / 10);
-    const int osH = barH;
-    const int osX = w - osW - topMargin;
-    const int osY = topMargin;
+    lookBox.setBounds (lookX, lookY, lookSize, barH);
 
-    // IMPORTANT: same height + same Y so pentagrams are perfectly aligned
-    lookBox.setBounds       (lookX, lookY, lookSize, barH);
-    oversampleBox.setBounds (osX,  osY,  osW,       osH);
+    // FORCE OVERSAMPLE BOX TO BE SQUARE FOR PERFECT SYMMETRY
+    const int osSize   = lookSize;
+    const int osX      = w - osSize - topMargin;
+    const int osY      = topMargin;
+
+    oversampleBox.setBounds (osX, osY, osSize, osSize);
 
     // --------------------------------------------------
     // (leave the rest of resized() exactly as it was)
