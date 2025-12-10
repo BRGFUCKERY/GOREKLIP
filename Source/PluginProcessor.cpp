@@ -73,9 +73,12 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
                                 .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       parameters (*this, nullptr, "PARAMS", createParameterLayout())
 {
-    // Ultra fine-tuned Fruity-null gain
-    postGain        = 0.99999385f;
+    // postGain is no longer used for default hard-clip alignment.
+    // We keep it as a member in case we want special modes later.
+    postGain        = 1.0f;
+
     // Soft clip threshold (~ -6 dB at satAmount = 1)
+    // (kept for future use; currently we are in pure hard-clip mode)
     thresholdLinear = juce::Decibels::decibelsToGain (-6.0f);
 
     juce::PropertiesFile::Options opts;
@@ -433,8 +436,17 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float ottAmount  = juce::jlimit (0.0f, 1.0f, ottAmountRaw);
     const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
 
-    const float g         = postGain;                // Fruity-null alignment
+    // Global scalars for this block
+    // inputGain comes from the finger (in dB).
     const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
+
+    // Fruity hard-clip alignment factor.
+    // Start at 1.0f (no change). You can fine-tune this in ultra-tiny steps
+    // (e.g. 0.99999f, 1.00001f, etc.) to tighten null / crest-factor later.
+    const float fruityCal = 1.0f;
+
+    // This is the actual drive into OTT/SAT/clipper for default mode.
+    const float inputDrive = inputGain * fruityCal;
 
     int osIndex = 0;
 
@@ -463,7 +475,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
             for (int i = 0; i < numSamples; ++i)
             {
-                float y = samples[i] * inputGain;
+                float y = samples[i] * inputDrive;
                 samples[i] = y;
             }
         }
@@ -494,14 +506,14 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     if (ottAmount <= 0.0f)
     {
-        // OTT fully bypassed: apply only INPUT GAIN in place.
+        // OTT fully bypassed: apply only INPUT DRIVE in place.
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* samples = buffer.getWritePointer (ch);
 
             for (int i = 0; i < numSamples; ++i)
             {
-                float y = samples[i] * inputGain;
+                float y = samples[i] * inputDrive;
                 samples[i] = y;
             }
         }
@@ -522,8 +534,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
             for (int i = 0; i < numSamples; ++i)
             {
-                // 1) INPUT GAIN
-                float y = x[i] * inputGain;
+                // 1) INPUT DRIVE
+                float y = x[i] * inputDrive;
 
                 // 2) OTT high-band only (0–150 dry, >150 processed)
                 //    Low band stays intact, high band gets dynamic OTT.
@@ -712,7 +724,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 }
             }
 
-            // Apply Fruity-null post gain + hard ceiling ONCE at the end, after refinement.
             for (int ch = 0; ch < osNumChannels; ++ch)
             {
                 float* samples = osBlock.getChannelPointer (ch);
@@ -721,10 +732,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 {
                     float sample = samples[i];
 
-                    sample *= g;
-
-                    if (sample >  1.0f) sample =  1.0f;
-                    if (sample < -1.0f) sample = -1.0f;
+                    if (limiterOn)
+                    {
+                        sample = processLimiterSample (sample);
+                    }
+                    else
+                    {
+                        // Pure hard clip in oversampled domain
+                        if (sample >  1.0f) sample =  1.0f;
+                        if (sample < -1.0f) sample = -1.0f;
+                    }
 
                     samples[i] = sample;
                 }
@@ -746,20 +763,17 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     float sample = samples[i];
 
                     // SAT has ALREADY been applied at base rate above.
-                    // Here we ONLY run limiter/clipper + g and hard clamp.
+                    // Here we ONLY run limiter OR pure hard clip in OS domain.
                     if (limiterOn)
+                    {
                         sample = processLimiterSample (sample);
+                    }
                     else
                     {
                         // Pure hard clip in oversampled domain
                         if (sample >  1.0f) sample =  1.0f;
                         if (sample < -1.0f) sample = -1.0f;
                     }
-
-                    sample *= g;
-
-                    if (sample >  1.0f) sample =  1.0f;
-                    if (sample < -1.0f) sample = -1.0f;
 
                     samples[i] = sample;
                 }
@@ -808,11 +822,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     if (sample >  1.0f) sample =  1.0f;
                     if (sample < -1.0f) sample = -1.0f;
                 }
-
-                sample *= g;
-
-                if (sample >  1.0f) sample =  1.0f;
-                if (sample < -1.0f) sample = -1.0f;
 
                 samples[i] = sample;
             }
