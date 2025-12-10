@@ -157,7 +157,7 @@ private:
     // Internal state
     //==========================================================
     double sampleRate      = 44100.0;
-    float  postGain        = 0.99999385f;  // Fruity-null alignment
+    float  postGain        = 1.0f;          // kept for potential special modes
     float  thresholdLinear = 0.5f;         // updated in ctor
 
     // Limiter
