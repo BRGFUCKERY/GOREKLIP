@@ -140,6 +140,9 @@ public:
                        int buttonW, int buttonH,
                        juce::ComboBox& box) override;
 
+    // Custom font so oversample "x1/x2/..." looks thicker & bigger
+    juce::Font getComboBoxFont (juce::ComboBox& box) override;
+
 private:
     float burnAmount = 0.0f;
 };
