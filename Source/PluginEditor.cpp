@@ -117,29 +117,33 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     g.setColour (juce::Colours::transparentBlack);
     g.fillRect (bounds);
 
-    // Decide behavior based on the ComboBox name
     const auto name = box.getName();
+
+    // Shared geometry so both sides line up perfectly
+    const float iconSize   = bounds.getHeight() * 0.55f;
+    const float iconRadius = iconSize * 0.5f;
+    const float centerY    = bounds.getCentreY();
+    const float centerX    = bounds.getRight() - iconSize * 0.9f;
+
+    // Burn-driven colour: 0 = black, 1 = white
+    const float v = juce::jlimit (0.0f, 1.0f, burnAmount);
+    const std::uint8_t level = (std::uint8_t) juce::jlimit (0, 255,
+        (int) std::round (v * 255.0f));
+    auto dynamicColour = juce::Colour::fromRGB (level, level, level);
 
     // =========================
     // LEFT: SETTINGS (lookBox)
     // =========================
     if (name == "lookBox")
     {
-        // Pentagram icon – math shared for all combo boxes,
-        // but we only draw it for lookBox now.
-        const float iconSize    = (float) height * 0.55f;
-        const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
-        const float iconCenterY = bounds.getCentreY();
-        const float iconRadius  = iconSize * 0.5f;
-
         juce::Rectangle<int> starBounds (
-            (int) std::round (iconCenterX - iconRadius),
-            (int) std::round (iconCenterY - iconRadius),
+            (int) std::round (centerX - iconRadius),
+            (int) std::round (centerY - iconRadius),
             (int) std::round (iconRadius * 2.0f),
             (int) std::round (iconRadius * 2.0f));
 
-        const float cx = (float) starBounds.getCentreX();
-        const float cy = (float) starBounds.getCentreY();
+        const float cx     = (float) starBounds.getCentreX();
+        const float cy     = (float) starBounds.getCentreY();
         const float radius = (float) starBounds.getWidth() * 0.45f;
 
         juce::Point<float> pts[5];
@@ -153,8 +157,8 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
         for (int i = 0; i < 5; ++i)
         {
             const float angle = baseAngle + step * (float) i;
-            const float x = cx + radius * std::cos (angle);
-            const float y = cy + radius * std::sin (angle);
+            const float x     = cx + radius * std::cos (angle);
+            const float y     = cy + radius * std::sin (angle);
             pts[i].setXY (x, y);
         }
 
@@ -166,13 +170,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
         pent.lineTo (pts[3]);
         pent.closeSubPath();
 
-        // Pentagram colour follows burnAmount: 0 = black, 1 = white
-        const float v = juce::jlimit (0.0f, 1.0f, burnAmount);
-        const std::uint8_t level = (std::uint8_t) juce::jlimit (0, 255,
-            (int) std::round (v * 255.0f));
-        auto starColour = juce::Colour::fromRGB (level, level, level);
-
-        g.setColour (starColour);
+        g.setColour (dynamicColour);
 
         const float strokeThickness =
             (float) starBounds.getWidth() * 0.10f;
@@ -182,25 +180,43 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
                                      juce::PathStrokeType::square);
         g.strokePath (pent, stroke);
 
-        // Text is still handled by ComboBox itself.
-        // For lookBox we already set textColour to transparent,
-        // so only the pentagram will be visible.
+        // Text is transparent for lookBox, so only the pentagram is visible.
     }
     // ===================================
     // RIGHT: OVERSAMPLE (oversampleBox)
     // ===================================
     else if (name == "oversampleBox")
     {
-        // We intentionally draw NOTHING extra here:
-        // no pentagram, no custom arrow.
-        // The ComboBox text (x1/x2/x4/etc.) will be drawn by JUCE
-        // using its textColour.
+        // Draw "x1/x2/..." manually so it lines up with the pentagram
+        // and uses the exact same centre and burn colour.
+        juce::Rectangle<int> textBounds (
+            (int) std::round (centerX - iconRadius),
+            (int) std::round (centerY - iconRadius),
+            (int) std::round (iconRadius * 2.0f),
+            (int) std::round (iconRadius * 2.0f));
+
+        juce::String text = box.getText();
+        if (text.isEmpty())
+            text = box.getTextWhenNothingSelected();
+
+        // Slightly bigger, bold text so it has similar visual weight
+        // to the pentagram lines.
+        juce::FontOptions opts (iconSize * 0.72f);
+        opts = opts.withStyle ("Bold");
+        juce::Font font (opts);
+
+        g.setFont (font);
+        g.setColour (dynamicColour);
+
+        g.drawFittedText (text,
+                          textBounds,
+                          juce::Justification::centred,
+                          1);
     }
     else
     {
-        // Any other ComboBox using this LNF gets the same
-        // transparent background and default text drawing,
-        // but no pentagram.
+        // Any other ComboBox using this LNF:
+        // keep transparent background and let default behaviour handle text.
     }
 }
 
@@ -388,7 +404,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // Move the text towards the pentagram: top-right aligned to match its anchor
     oversampleBox.setJustificationType (juce::Justification::topRight);
 
-    oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+    // We draw the "x1/x2/..." text manually in DownwardComboBoxLookAndFeel,
+    // so hide JUCE's default combo text.
+    oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
     oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::buttonColourId,     juce::Colours::transparentBlack);
