@@ -703,20 +703,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         float sample = samples[i];
 
-                        // Stage 1 (pass == 0): main GOREKLIP clip tone.
-                        // Later passes: slightly higher threshold so they mostly
-                        // act as gentle refinement on hotter peaks rather than
-                        // completely re-shaping the transient.
-                        float localThreshold = thresholdLinear;
-
-                        if (pass > 0)
-                        {
-                            const float extra = 0.05f * (float) pass;   // up to +0.10
-                            localThreshold = juce::jlimit (0.0f, 0.99f,
-                                                           thresholdLinear + extra);
-                        }
-
-                        sample = fruitySoftClipSample (sample, localThreshold);
+                        // Pure hard clip for all TripleFry passes
+                        if (sample >  1.0f) sample =  1.0f;
+                        if (sample < -1.0f) sample = -1.0f;
 
                         samples[i] = sample;
                     }
@@ -761,7 +750,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     if (limiterOn)
                         sample = processLimiterSample (sample);
                     else
-                        sample = fruitySoftClipSample (sample, thresholdLinear);
+                    {
+                        // Pure hard clip in oversampled domain
+                        if (sample >  1.0f) sample =  1.0f;
+                        if (sample < -1.0f) sample = -1.0f;
+                    }
 
                     sample *= g;
 
@@ -810,7 +803,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (limiterOn)
                     sample = processLimiterSample (sample);
                 else
-                    sample = fruitySoftClipSample (sample, thresholdLinear);
+                {
+                    // Pure hard clip at base rate
+                    if (sample >  1.0f) sample =  1.0f;
+                    if (sample < -1.0f) sample = -1.0f;
+                }
 
                 sample *= g;
 
