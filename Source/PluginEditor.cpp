@@ -206,15 +206,15 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 
 juce::Font DownwardComboBoxLookAndFeel::getComboBoxFont (juce::ComboBox& box)
 {
-    // Give the oversample readout a heavier, larger feel to match the pentagram weight.
+    // Give the oversample readout a slightly heavier look without overpowering the pentagram.
     if (box.getName() == "oversampleBox")
     {
-        const float fontHeight = (float) box.getHeight() * 0.68f;
+        const float fontHeight = (float) box.getHeight() * 0.60f;
 
-        juce::FontOptions opts (fontHeight);
-        opts = opts.withStyle ("Bold");
+        juce::Font font (fontHeight, juce::Font::plain);
+        font.setWeight (juce::Font::Weight::semiBold);
 
-        return juce::Font (opts);
+        return font;
     }
 
     return juce::LookAndFeel_V4::getComboBoxFont (box);
@@ -384,8 +384,8 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setSelectedId (1, juce::dontSendNotification);
     oversampleBox.setTextWhenNothingSelected ("x1");
 
-    // Move the text towards the pentagram: right-aligned
-    oversampleBox.setJustificationType (juce::Justification::centredRight);
+    // Move the text towards the pentagram: top-right aligned to match its anchor
+    oversampleBox.setJustificationType (juce::Justification::topRight);
 
     oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
     oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
