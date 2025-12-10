@@ -168,7 +168,8 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     pent.lineTo (pts[3]);
     pent.closeSubPath();
 
-    g.setColour (juce::Colours::black);
+    // White pentagram for both left and right combo boxes
+    g.setColour (juce::Colours::white);
     const float strokeThickness = (float) starBounds.getWidth() * 0.10f;
     juce::PathStrokeType stroke (strokeThickness,
                                  juce::PathStrokeType::mitered,
@@ -743,9 +744,9 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
     // Separator line
     menu.addSeparator();
 
-    // KLIPBIBLE – clickable, NEVER checkable (no tick flag)
+    // KLIPERBIBLE – clickable, NEVER checkable (no tick flag)
     menu.addItem (idKlipBible,
-                  "KLIPBIBLE",
+                  "KLIPERBIBLE",
                   true); // enabled, but not a toggle
 
     // Handle selection
