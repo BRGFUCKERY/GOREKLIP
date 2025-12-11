@@ -689,83 +689,101 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // we ignore TripleFry and behave like the normal single-pass limiter.
     const bool tripleFryEnabled = (useOversampling && tripleFryActive && ! limiterOn);
 
+    // Fruity-null post gain (unity by default; kept explicit for alignment tweaks).
+    const float g = 1.0f;
+
     if (useOversampling)
     {
+        // We always build a block view over the current base-rate buffer.
         juce::dsp::AudioBlock<float> block (buffer);
-
-        // Single oversample up/down for the whole block.
-        auto osBlock      = oversampler->processSamplesUp (block);
-        const int osNumSamples  = (int) osBlock.getNumSamples();
-        const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
 
         if (tripleFryEnabled)
         {
             //======================================================
-            // TRIPLEFRY – multi-stage CLIP refinement in OS domain
-            //   - No limiter involved
-            //   - One oversample pass, multiple clip stages
+            // NEW TRIPLEFRY:
+            //   - Multiple linear OS/DS passes with NO clipping
+            //     to "pre-clean" intersample behavior.
+            //   - Final oversampled pass does pure hard clip + g,
+            //     then we downsample back to base rate.
+            //
+            // Conceptually:
+            //   1) upsample -> anti-alias filter -> downsample
+            //   2) upsample -> anti-alias filter -> downsample
+            //   3) upsample -> PURE HARD CLIP (+ g, clamp) -> downsample
+            //
+            // TripleFry remains CLIPPER ONLY (never runs when limiterOn).
             //======================================================
-            const int refinePasses = 3; // "TRIPLE" fry
 
-            for (int pass = 0; pass < refinePasses; ++pass)
+            // Number of pre-clean passes (OS/DS with no clipping).
+            constexpr int preCleanPasses = 2; // total of 3 OS cycles including the final clip pass
+
+            // --- Pre-clean passes: OS/DS with NO nonlinearity ---
+            for (int pass = 0; pass < preCleanPasses; ++pass)
             {
-                for (int ch = 0; ch < osNumChannels; ++ch)
-                {
-                    float* samples = osBlock.getChannelPointer (ch);
+                // Up to oversampled domain
+                auto tmpOsBlock = oversampler->processSamplesUp (block);
 
-                    for (int i = 0; i < osNumSamples; ++i)
-                    {
-                        float sample = samples[i];
+                // DO NOT clip or limit here – we just let the oversampling
+                // filters "massage" the waveform.
+                juce::ignoreUnused (tmpOsBlock);
 
-                        // Pure hard clip for all TripleFry passes
-                        if (sample >  1.0f) sample =  1.0f;
-                        if (sample < -1.0f) sample = -1.0f;
-
-                        samples[i] = sample;
-                    }
-                }
+                // Back down to base rate
+                oversampler->processSamplesDown (block);
             }
+
+            // --- Final pass: oversample, pure hard clip in OS domain, then downsample ---
+            auto osBlock      = oversampler->processSamplesUp (block);
+            const int osNumSamples  = (int) osBlock.getNumSamples();
+            const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
 
             for (int ch = 0; ch < osNumChannels; ++ch)
             {
-                float* samples = osBlock.getChannelPointer (ch);
+                float* samplesOs = osBlock.getChannelPointer (ch);
 
                 for (int i = 0; i < osNumSamples; ++i)
                 {
-                    float sample = samples[i];
+                    float sample = samplesOs[i];
 
-                    if (limiterOn)
-                    {
-                        sample = processLimiterSample (sample);
-                    }
-                    else
-                    {
-                        // Pure hard clip in oversampled domain
-                        if (sample >  1.0f) sample =  1.0f;
-                        if (sample < -1.0f) sample = -1.0f;
-                    }
+                    // PURE HARD CLIP in oversampled domain (no soft curve, no -6 dB threshold).
+                    if (sample >  1.0f) sample =  1.0f;
+                    if (sample < -1.0f) sample = -1.0f;
 
-                    samples[i] = sample;
+                    // Apply Fruity-null alignment gain in OS domain,
+                    // just like the normal oversampled path.
+                    sample *= g;
+
+                    // Clamp again after g, just like normal OS path.
+                    if (sample >  1.0f) sample =  1.0f;
+                    if (sample < -1.0f) sample = -1.0f;
+
+                    samplesOs[i] = sample;
                 }
             }
+
+            // Back down to base rate after the final TripleFry clip pass.
+            oversampler->processSamplesDown (block);
         }
         else
         {
             //======================================================
             // NORMAL oversampled path:
             //   - Single pass of limiter OR clipper in OS domain
-            //   - Behavior stays the same as the original code
+            //   - Behavior stays the same as before
             //======================================================
+            auto osBlock      = oversampler->processSamplesUp (block);
+            const int osNumSamples  = (int) osBlock.getNumSamples();
+            const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
+
             for (int ch = 0; ch < osNumChannels; ++ch)
             {
-                float* samples = osBlock.getChannelPointer (ch);
+                float* samplesOs = osBlock.getChannelPointer (ch);
 
                 for (int i = 0; i < osNumSamples; ++i)
                 {
-                    float sample = samples[i];
+                    float sample = samplesOs[i];
 
                     // SAT has ALREADY been applied at base rate above.
-                    // Here we ONLY run limiter OR pure hard clip in OS domain.
+                    // Here we ONLY run limiter/clipper + g and hard clamp.
                     if (limiterOn)
                     {
                         sample = processLimiterSample (sample);
@@ -777,13 +795,35 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         if (sample < -1.0f) sample = -1.0f;
                     }
 
-                    samples[i] = sample;
+                    sample *= g;
+
+                    if (sample >  1.0f) sample =  1.0f;
+                    if (sample < -1.0f) sample = -1.0f;
+
+                    samplesOs[i] = sample;
                 }
             }
+
+            // Downsample once for the whole block in the normal OS path.
+            oversampler->processSamplesDown (block);
         }
 
-        // Downsample once for the whole block.
-        oversampler->processSamplesDown (block);
+        // FINAL SAFETY CEILING AT BASE RATE (catches any residual intersample overs).
+        // This stays identical for both TripleFry and normal oversampled paths.
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            float* s = buffer.getWritePointer (ch);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float y = s[i];
+
+                if (y >  1.0f) y =  1.0f;
+                if (y < -1.0f) y = -1.0f;
+
+                s[i] = y;
+            }
+        }
     }
     else
     {
@@ -808,6 +848,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     if (sample >  1.0f) sample =  1.0f;
                     if (sample < -1.0f) sample = -1.0f;
                 }
+
+                sample *= g;
+
+                if (sample >  1.0f) sample =  1.0f;
+                if (sample < -1.0f) sample = -1.0f;
 
                 samples[i] = sample;
             }
