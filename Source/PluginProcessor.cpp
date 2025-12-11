@@ -309,9 +309,9 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         satLowAlpha = juce::jlimit (0.0f, 1.0f, alphaSat);
     }
 
-    // One-pole lowpass for analog tone tilt (~1 kHz split at base rate)
+    // One-pole lowpass for analog tone tilt (~2 kHz split at base rate)
     {
-        const float fcAnalog = 1000.0f;
+        const float fcAnalog = 2000.0f;
         const float alphaAnalog =
             std::exp (-2.0f * juce::MathConstants<float>::pi * fcAnalog / sr);
         analogToneAlpha = juce::jlimit (0.0f, 1.0f, alphaAnalog);
@@ -573,21 +573,28 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
 
     auto& st = analogToneStates[(size_t) channel];
 
-    // One-pole lowpass around 1 kHz (coeff set in prepareToPlay)
+    // One-pole lowpass around ~2 kHz (coeff set in prepareToPlay).
+    // This splits the signal into a "low" band (below ~2 kHz)
+    // and a "high" band (above ~2 kHz).
     st.low = analogToneAlpha * st.low + (1.0f - analogToneAlpha) * x;
 
     const float low  = st.low;
     const float high = x - low;
 
-    // Gentle tilt tuned from white-noise measurements.
-    // Start point: GK 0-silk was too bassy and slightly darker on top;
-    // this pulls lows down and nudges highs up a bit.
-    constexpr float lowGain  = 0.65f;  // about -3.7 dB
-    constexpr float highGain = 1.15f;  // about +1.2 dB
+    // New tilt tuned from 0-silk white-noise captures vs the real
+    // 5060 -> Lavry chain:
+    //
+    // - GK 0-silk was too thin in the lows and too bright up top
+    //   compared to the hardware.
+    // - This pushes the low band up ~+6 dB and pulls the highs
+    //   down ~-4 dB, giving a much closer spectral match on
+    //   white noise while keeping the clip curve itself intact.
+    constexpr float lowGain  = 2.03f;  // ~ +6.16 dB
+    constexpr float highGain = 0.62f;  // ~ -4.14 dB
 
     float y = lowGain * low + highGain * high;
 
-    // Safety clamp – should never normally hit.
+    // Safety clamp – should never normally hit, just in case.
     return juce::jlimit (-4.0f, 4.0f, y);
 }
 
