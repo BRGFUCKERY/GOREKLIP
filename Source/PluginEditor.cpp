@@ -36,8 +36,8 @@ public:
         // Title
         titleLabel.setText ("OVERSAMPLING", juce::dontSendNotification);
         titleLabel.setJustificationType (juce::Justification::centred);
-        titleLabel.setFont (juce::Font (18.0f, juce::Font::bold));
         titleLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+        titleLabel.setFont (juce::Font (18.0f, juce::Font::bold)); // simple system bold font
         addAndMakeVisible (titleLabel);
 
         // Column headers
@@ -83,10 +83,13 @@ public:
         addAndMakeVisible (liveCombo);
         addAndMakeVisible (offlineCombo);
 
-        // --- Force LIVE combo to match current oversampleMode parameter on open ---
+        // --- Initial LIVE value from parameter / stored default ---
         {
+            // Start from the stored global default (what we save in userSettings)
             int initialLiveIndex = processor.getStoredLiveOversampleIndex(); // 0..6
 
+            // If the oversampleMode parameter already has a value (e.g. restored by the host),
+            // let that win so the GUI matches the actual processing.
             if (auto* osParam = parameters.getRawParameterValue ("oversampleMode"))
                 initialLiveIndex = juce::jlimit (0, 6, (int) osParam->load());
 
@@ -143,11 +146,14 @@ public:
             };
         }
 
-        // Info label: no longer showing CPU warning text
+        // Info label: no longer showing CPU warning text, keep it simple and ASCII-safe
         infoLabel.setText ({}, juce::dontSendNotification);
         infoLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.85f));
         infoLabel.setJustificationType (juce::Justification::topLeft);
         infoLabel.setMinimumHorizontalScale (0.8f);
+        infoLabel.setFont (juce::Font (13.0f)); // standard font so ":" etc. render correctly
+
+        addAndMakeVisible (infoLabel);
 
         // Make sure popup menus for these combos are also black/white
         if (auto* lf = dynamic_cast<juce::LookAndFeel_V4*> (&getLookAndFeel()))
@@ -204,15 +210,13 @@ public:
         infoLabel.setBounds (r);
     }
 
-public:
     // Force the LIVE combo to a specific oversample index (0..6 = x1..x64).
     // This does NOT notify the processor – it's just a visual sync helper
     // so the OVERSAMPLE window mirrors the current LIVE dropdown.
     void syncLiveFromIndex (int index)
     {
-        // Clamp to 0..6 then convert to ComboBox ID (1..7).
         const int clampedIndex = juce::jlimit (0, 6, index);
-        const int comboId      = clampedIndex + 1;
+        const int comboId      = clampedIndex + 1; // 0..6 => 1..7
 
         liveCombo.setSelectedId (comboId, juce::dontSendNotification);
     }
@@ -993,15 +997,14 @@ void FruityClipAudioProcessorEditor::showOversampleMenu()
     auto content = std::make_unique<OversampleSettingsComponent> (processor, state);
 
     // Force the LIVE combo inside the OVERSAMPLE dialog to match the
-    // current right-side LIVE dropdown. This guarantees visual sync
-    // even on fresh instances or after any stored/default shenanigans.
-    {
-        // oversampleLiveBox IDs: 1..7 => indices 0..6
-        const int currentId    = oversampleLiveBox.getSelectedId();
-        const int currentIndex = juce::jlimit (0, 6, currentId - 1);
+    // actual "oversampleMode" parameter. This guarantees that:
+    //   - A fresh instance uses the stored global default LIVE oversample.
+    //   - The dialog always mirrors whatever the right pentagram is really doing.
+    int currentIndex = 0;
+    if (auto* osParam = state.getRawParameterValue ("oversampleMode"))
+        currentIndex = juce::jlimit (0, 6, (int) osParam->load());
 
-        content->syncLiveFromIndex (currentIndex);
-    }
+    content->syncLiveFromIndex (currentIndex);
 
     content->setSize (320, 120);
 
