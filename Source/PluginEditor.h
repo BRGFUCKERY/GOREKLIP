@@ -170,6 +170,8 @@ public:
     void setLookMode (LookMode mode); // updates processor + UI
     LookMode getLookMode() const;     // reads current mode from processor
     void openKlipBible();             // opens the Bible/help resource
+    juce::String getLoveSilkLabelText() const;
+    juce::String getClipperLabelText() const;
 
 private:
     FruityClipAudioProcessor& processor;

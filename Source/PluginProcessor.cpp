@@ -30,6 +30,10 @@ FruityClipAudioProcessor::createParameterLayout()
     params.push_back (std::make_unique<juce::AudioParameterBool>(
         "useLimiter", "Use Limiter", false));
 
+    params.push_back (std::make_unique<juce::AudioParameterChoice>(
+        "clipMode", "Mode",
+        juce::StringArray { "Digital", "Analog" }, 0));
+
     // OVERSAMPLE MODE – 0:x1, 1:x2, 2:x4, 3:x8, 4:x16, 5:x32, 6:x64
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
         "oversampleMode", "Oversample Mode",
@@ -137,6 +141,25 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
 }
 
 FruityClipAudioProcessor::~FruityClipAudioProcessor() = default;
+
+FruityClipAudioProcessor::ClipMode FruityClipAudioProcessor::getClipMode() const
+{
+    if (auto* p = parameters.getRawParameterValue ("clipMode"))
+    {
+        const int idx = juce::jlimit (0, 1, (int) p->load());
+        return idx == 0 ? ClipMode::Digital : ClipMode::Analog;
+    }
+
+    return ClipMode::Digital;
+}
+
+bool FruityClipAudioProcessor::isLimiterEnabled() const
+{
+    if (auto* p = parameters.getRawParameterValue ("useLimiter"))
+        return p->load() >= 0.5f;
+
+    return false;
+}
 
 int FruityClipAudioProcessor::getLookModeIndex() const
 {
@@ -280,6 +303,8 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     // Reset SAT bass-tilt state
     resetSatState (getTotalNumOutputChannels());
 
+    resetSilkState (getTotalNumOutputChannels());
+
     const float sr = (float) sampleRate;
 
     // One-pole lowpass factor for 150 Hz split (0–150 = low band)
@@ -370,6 +395,22 @@ void FruityClipAudioProcessor::resetOttState (int numChannels)
     }
 }
 
+void FruityClipAudioProcessor::resetSilkState (int numChannels)
+{
+    silkStates.clear();
+
+    if (numChannels <= 0)
+        return;
+
+    silkStates.resize ((size_t) numChannels);
+
+    for (auto& st : silkStates)
+    {
+        st.pre = 0.0f;
+        st.de  = 0.0f;
+    }
+}
+
 //==============================================================
 // SAT bass-tilt reset
 //==============================================================
@@ -411,6 +452,83 @@ float FruityClipAudioProcessor::processLimiterSample (float x)
     return x * limiterGain;
 }
 
+float FruityClipAudioProcessor::applySilkPreEmphasis (float x, int channel, float silkAmount)
+{
+    if (sampleRate <= 0.0)
+        return x;
+
+    auto& st = silkStates[(size_t) channel];
+
+    const float fc = juce::jmap (silkAmount, 0.0f, 1.0f, 3500.0f, 9000.0f);
+    const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / (float) sampleRate);
+
+    st.pre = alpha * st.pre + (1.0f - alpha) * x;
+
+    const float high = x - st.pre;
+    const float tilt = juce::jmap (silkAmount, 0.0f, 1.0f, 1.0f, 1.35f);
+
+    return x + tilt * high;
+}
+
+float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float silkAmount)
+{
+    if (sampleRate <= 0.0)
+        return x;
+
+    auto& st = silkStates[(size_t) channel];
+
+    const float fc = juce::jmap (silkAmount, 0.0f, 1.0f, 12000.0f, 7000.0f);
+    const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / (float) sampleRate);
+
+    st.de = alpha * st.de + (1.0f - alpha) * x;
+
+    const float blend = juce::jmap (silkAmount, 0.0f, 1.0f, 0.0f, 0.2f);
+
+    return juce::jlimit (-2.5f, 2.5f, x + blend * (st.de - x));
+}
+
+float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel)
+{
+    auto* ottParam = parameters.getRawParameterValue ("ottAmount");
+    const float silkAmount = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
+
+    const float pre = applySilkPreEmphasis (x, channel, silkAmount);
+
+    const float drive = 1.0f + 0.5f * silkAmount;
+    const float xd    = pre * drive;
+
+    const float a = 0.4f * silkAmount;
+    const float y = xd - a * xd * xd * xd;
+
+    return applySilkDeEmphasis (y, channel, silkAmount);
+}
+
+float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
+{
+    const float threshold = 1.0f;
+
+    auto* ottParam = parameters.getRawParameterValue ("ottAmount");
+    const float silk = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
+    const float drive = 1.0f + 0.3f * silk;
+
+    const float in = x * drive;
+    const float absIn = std::abs (in);
+    const float sign  = (in >= 0.0f ? 1.0f : -1.0f);
+
+    float out = in;
+
+    if (absIn > threshold)
+    {
+        const float over = absIn - threshold;
+        const float soft = threshold + std::tanh (over);
+        out = sign * soft;
+    }
+
+    out *= 0.9f;
+
+    return out;
+}
+
 //==============================================================
 // CORE DSP
 //==============================================================
@@ -428,6 +546,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         resetOttState (numChannels);
     if ((int) satStates.size() < numChannels)
         resetSatState (numChannels);
+    if ((int) silkStates.size() < numChannels)
+        resetSilkState (numChannels);
 
     const bool isOffline = isNonRealtime();
 
@@ -435,11 +555,14 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto* ottParam    = parameters.getRawParameterValue ("ottAmount");
     auto* satParam    = parameters.getRawParameterValue ("satAmount");
     auto* modeParam   = parameters.getRawParameterValue ("useLimiter");
+    auto* clipModeParam = parameters.getRawParameterValue ("clipMode");
 
     const float inputGainDb   = gainParam   ? gainParam->load()   : 0.0f;
     const float ottAmountRaw  = ottParam    ? ottParam->load()    : 0.0f;
     const float satAmountRaw  = satParam    ? satParam->load()    : 0.0f;
     const bool  useLimiter    = modeParam   ? (modeParam->load() >= 0.5f) : false;
+    const int   clipModeIndex = clipModeParam ? juce::jlimit (0, 1, (int) clipModeParam->load()) : 0;
+    const ClipMode clipMode   = clipModeIndex == 0 ? ClipMode::Digital : ClipMode::Analog;
 
     const float ottAmount  = juce::jlimit (0.0f, 1.0f, ottAmountRaw);
     const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
@@ -510,10 +633,26 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         //==========================================================
-        // PRE-CHAIN: GAIN + OTT (always at base rate)
+        // PRE-CHAIN: GAIN + LOVE/SILK (always at base rate)
         //==========================================================
 
-        if (ottAmount <= 0.0f)
+        if (clipMode == ClipMode::Analog)
+        {
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                float* samples = buffer.getWritePointer (ch);
+
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float y = samples[i] * inputDrive;
+                    y = applySilkAnalogSample (y, ch);
+                    samples[i] = y;
+                }
+            }
+
+            lastOttGain = 1.0f;
+        }
+        else if (ottAmount <= 0.0f)
         {
             // OTT fully bypassed: apply only INPUT DRIVE in place.
             for (int ch = 0; ch < numChannels; ++ch)
@@ -708,6 +847,10 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         sample = processLimiterSample (sample);
                     }
+                    else if (clipMode == ClipMode::Analog)
+                    {
+                        sample = applyClipperAnalogSample (sample);
+                    }
                     else
                     {
                         // Pure hard clip in oversampled domain
@@ -739,6 +882,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // SAT already applied previously if needed.
                     if (limiterOn)
                         sample = processLimiterSample (sample);
+                    else if (clipMode == ClipMode::Analog)
+                        sample = applyClipperAnalogSample (sample);
                     else
                     {
                         // Pure hard clip at base rate

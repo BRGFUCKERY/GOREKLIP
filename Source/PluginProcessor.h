@@ -7,6 +7,12 @@
 class FruityClipAudioProcessor : public juce::AudioProcessor
 {
 public:
+    enum class ClipMode
+    {
+        Digital = 0,
+        Analog
+    };
+
     FruityClipAudioProcessor();
     ~FruityClipAudioProcessor() override;
 
@@ -67,6 +73,9 @@ public:
     // True if we currently have enough signal to show LUFS
     bool getGuiHasSignal() const { return guiSignalEnv.load() > 0.2f; }
 
+    ClipMode getClipMode() const;
+    bool isLimiterEnabled() const;
+
     int  getLookModeIndex() const;
     void setLookModeIndex (int newIndex);
 
@@ -104,6 +113,11 @@ private:
     // Limiter sample processor
     float processLimiterSample (float x);
 
+    float applySilkAnalogSample (float x, int channel);
+    float applySilkPreEmphasis (float x, int channel, float silkAmount);
+    float applySilkDeEmphasis   (float x, int channel, float silkAmount);
+    float applyClipperAnalogSample (float x);
+
     // Oversampling config helper
     void updateOversampling (int osIndex, int numChannels);
 
@@ -139,6 +153,16 @@ private:
     float ottAlpha     = 0.0f;   // one-pole LP factor for 150 Hz split
     float ottEnvAlpha  = 0.0f;   // envelope smoothing factor
     float lastOttGain  = 1.0f;   // now stores static trim (for debug/consistency)
+
+    struct SilkState
+    {
+        float pre = 0.0f;
+        float de  = 0.0f;
+    };
+
+    void resetSilkState (int numChannels);
+
+    std::vector<SilkState> silkStates;
 
     //==========================================================
     // SAT bass-tilt state (for gradual TikTok bass boost)
