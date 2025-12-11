@@ -83,16 +83,13 @@ public:
         addAndMakeVisible (liveCombo);
         addAndMakeVisible (offlineCombo);
 
-        // --- Force LIVE combo to match current oversampleMode parameter on open ---
+        // --- Force LIVE combo to match the globally stored LIVE oversample ---
         {
             int initialLiveIndex = processor.getStoredLiveOversampleIndex(); // 0..6
-
-            if (auto* osParam = parameters.getRawParameterValue ("oversampleMode"))
-                initialLiveIndex = juce::jlimit (0, 6, (int) osParam->load());
+            initialLiveIndex     = juce::jlimit (0, 6, initialLiveIndex);
 
             // Combo item IDs are 1..7 ==> index 0..6
-            liveCombo.setSelectedId (juce::jlimit (0, 6, initialLiveIndex) + 1,
-                                     juce::dontSendNotification);
+            liveCombo.setSelectedId (initialLiveIndex + 1, juce::dontSendNotification);
         }
 
         // LIVE column is bound directly to "oversampleMode" parameter (0..6)
@@ -606,6 +603,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
             const int id = i + 1; // 0..6 -> ids 1..7
             oversampleLiveBox.addItem (modes[i], id);
         }
+    }
+
+    // Force initial selection to the stored LIVE oversample index to avoid any
+    // empty/black dropdown state and to mirror the global default.
+    {
+        const int liveIndex = processor.getStoredLiveOversampleIndex(); // 0..6
+        const int liveId    = juce::jlimit (1, 7, liveIndex + 1);       // 1..7
+        oversampleLiveBox.setSelectedId (liveId, juce::dontSendNotification);
     }
 
     addAndMakeVisible (oversampleLiveBox);
