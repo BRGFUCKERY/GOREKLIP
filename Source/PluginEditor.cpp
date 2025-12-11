@@ -83,9 +83,32 @@ public:
         addAndMakeVisible (liveCombo);
         addAndMakeVisible (offlineCombo);
 
+        // --- Force LIVE combo to match current oversampleMode parameter on open ---
+        {
+            int initialLiveIndex = processor.getStoredLiveOversampleIndex(); // 0..6
+
+            if (auto* osParam = parameters.getRawParameterValue ("oversampleMode"))
+                initialLiveIndex = juce::jlimit (0, 6, (int) osParam->load());
+
+            // Combo item IDs are 1..7 ==> index 0..6
+            liveCombo.setSelectedId (juce::jlimit (0, 6, initialLiveIndex) + 1,
+                                     juce::dontSendNotification);
+        }
+
         // LIVE column is bound directly to "oversampleMode" parameter (0..6)
         liveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
             parameters, "oversampleMode", liveCombo);
+
+        // When LIVE combo changes here, also update the stored global default
+        liveCombo.onChange = [this]
+        {
+            const int selectedId = liveCombo.getSelectedId(); // 1..7
+            if (selectedId > 0)
+            {
+                const int idx = juce::jlimit (0, 6, selectedId - 1); // 0..6
+                processor.setStoredLiveOversampleIndex (idx);
+            }
+        };
 
         // OFFLINE column stored in userSettings
         {
