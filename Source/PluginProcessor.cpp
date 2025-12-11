@@ -3,6 +3,16 @@
 
 #include <cmath>
 
+namespace
+{
+constexpr float kSilkMaxDrive      = 1.20f; // saturation drive for Silk Max reference match
+constexpr float kSilkMaxAsym       = 0.020f; // asymmetry offset for even harmonics
+constexpr float kSilkMaxGain       = 0.95f;  // output trim to align against hardware capture
+constexpr float kSilkPreEmphasisDb = 1.0f;   // gentle HF boost into the saturator
+constexpr float kSilkDeEmphasisDb  = -2.0f;  // HF soften post saturation
+constexpr float kSilkLowShelfDb    = 1.0f;   // low-mid weight after HF softening
+}
+
 //==============================================================
 // Parameter layout
 //==============================================================
