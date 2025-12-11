@@ -450,7 +450,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         guiBurn.store (0.0f);
     }
 
-    if (! bypassNow)
+    else
     {
         // Oversampling mode can be changed at runtime – keep Oversampling object in sync
         if (osIndex != currentOversampleIndex || (! oversampler))
@@ -942,6 +942,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // That way, our LUFS readout tracks Youlean/MiniMeters closely,
     // while the LOOK/BURN animation can stay lazy / vibey.
     guiLufs.store (lufs);
+}
 }
 
 //==============================================================
