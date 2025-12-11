@@ -240,6 +240,7 @@ private:
 
     void showBypassInfoPopup();
     void showOversampleMenu();
+    void showOversampleLiveMenu();
 
     friend class MiddleFingerLookAndFeel;
 
