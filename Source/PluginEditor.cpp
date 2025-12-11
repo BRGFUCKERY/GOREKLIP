@@ -87,6 +87,15 @@ public:
         liveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
             parameters, "oversampleMode", liveCombo);
 
+        // Ensure the LIVE combo in the OVERSAMPLING window starts from
+        // the current "oversampleMode" parameter, so it always matches
+        // the top-right pentagram and the processor state.
+        if (auto* osParam = parameters.getRawParameterValue ("oversampleMode"))
+        {
+            const int idx = juce::jlimit (0, 6, (int) osParam->load());
+            liveCombo.setSelectedItemIndex (idx, juce::dontSendNotification);
+        }
+
         // OFFLINE column stored in userSettings
         {
             const int offlineIndex = processor.getStoredOfflineOversampleIndex(); // -1..6
@@ -312,13 +321,21 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     const float iconSize   = (float) height * 0.55f;
     const float iconRadius = iconSize * 0.5f;
 
-    float iconCenterX = bounds.getRight() - iconSize * 0.9f; // keep existing X logic
+    // Same horizontal margin for both sides so they’re perfectly symmetric.
+    const float margin     = iconSize * 0.9f;
+
+    float iconCenterX = bounds.getCentreX();
     const float iconCenterY = bounds.getCentreY();
 
-    if (isOversampleLive)
+    if (isLookBox)
     {
-        const float distanceFromLeft = iconCenterX - bounds.getX();
-        iconCenterX = bounds.getRight() - distanceFromLeft;
+        // Left pentagram: fixed distance from LEFT edge
+        iconCenterX = bounds.getX() + margin;
+    }
+    else if (isOversampleLive)
+    {
+        // Right pentagram: same distance from RIGHT edge
+        iconCenterX = bounds.getRight() - margin;
     }
 
     juce::Rectangle<int> starBounds (
@@ -593,6 +610,15 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         apvts, "oversampleMode", oversampleLiveBox);
+
+    // Make sure the top-right oversample pentagram starts at the
+    // actual "oversampleMode" parameter value (0..6 -> x1..x64),
+    // so it always matches the current default / project state.
+    if (auto* osParam = apvts.getRawParameterValue ("oversampleMode"))
+    {
+        const int idx = juce::jlimit (0, 6, (int) osParam->load());
+        oversampleLiveBox.setSelectedItemIndex (idx, juce::dontSendNotification);
+    }
 
     auto setupValuePopup = [this] (FineControlSlider& slider,
                                    juce::Label& lbl,
