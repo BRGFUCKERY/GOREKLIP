@@ -205,15 +205,13 @@ private:
     juce::Label ottValueLabel;
     juce::Label satValueLabel;
 
-    // Oversample mode (x1/x2/x4/x8/x16) – tiny top-right dropdown
-    juce::ComboBox oversampleBox;
+    // Left SETTINGS dropdown only (no top-right oversample menu anymore)
     juce::ComboBox lookBox;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
 
     // GUI burn value (cached from processor)
     float lastBurn = 0.0f;
