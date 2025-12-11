@@ -573,6 +573,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     oversampleBox.setLookAndFeel (&comboLnf);
 
+    // Populate with the same modes as the oversample parameter
+    juce::StringArray osModes { "x1", "x2", "x4", "x8", "x16", "x32", "x64" };
+    for (int i = 0; i < osModes.size(); ++i)
+    {
+        const int id = i + 1; // 1-based IDs matching oversampleMode choice indices
+        oversampleBox.addItem (osModes[i], id);
+    }
+
     // This one should behave like a normal ComboBox: user clicks it directly.
     oversampleBox.setInterceptsMouseClicks (true, true);
 
@@ -1049,6 +1057,9 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
     // Use the same LookAndFeel as the combo arrows – black popup, white text
     menu.setLookAndFeel (&comboLnf);
 
+    // Decorative line above SETTINGS (______ like in KLIPERBIBLE text)
+    menu.addSectionHeader ("________");
+
     // Title
     menu.addSectionHeader ("SETTINGS");
 
@@ -1078,12 +1089,15 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
                   true,
                   mode == LookMode::Static);
 
+    // Separator between LOOK and OVERSAMPLE
+    menu.addSeparator();
+
     // New OVERSAMPLE entry (opens oversample settings dialog)
     menu.addItem (idOversampleMenu,
                   "OVERSAMPLE",
                   true);
 
-    // Separator line
+    // Separator line before KLIPERBIBLE
     menu.addSeparator();
 
     // KLIPERBIBLE – clickable, NEVER checkable (no tick flag)
@@ -1091,7 +1105,7 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
                   "KLIPERBIBLE",
                   true); // enabled, but not a toggle
 
-    // Handle selection
+    // Handle selection...
     menu.showMenuAsync (juce::PopupMenu::Options(),
                         [this] (int result)
                         {
