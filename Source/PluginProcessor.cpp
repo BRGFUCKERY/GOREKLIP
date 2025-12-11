@@ -459,13 +459,21 @@ float FruityClipAudioProcessor::applySilkPreEmphasis (float x, int channel, floa
 
     auto& st = silkStates[(size_t) channel];
 
-    const float fc = juce::jmap (silkAmount, 0.0f, 1.0f, 3500.0f, 9000.0f);
+    // Shape the control for smoother response
+    const float s   = juce::jlimit (0.0f, 1.0f, silkAmount);
+    const float amt = std::pow (s, 0.8f);
+
+    // One-pole lowpass around a few kHz to derive a "low" band
+    const float fc    = juce::jmap (amt, 0.0f, 1.0f, 2500.0f, 6000.0f);
     const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / (float) sampleRate);
 
     st.pre = alpha * st.pre + (1.0f - alpha) * x;
 
-    const float high = x - st.pre;
-    const float tilt = juce::jmap (silkAmount, 0.0f, 1.0f, 1.0f, 1.35f);
+    const float low  = st.pre;
+    const float high = x - low;
+
+    // Gentle HF tilt – starts at 0, tops out around +2 dB-ish
+    const float tilt = juce::jmap (amt, 0.0f, 1.0f, 0.0f, 0.25f);
 
     return x + tilt * high;
 }
@@ -477,12 +485,17 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
 
     auto& st = silkStates[(size_t) channel];
 
-    const float fc = juce::jmap (silkAmount, 0.0f, 1.0f, 12000.0f, 7000.0f);
+    // Same shaped control
+    const float s   = juce::jlimit (0.0f, 1.0f, silkAmount);
+    const float amt = std::pow (s, 0.8f);
+
+    // One-pole lowpass in the upper band to gently smooth top end
+    const float fc    = juce::jmap (amt, 0.0f, 1.0f, 9000.0f, 6500.0f);
     const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / (float) sampleRate);
 
     st.de = alpha * st.de + (1.0f - alpha) * x;
 
-    const float blend = juce::jmap (silkAmount, 0.0f, 1.0f, 0.0f, 0.2f);
+    const float blend = juce::jmap (amt, 0.0f, 1.0f, 0.0f, 0.35f);
 
     return juce::jlimit (-2.5f, 2.5f, x + blend * (st.de - x));
 }
@@ -490,17 +503,32 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
 float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel)
 {
     auto* ottParam = parameters.getRawParameterValue ("ottAmount");
-    const float silkAmount = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
+    const float rawSilk = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
 
-    const float pre = applySilkPreEmphasis (x, channel, silkAmount);
+    // Shape the control to avoid "all the action at the top"
+    const float s = std::pow (rawSilk, 0.8f);
 
-    const float drive = 1.0f + 0.5f * silkAmount;
+    // For effectively zero silk, bypass this stage
+    if (s <= 1.0e-4f)
+        return x;
+
+    // Pre-emphasis: subtle HF tilt into the non-linearity
+    const float pre = applySilkPreEmphasis (x, channel, s);
+
+    // Gentle drive and cubic curve
+    const float drive = 1.0f + 0.25f * s;
     const float xd    = pre * drive;
 
-    const float a = 0.4f * silkAmount;
-    const float y = xd - a * xd * xd * xd;
+    const float a = 0.18f * s;
+    float y       = xd - a * xd * xd * xd;
 
-    return applySilkDeEmphasis (y, channel, silkAmount);
+    // Static trim so silk does not explode the level
+    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, -1.5f);
+    const float trim   = juce::Decibels::decibelsToGain (trimDb);
+    y *= trim;
+
+    // De-emphasis: gently smooth the very top end again
+    return applySilkDeEmphasis (y, channel, s);
 }
 
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
