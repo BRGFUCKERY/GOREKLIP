@@ -930,8 +930,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     guiSignalEnv.store (newEnv);
 
     //==========================================================
-    // GUI LUFS readout – show true short-term value (no extra smoothing)
+    // GUI LUFS readout – DIRECT calibrated short-term value
     //==========================================================
+    // At this point:
+    //   - 'lufs' is already the calibrated short-term LUFS
+    //     (includes the +3 dB offset so we sit on top of MiniMeters).
+    //   - gating behaviour is handled by guiSignalEnv / getGuiHasSignal().
+    //
+    // We no longer add extra “mastering ballistics” on the NUMBER itself.
+    // That way, our LUFS readout tracks Youlean/MiniMeters closely,
+    // while the LOOK/BURN animation can stay lazy / vibey.
     guiLufs.store (lufs);
 }
 
