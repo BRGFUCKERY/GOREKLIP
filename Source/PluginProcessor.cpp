@@ -116,21 +116,14 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
             userSettings->getIntValue ("offlineOversampleIndex", -1);
 
         // ------------------------------------------------------
-        // LIVE oversample global default (0 = x1)
+        // LIVE oversample global default
         // ------------------------------------------------------
-        if (! userSettings->containsKey ("liveOversampleIndex"))
-            userSettings->setValue ("liveOversampleIndex", 0);
-
-        storedLiveOversampleIndex = juce::jlimit (0, 6,
-            userSettings->getIntValue ("liveOversampleIndex", 0));
-    }
-
-    // After userSettings are initialised, push LIVE oversample default
-    // into the "oversampleMode" parameter for brand new instances.
-    if (auto* osParam = parameters.getRawParameterValue ("oversampleMode"))
-    {
-        const int liveDefault = juce::jlimit (0, 6, getStoredLiveOversampleIndex());
-        osParam->store ((float) liveDefault);
+        // We no longer store or restore a global LIVE oversample preference.
+        // New instances simply use the default value of the "oversampleMode"
+        // parameter (0 = 1x), and any changes are saved per-instance by the DAW.
+        // Leave storedLiveOversampleIndex at its default of 0 so any legacy
+        // code that reads it still sees "1x".
+        storedLiveOversampleIndex = 0;
     }
 
     if (auto* choiceParam = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("lookMode")))
@@ -218,13 +211,6 @@ void FruityClipAudioProcessor::setStoredOfflineOversampleIndex (int index)
 
 int FruityClipAudioProcessor::getStoredLiveOversampleIndex() const
 {
-    if (userSettings)
-    {
-        const int stored = userSettings->getIntValue ("liveOversampleIndex",
-                                                      storedLiveOversampleIndex);
-        return juce::jlimit (0, 6, stored);
-    }
-
     return juce::jlimit (0, 6, storedLiveOversampleIndex);
 }
 
@@ -232,12 +218,6 @@ void FruityClipAudioProcessor::setStoredLiveOversampleIndex (int index)
 {
     index = juce::jlimit (0, 6, index);
     storedLiveOversampleIndex = index;
-
-    if (userSettings)
-    {
-        userSettings->setValue ("liveOversampleIndex", index);
-        userSettings->saveIfNeeded();
-    }
 }
 
 //==============================================================
