@@ -445,8 +445,12 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
         // In bypass mode, keep GUI visuals static
         guiBurn.store (0.0f);
-        guiSignalEnv.store (0.0f);
-        // Do not modify guiLufs here; it will be ignored visually in the editor
+        guiBurnLufs.store (0.0f);
+
+        // IMPORTANT:
+        // - Do NOT touch guiSignalEnv or guiLufs here.
+        //   We want the editor to keep using the last LUFS value
+        //   and the last gate state while bypass is engaged.
 
         return;
     }
@@ -828,7 +832,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     guiBurn.store (smoothedBurn);
 
     //==========================================================
-    // Short-term LUFS (~3 s window, like "short term" meters)
+    // Short-term LUFS (~1 s window for snappier meter)
     //   + signal gating envelope (for hiding the meter)
     //==========================================================
     if (sampleRate <= 0.0)
@@ -836,8 +840,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     const float blockDurationSec = (float) numSamples / (float) sampleRate;
 
-    // Exponential integrator approximating a 3 s short-term window
-    const float tauShortSec = 3.0f; // ITU short-term ≈ 3 s
+    // Exponential integrator approximating about a 1 s short-term window
+    const float tauShortSec = 1.0f;
     float alphaMs = 0.0f;
     if (tauShortSec > 0.0f)
         alphaMs = 1.0f - std::exp (-blockDurationSec / tauShortSec);
@@ -926,13 +930,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     guiSignalEnv.store (newEnv);
 
     //==========================================================
-    // GUI LUFS readout – slower rise with signal, reasonably quick decay when silent
+    // GUI LUFS readout – show true short-term value (no extra smoothing)
     //==========================================================
-    const float prevLufs  = guiLufs.load();
-    const float lufsAlpha = hasSignalNow ? 0.12f : 0.50f; // mastering-style ballistics with faster falloff when silent
-    const float lufsSmooth = (1.0f - lufsAlpha) * prevLufs + lufsAlpha * lufs;
-
-    guiLufs.store (lufsSmooth);
+    guiLufs.store (lufs);
 }
 
 //==============================================================

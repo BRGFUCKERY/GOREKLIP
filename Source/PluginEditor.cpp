@@ -778,10 +778,18 @@ void FruityClipAudioProcessorEditor::resized()
                          modeSlider.getWidth(),
                          labelH);
 
-    // LUFS label can stay where it was –
-    // reuse the previous bounds logic if needed.
-    // Just keep it centered-ish at the top as before.
-    auto lufsBounds = juce::Rectangle<int> (0, 0, w, barH).reduced (80, 0);
+    // LUFS label sits above the MODE/clipper finger
+    const int lufsHeight = 18;
+    const int lufsMargin = 4;
+
+    const auto modeBounds = modeSlider.getBounds();
+
+    juce::Rectangle<int> lufsBounds (
+        modeBounds.getX(),
+        juce::jmax (0, modeBounds.getY() - lufsHeight - lufsMargin),
+        modeBounds.getWidth(),
+        lufsHeight);
+
     lufsLabel.setBounds (lufsBounds);
 }
 
@@ -796,9 +804,26 @@ void FruityClipAudioProcessorEditor::timerCallback()
 
     if (bypassNow)
     {
-        // In bypass mode, keep background static and hide LUFS
+        // In bypass mode, kill burn but keep LUFS visible while signal is present
         lastBurn = 0.0f;
-        lufsLabel.setVisible (false);
+
+        const float lufs      = processor.getGuiLufs();
+        const bool  hasSignal = processor.getGuiHasSignal();
+
+        if (! hasSignal)
+        {
+            lufsLabel.setVisible (false);
+            lufsLabel.setText ({}, juce::dontSendNotification);
+        }
+        else
+        {
+            lufsLabel.setVisible (true);
+            lufsLabel.setText (juce::String (lufs, 2) + " LUFS",
+                               juce::dontSendNotification);
+        }
+
+        repaint();
+        return;
     }
     else
     {
