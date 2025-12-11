@@ -589,6 +589,15 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "oversampleMode", oversampleBox);
 
+    oversampleBox.onChange = [this]
+    {
+        if (auto* osParam = processor.getParametersState().getRawParameterValue ("oversampleMode"))
+        {
+            const int liveIndex = juce::jlimit (0, 6, (int) osParam->load());
+            processor.setStoredLiveOversampleIndex (liveIndex);
+        }
+    };
+
     auto setupValuePopup = [this] (FineControlSlider& slider,
                                    juce::Label& lbl,
                                    std::function<juce::String()> makeText)
@@ -878,68 +887,49 @@ void FruityClipAudioProcessorEditor::resized()
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
-    const bool bypassNow = processor.getGainBypass();
-    const LookMode lookMode = getLookMode(); // 0=COOKED, 1=LUFS, 2=STATIC
+    // Always read the look mode from the processor so we stay in sync
+    auto lookMode = getLookMode();
     currentLookMode = lookMode;
 
-    if (bypassNow)
+    // Base burn from processor (GUI burn or LUFS burn or static)
+    switch (lookMode)
     {
-        // In bypass mode, kill burn but keep LUFS visible while signal is present
+        case LookMode::Lufs:
+            lastBurn = processor.getGuiBurnLufs();
+            break;
+
+        case LookMode::Static:
+            lastBurn = 0.0f;
+            break;
+
+        case LookMode::Cooked:
+        default:
+            lastBurn = processor.getGuiBurn();
+            break;
+    }
+
+    const bool bypassNow = processor.getGainBypass();
+
+    // If bypass is on: burn goes to 0, but LUFS still keeps moving.
+    if (bypassNow)
         lastBurn = 0.0f;
 
-        const float lufs      = processor.getGuiLufs();
-        const bool  hasSignal = processor.getGuiHasSignal();
+    const float lufs      = processor.getGuiLufs();
+    const bool  hasSignal = processor.getGuiHasSignal();
 
-        if (! hasSignal)
-        {
-            lufsLabel.setVisible (false);
-            lufsLabel.setText ({}, juce::dontSendNotification);
-        }
-        else
-        {
-            lufsLabel.setVisible (true);
-            lufsLabel.setText (juce::String (lufs, 2) + " LUFS",
-                               juce::dontSendNotification);
-        }
-
-        repaint();
-        return;
+    if (! hasSignal)
+    {
+        lufsLabel.setVisible (false);
+        lufsLabel.setText ({}, juce::dontSendNotification);
     }
     else
     {
-        // Normal reactive background and LUFS display
-        switch (lookMode)
-        {
-            case LookMode::Lufs:
-                lastBurn = processor.getGuiBurnLufs();
-                break;
-
-            case LookMode::Static:
-                lastBurn = 0.0f; // no burn, static background
-                break;
-
-            case LookMode::Cooked:
-            default:
-                lastBurn = processor.getGuiBurn();
-                break;
-        }
-
-        const float lufs      = processor.getGuiLufs();
-        const bool  hasSignal = processor.getGuiHasSignal();
-
-        if (! hasSignal)
-        {
-            lufsLabel.setVisible (false);
-        }
-        else
-        {
-            lufsLabel.setVisible (true);
-            juce::String text = juce::String (lufs, 2) + " LUFS";
-            lufsLabel.setText (text, juce::dontSendNotification);
-        }
+        lufsLabel.setVisible (true);
+        lufsLabel.setText (juce::String (lufs, 2) + " LUFS",
+                           juce::dontSendNotification);
     }
 
-    // --- NEW: drive pentagram + x1 colour from lastBurn (0..1) ---
+    // Drive pentagrams / x1 colour from lastBurn (0..1)
     const float burnForIcons = juce::jlimit (0.0f, 1.0f, lastBurn);
     comboLnf.setBurnAmount (burnForIcons);
 
@@ -947,12 +937,9 @@ void FruityClipAudioProcessorEditor::timerCallback()
         0, 255, (int) std::round (burnForIcons * 255.0f));
     auto burnColour = juce::Colour::fromRGB (level, level, level);
 
-    // Both top pentagrams follow the same burn colour via arrowColourId.
-    // Text stays transparent, we only care about the icon.
-    lookBox.setColour      (juce::ComboBox::arrowColourId, burnColour);
+    lookBox.setColour       (juce::ComboBox::arrowColourId, burnColour);
     oversampleBox.setColour (juce::ComboBox::arrowColourId, burnColour);
 
-    // Ensure both combo boxes repaint with the new colour
     lookBox.repaint();
     oversampleBox.repaint();
 
@@ -964,7 +951,7 @@ void FruityClipAudioProcessorEditor::showOversampleMenu()
     auto& state = processor.getParametersState();
 
     auto content = std::make_unique<OversampleSettingsComponent> (processor, state);
-    content->setSize (380, 210);
+    content->setSize (320, 150);
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle              = "OVERSAMPLING";
