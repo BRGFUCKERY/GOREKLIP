@@ -791,26 +791,31 @@ void FruityClipAudioProcessorEditor::resized()
 
     // --- Top bar: left SETTINGS pentagram + right LIVE oversample dropdown ---
     const int topMargin = 6;
-    const int barH      = juce::jmax (16, h / 20);
 
-    // Make both boxes square: width == height == barH
+    // Height of the top bar (and of both combo boxes)
+    const int barH = juce::jmax (16, h / 20);
+
+    // Make both boxes perfectly square
     const int boxSize = barH;
 
-    // Left SETTINGS box (pentagram)
-    const int lookX = topMargin;
-    const int lookY = topMargin;
-    lookBox.setBounds (lookX, lookY, boxSize, barH);
+    // Base rectangle for the left box (SETTINGS pentagram)
+    juce::Rectangle<int> leftBox (topMargin,
+                                  topMargin,
+                                  boxSize,
+                                  boxSize);
 
-    // Right LIVE oversample box
-    // Distance from right edge == topMargin -> perfect horizontal symmetry
-    const int osWidth  = boxSize;
-    const int osX      = w - topMargin - osWidth;
-    const int osY      = topMargin;
-    oversampleLiveBox.setBounds (osX, osY, osWidth, barH);
+    // Mirror that rectangle horizontally for the right box
+    juce::Rectangle<int> rightBox (w - topMargin - boxSize,
+                                   topMargin,
+                                   boxSize,
+                                   boxSize);
+
+    // Apply bounds to the actual ComboBoxes
+    lookBox.setBounds (leftBox);
+    oversampleLiveBox.setBounds (rightBox);
 
     // --------------------------------------------------
     // Existing layout for knobs, labels, LUFS label etc.
-    // Keep exactly the same maths you already had below.
     // --------------------------------------------------
     const int knobSize = juce::jmin (w / 7, h / 3);
     const int spacing  = knobSize / 2;
