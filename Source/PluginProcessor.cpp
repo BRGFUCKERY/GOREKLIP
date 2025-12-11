@@ -30,10 +30,10 @@ FruityClipAudioProcessor::createParameterLayout()
     params.push_back (std::make_unique<juce::AudioParameterBool>(
         "useLimiter", "Use Limiter", false));
 
-    // OVERSAMPLE MODE – 0:x1, 1:x2, 2:x4, 3:x8, 4:x16
+    // OVERSAMPLE MODE – 0:x1, 1:x2, 2:x4, 3:x8, 4:x16, 5:x32, 6:x64
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
         "oversampleMode", "Oversample Mode",
-        juce::StringArray { "x1", "x2", "x4", "x8", "x16" }, 0));
+        juce::StringArray { "x1", "x2", "x4", "x8", "x16", "x32", "x64" }, 0));
 
     params.push_back (std::make_unique<juce::AudioParameterChoice>(
         "lookMode", "Look Mode",
@@ -94,20 +94,12 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
         if (! userSettings->containsKey ("lookMode"))
             userSettings->setValue ("lookMode", 0);
 
+        // Default offline mode = -1 => follow LIVE ("SAME")
         if (! userSettings->containsKey ("offlineOversampleIndex"))
-            userSettings->setValue ("offlineOversampleIndex", 0);
+            userSettings->setValue ("offlineOversampleIndex", -1);
 
-        if (! userSettings->containsKey ("tripleFryLive"))
-            userSettings->setValue ("tripleFryLive", false);
-
-        if (! userSettings->containsKey ("tripleFryOffline"))
-            userSettings->setValue ("tripleFryOffline", false);
-
-        storedOfflineOversampleIndex = juce::jlimit (0, 4,
-            userSettings->getIntValue ("offlineOversampleIndex", 0));
-
-        storedTripleFryLiveEnabled    = userSettings->getBoolValue ("tripleFryLive", false);
-        storedTripleFryOfflineEnabled = userSettings->getBoolValue ("tripleFryOffline", false);
+        storedOfflineOversampleIndex = juce::jlimit (-1, 6,
+            userSettings->getIntValue ("offlineOversampleIndex", -1));
     }
 
     if (auto* choiceParam = dynamic_cast<juce::AudioParameterChoice*> (parameters.getParameter ("lookMode")))
@@ -156,15 +148,15 @@ void FruityClipAudioProcessor::setStoredLookMode (int modeIndex)
 int FruityClipAudioProcessor::getStoredOfflineOversampleIndex() const
 {
     if (userSettings)
-        return juce::jlimit (0, 4,
+        return juce::jlimit (-1, 6,
             userSettings->getIntValue ("offlineOversampleIndex", storedOfflineOversampleIndex));
 
-    return juce::jlimit (0, 4, storedOfflineOversampleIndex);
+    return juce::jlimit (-1, 6, storedOfflineOversampleIndex);
 }
 
 void FruityClipAudioProcessor::setStoredOfflineOversampleIndex (int index)
 {
-    index = juce::jlimit (0, 4, index);
+    index = juce::jlimit (-1, 6, index);
     storedOfflineOversampleIndex = index;
 
     if (userSettings)
@@ -174,60 +166,24 @@ void FruityClipAudioProcessor::setStoredOfflineOversampleIndex (int index)
     }
 }
 
-bool FruityClipAudioProcessor::getStoredTripleFryLiveEnabled() const
-{
-    if (userSettings)
-        return userSettings->getBoolValue ("tripleFryLive", storedTripleFryLiveEnabled);
-
-    return storedTripleFryLiveEnabled;
-}
-
-bool FruityClipAudioProcessor::getStoredTripleFryOfflineEnabled() const
-{
-    if (userSettings)
-        return userSettings->getBoolValue ("tripleFryOffline", storedTripleFryOfflineEnabled);
-
-    return storedTripleFryOfflineEnabled;
-}
-
-void FruityClipAudioProcessor::setStoredTripleFryLiveEnabled (bool enabled)
-{
-    storedTripleFryLiveEnabled = enabled;
-
-    if (userSettings)
-    {
-        userSettings->setValue ("tripleFryLive", enabled);
-        userSettings->saveIfNeeded();
-    }
-}
-
-void FruityClipAudioProcessor::setStoredTripleFryOfflineEnabled (bool enabled)
-{
-    storedTripleFryOfflineEnabled = enabled;
-
-    if (userSettings)
-    {
-        userSettings->setValue ("tripleFryOffline", enabled);
-        userSettings->saveIfNeeded();
-    }
-}
-
 //==============================================================
 // Oversampling config helper
 //==============================================================
 void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 {
-    // osIndex: 0=x1, 1=x2, 2=x4, 3:x8, 4:x16
-    currentOversampleIndex = juce::jlimit (0, 4, osIndex);
+    // osIndex: 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32, 6=x64
+    currentOversampleIndex = juce::jlimit (0, 6, osIndex);
 
     int numStages = 0; // factor = 2^stages
     switch (currentOversampleIndex)
     {
-        case 0: numStages = 0; break; // x1
+        case 0: numStages = 0; break; // x1 (no oversampling)
         case 1: numStages = 1; break; // x2
         case 2: numStages = 2; break; // x4
         case 3: numStages = 3; break; // x8
         case 4: numStages = 4; break; // x16
+        case 5: numStages = 5; break; // x32
+        case 6: numStages = 6; break; // x64
         default: numStages = 0; break;
     }
 
@@ -450,19 +406,24 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // This is the actual drive into OTT/SAT/clipper for default mode.
     const float inputDrive = inputGain * fruityCal * fruityFineCal;
 
-    int osIndex = 0;
+    // LIVE oversample index from parameter (0..6)
+    int liveOsIndex = 0;
+    if (auto* osModeParam = parameters.getRawParameterValue ("oversampleMode"))
+        liveOsIndex = juce::jlimit (0, 6, (int) osModeParam->load());
 
+    // Start from LIVE value
+    int osIndex = liveOsIndex;
+
+    // Offline override: -1 = SAME (follow live), 0..6 = explicit offline choice
     if (isOffline)
     {
-        osIndex = getStoredOfflineOversampleIndex();  // 0..4
-    }
-    else
-    {
-        if (auto* osModeParam = parameters.getRawParameterValue ("oversampleMode"))
-            osIndex = (int) osModeParam->load();
+        const int offlineIdx = getStoredOfflineOversampleIndex(); // -1..6
+        if (offlineIdx >= 0)
+            osIndex = offlineIdx;
     }
 
-    osIndex = juce::jlimit (0, 4, osIndex);
+    // Make sure final index is in range 0..6 for updateOversampling
+    osIndex = juce::jlimit (0, 6, osIndex);
 
     //==========================================================
     // GAIN-BYPASS MODE:
@@ -680,105 +641,35 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     //==========================================================
     const bool useOversampling = (oversampler != nullptr && currentOversampleIndex > 0);
 
-    // TRIPLEFRY flags are still stored per live/offline in the processor.
-    const bool tripleFryActive = isOffline
-        ? getStoredTripleFryOfflineEnabled()
-        : getStoredTripleFryLiveEnabled();
-
-    // TripleFry is a clipper-only refinement mode. If limiter is on,
-    // we ignore TripleFry and behave like the normal single-pass limiter.
-    const bool tripleFryEnabled = (useOversampling && tripleFryActive && ! limiterOn);
-
     if (useOversampling)
     {
         juce::dsp::AudioBlock<float> block (buffer);
 
-        // Single oversample up/down for the whole block.
         auto osBlock      = oversampler->processSamplesUp (block);
         const int osNumSamples  = (int) osBlock.getNumSamples();
         const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
 
-        if (tripleFryEnabled)
+        // Single-pass oversampled distortion: limiter OR pure hard clip
+        for (int ch = 0; ch < osNumChannels; ++ch)
         {
-            //======================================================
-            // TRIPLEFRY – multi-stage CLIP refinement in OS domain
-            //   - No limiter involved
-            //   - One oversample pass, multiple clip stages
-            //======================================================
-            const int refinePasses = 3; // "TRIPLE" fry
+            float* samples = osBlock.getChannelPointer (ch);
 
-            for (int pass = 0; pass < refinePasses; ++pass)
+            for (int i = 0; i < osNumSamples; ++i)
             {
-                for (int ch = 0; ch < osNumChannels; ++ch)
+                float sample = samples[i];
+
+                if (limiterOn)
                 {
-                    float* samples = osBlock.getChannelPointer (ch);
-
-                    for (int i = 0; i < osNumSamples; ++i)
-                    {
-                        float sample = samples[i];
-
-                        // Pure hard clip for all TripleFry passes
-                        if (sample >  1.0f) sample =  1.0f;
-                        if (sample < -1.0f) sample = -1.0f;
-
-                        samples[i] = sample;
-                    }
+                    sample = processLimiterSample (sample);
                 }
-            }
-
-            for (int ch = 0; ch < osNumChannels; ++ch)
-            {
-                float* samples = osBlock.getChannelPointer (ch);
-
-                for (int i = 0; i < osNumSamples; ++i)
+                else
                 {
-                    float sample = samples[i];
-
-                    if (limiterOn)
-                    {
-                        sample = processLimiterSample (sample);
-                    }
-                    else
-                    {
-                        // Pure hard clip in oversampled domain
-                        if (sample >  1.0f) sample =  1.0f;
-                        if (sample < -1.0f) sample = -1.0f;
-                    }
-
-                    samples[i] = sample;
+                    // Pure hard clip in oversampled domain
+                    if (sample >  1.0f) sample =  1.0f;
+                    if (sample < -1.0f) sample = -1.0f;
                 }
-            }
-        }
-        else
-        {
-            //======================================================
-            // NORMAL oversampled path:
-            //   - Single pass of limiter OR clipper in OS domain
-            //   - Behavior stays the same as the original code
-            //======================================================
-            for (int ch = 0; ch < osNumChannels; ++ch)
-            {
-                float* samples = osBlock.getChannelPointer (ch);
 
-                for (int i = 0; i < osNumSamples; ++i)
-                {
-                    float sample = samples[i];
-
-                    // SAT has ALREADY been applied at base rate above.
-                    // Here we ONLY run limiter OR pure hard clip in OS domain.
-                    if (limiterOn)
-                    {
-                        sample = processLimiterSample (sample);
-                    }
-                    else
-                    {
-                        // Pure hard clip in oversampled domain
-                        if (sample >  1.0f) sample =  1.0f;
-                        if (sample < -1.0f) sample = -1.0f;
-                    }
-
-                    samples[i] = sample;
-                }
+                samples[i] = sample;
             }
         }
 

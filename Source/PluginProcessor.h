@@ -80,14 +80,9 @@ public:
     int getStoredLookMode() const;
     void setStoredLookMode (int modeIndex);
 
-    // Offline oversample index and TRIPLEFRY preferences (GUI + future DSP)
+    // Offline oversample index
     int  getStoredOfflineOversampleIndex() const;
     void setStoredOfflineOversampleIndex (int index);
-
-    bool getStoredTripleFryLiveEnabled() const;
-    bool getStoredTripleFryOfflineEnabled() const;
-    void setStoredTripleFryLiveEnabled (bool enabled);
-    void setStoredTripleFryOfflineEnabled (bool enabled);
 
     // Bypass all processing after input gain (for A/B)
     void setGainBypass (bool shouldBypass)        { gainBypass.store (shouldBypass); }
@@ -185,16 +180,16 @@ private:
     // Global user settings (e.g. preferred look mode)
     std::unique_ptr<juce::PropertiesFile> userSettings;
 
-    // Offline oversample / TRIPLEFRY preferences (UI + future DSP wiring)
-    int  storedOfflineOversampleIndex = 0; // 0:x1 .. 4:x16
-    bool storedTripleFryLiveEnabled   = false;
-    bool storedTripleFryOfflineEnabled = false;
+    // Offline oversample index:
+    //   -1 = follow LIVE setting ("SAME")
+    //    0 = x1, 1 = x2, 2 = x4, 3 = x8, 4 = x16, 5 = x32, 6 = x64
+    int  storedOfflineOversampleIndex = -1;
 
     //==========================================================
     // Oversampling
     //==========================================================
     std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
-    int currentOversampleIndex = 0;   // 0:x1, 1:x2, 2:x4, 3:x8, 4:x16
+    int currentOversampleIndex = 0;   // 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32, 6=x64
     int maxBlockSize           = 0;   // for oversampler->initProcessing
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)

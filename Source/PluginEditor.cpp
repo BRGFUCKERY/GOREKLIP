@@ -51,12 +51,21 @@ public:
         offlineLabel.setColour (juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible (offlineLabel);
 
-        // Oversample modes
-        juce::StringArray modes { "x1", "x2", "x4", "x8", "x16" };
+        // Oversample modes for LIVE: 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32, 6=x64
+        juce::StringArray modes { "x1", "x2", "x4", "x8", "x16", "x32", "x64" };
+
         for (int i = 0; i < modes.size(); ++i)
         {
             const int id = i + 1;
-            liveCombo.addItem    (modes[i], id);
+            liveCombo.addItem (modes[i], id);
+        }
+
+        // OFFLINE combo: first item is "SAME", then explicit x1..x64
+        offlineCombo.addItem ("SAME", 1); // id=1 => follow LIVE
+
+        for (int i = 0; i < modes.size(); ++i)
+        {
+            const int id = i + 2; // shift by 2 because id=1 is SAME
             offlineCombo.addItem (modes[i], id);
         }
 
@@ -74,45 +83,45 @@ public:
         addAndMakeVisible (liveCombo);
         addAndMakeVisible (offlineCombo);
 
-        // LIVE column is bound to oversampleMode parameter
+        // LIVE column is bound directly to "oversampleMode" parameter (0..6)
         liveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
             parameters, "oversampleMode", liveCombo);
 
         // OFFLINE column stored in userSettings
-        const int offlineIndex = processor.getStoredOfflineOversampleIndex();
-        offlineCombo.setSelectedId (offlineIndex + 1, juce::dontSendNotification);
-        offlineCombo.onChange = [this]
         {
-            const int idx = juce::jlimit (0, 4, offlineCombo.getSelectedId() - 1);
-            processor.setStoredOfflineOversampleIndex (idx);
-        };
+            const int offlineIndex = processor.getStoredOfflineOversampleIndex(); // -1..6
 
-        // TRIPLEFRY checkboxes
-        tripleFryLabel.setText ("TRIPLEFRY", juce::dontSendNotification);
-        tripleFryLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-        tripleFryLabel.setJustificationType (juce::Justification::centredLeft);
-        addAndMakeVisible (tripleFryLabel);
+            if (offlineIndex < 0)
+            {
+                // -1 => SAME
+                offlineCombo.setSelectedId (1, juce::dontSendNotification); // "SAME"
+            }
+            else
+            {
+                // 0..6 map to ids 2..8
+                offlineCombo.setSelectedId (offlineIndex + 2, juce::dontSendNotification);
+            }
 
-        tripleFryLiveButton.setButtonText ("LIVE");
-        tripleFryLiveButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
-        tripleFryLiveButton.setToggleState (processor.getStoredTripleFryLiveEnabled(), juce::dontSendNotification);
-        tripleFryLiveButton.onClick = [this]
-        {
-            processor.setStoredTripleFryLiveEnabled (tripleFryLiveButton.getToggleState());
-        };
-        addAndMakeVisible (tripleFryLiveButton);
+            offlineCombo.onChange = [this]
+            {
+                const int selectedId = offlineCombo.getSelectedId();
 
-        tripleFryOfflineButton.setButtonText ("OFFLINE");
-        tripleFryOfflineButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
-        tripleFryOfflineButton.setToggleState (processor.getStoredTripleFryOfflineEnabled(), juce::dontSendNotification);
-        tripleFryOfflineButton.onClick = [this]
-        {
-            processor.setStoredTripleFryOfflineEnabled (tripleFryOfflineButton.getToggleState());
-        };
-        addAndMakeVisible (tripleFryOfflineButton);
+                if (selectedId <= 1)
+                {
+                    // "SAME"
+                    processor.setStoredOfflineOversampleIndex (-1);
+                }
+                else
+                {
+                    // explicit oversample index: id 2..8 => 0..6
+                    const int idx = juce::jlimit (0, 6, selectedId - 2);
+                    processor.setStoredOfflineOversampleIndex (idx);
+                }
+            };
+        }
 
         // Info label: plain ASCII text, nice wrapping
-        infoLabel.setText ("TRIPLEFRY CAN FRY YOUR CPU",
+        infoLabel.setText ("High oversampling can sound cleaner but will eat CPU. Use heavy settings mainly for bounces.",
                            juce::dontSendNotification);
         infoLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.85f));
         infoLabel.setJustificationType (juce::Justification::topLeft);
@@ -170,18 +179,7 @@ public:
 
         r.removeFromTop (10);
 
-        // TRIPLEFRY row
-        auto tripleRow = r.removeFromTop (24);
-        auto tripleLabelArea = tripleRow.removeFromLeft (90);
-        tripleFryLabel.setBounds (tripleLabelArea);
-
-        auto tripleLiveArea    = tripleRow.removeFromLeft (halfWidth - 90).reduced (4, 0);
-        auto tripleOfflineArea = tripleRow.reduced (4, 0);
-
-        tripleFryLiveButton.setBounds    (tripleLiveArea);
-        tripleFryOfflineButton.setBounds (tripleOfflineArea);
-
-        r.removeFromTop (8);
+        // Info label takes the remaining area
         infoLabel.setBounds (r);
     }
 
@@ -194,10 +192,6 @@ private:
     juce::Label     offlineLabel;
     juce::ComboBox  liveCombo;
     juce::ComboBox  offlineCombo;
-
-    juce::Label        tripleFryLabel;
-    juce::ToggleButton tripleFryLiveButton;
-    juce::ToggleButton tripleFryOfflineButton;
 
     juce::Label infoLabel;
 
@@ -893,12 +887,6 @@ void FruityClipAudioProcessorEditor::showBypassInfoPopup()
     text << "• Fine-Tune Control\n";
     text << "Hold SHIFT while turning any knob for tiny mastering adjustments -\n";
     text << "normal drag = big moves, SHIFT drag = precise control.\n\n";
-
-    text << "• TRIPLEFRY\n";
-    text << "Experimental high-definition oversampling that keeps your\n";
-    text << "transients sharp while pushing the clip stage as clean and\n";
-    text << "smooth as possible. It can hit your CPU hard at high\n";
-    text << "settings, so treat it like a mastering move, not a default.\n\n";
 
     text << "—\n\n";
     text << "FOLLOW ME ON INSTAGRAM\n";
