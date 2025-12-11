@@ -445,7 +445,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     // Fine alignment scalar to tune RMS/null vs Fruity.
     // Start at 1.0f. Later you can try values like 0.99998f, 1.00002f, etc.
-    constexpr float fruityFineCal = 0.99999f;
+    constexpr float fruityFineCal = 0.99997f;
 
     // This is the actual drive into OTT/SAT/clipper for default mode.
     const float inputDrive = inputGain * fruityCal * fruityFineCal;
