@@ -179,15 +179,18 @@ private:
     std::vector<SatState> satStates;
     float satLowAlpha = 0.0f;    // one-pole LP factor for SAT bass tilt
 
+    //==========================================================
+    // Analog tone-match state (for 0-silk 5060->Lavry match)
+    //==========================================================
     struct AnalogToneState
     {
-        float low = 0.0f;
+        float low = 0.0f;   // lowpassed state for tilt split
     };
 
     void resetAnalogToneState (int numChannels);
 
     std::vector<AnalogToneState> analogToneStates;
-    float analogToneAlpha = 0.0f;    // one-pole LP for analog tone tilt
+    float analogToneAlpha = 0.0f;    // one-pole LP factor for analog tone tilt
 
     //==========================================================
     // Internal state

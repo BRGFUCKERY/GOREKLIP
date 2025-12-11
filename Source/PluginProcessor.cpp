@@ -332,8 +332,8 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     // One-pole lowpass for analog tone tilt (~1 kHz split at base rate)
     {
         const float fcAnalog = 1000.0f;
-        const float alphaAnalog = std::exp (
-            -2.0f * juce::MathConstants<float>::pi * fcAnalog / sr);
+        const float alphaAnalog =
+            std::exp (-2.0f * juce::MathConstants<float>::pi * fcAnalog / sr);
         analogToneAlpha = juce::jlimit (0.0f, 1.0f, alphaAnalog);
     }
 
@@ -564,24 +564,23 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
 
     auto& st = analogToneStates[(size_t) channel];
 
-    // One-pole lowpass around 1 kHz (computed in prepareToPlay)
+    // One-pole lowpass around 1 kHz (coefficient set in prepareToPlay)
     st.low = analogToneAlpha * st.low + (1.0f - analogToneAlpha) * x;
+
     const float low  = st.low;
     const float high = x - low;
 
-    // Approximate hardware vs GK 0-silk white-noise difference:
-    //   - hardware is ~+3 dB in lows/mids,
-    //   - ~-3.3 dB in highs.
-    //
-    // Convert to simple linear gains:
-    //   +2.3 dB ≈ 1.3
-    //   -3.1 dB ≈ 0.7
-    constexpr float lowGain  = 1.30f;
-    constexpr float highGain = 0.70f;
+    // Tuned from hardware vs GK 0-silk white-noise measurements:
+    // - GK is too loud in lows/mids by about 3 dB after level-match.
+    // - GK is slightly darker at the very top.
+    // This tilt (0.65 / 1.15) pulls lows down and nudges highs up.
+    constexpr float lowGain  = 0.65f;  // ≈ -3.7 dB
+    constexpr float highGain = 1.15f;  // ≈ +1.2 dB
 
     float y = lowGain * low + highGain * high;
 
-    // Just a gentle safety clamp to avoid any weirdness from extreme signals
+    // Safety clamp, just in case: this should never normally hit unless
+    // something is already going very wrong.
     return juce::jlimit (-4.0f, 4.0f, y);
 }
 
@@ -956,7 +955,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         {
             //======================================================
             // NO OVERSAMPLING – process at base rate only
-            // (unchanged behavior)
             //======================================================
             for (int ch = 0; ch < numChannels; ++ch)
             {
@@ -984,7 +982,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         //======================================================
-        // ANALOG 0-SILK TONE MATCH (base-rate only)
+        // ANALOG 0-SILK TONE MATCH (base rate only)
         //======================================================
         if (! limiterOn && clipMode == ClipMode::Analog)
         {
