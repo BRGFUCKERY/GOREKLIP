@@ -991,7 +991,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // while the LOOK/BURN animation can stay lazy / vibey.
     guiLufs.store (lufs);
 }
-}
 
 //==============================================================
 // Editor
