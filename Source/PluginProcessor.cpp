@@ -554,36 +554,6 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel)
     return applySilkDeEmphasis (y, channel, s);
 }
 
-float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
-{
-    if (sampleRate <= 0.0)
-        return x;
-
-    if (channel < 0 || channel >= (int) analogToneStates.size())
-        return x;
-
-    auto& st = analogToneStates[(size_t) channel];
-
-    // One-pole lowpass around 1 kHz (coefficient set in prepareToPlay)
-    st.low = analogToneAlpha * st.low + (1.0f - analogToneAlpha) * x;
-
-    const float low  = st.low;
-    const float high = x - low;
-
-    // Tuned from hardware vs GK 0-silk white-noise measurements:
-    // - GK is too loud in lows/mids by about 3 dB after level-match.
-    // - GK is slightly darker at the very top.
-    // This tilt (0.65 / 1.15) pulls lows down and nudges highs up.
-    constexpr float lowGain  = 0.65f;  // ≈ -3.7 dB
-    constexpr float highGain = 1.15f;  // ≈ +1.2 dB
-
-    float y = lowGain * low + highGain * high;
-
-    // Safety clamp, just in case: this should never normally hit unless
-    // something is already going very wrong.
-    return juce::jlimit (-4.0f, 4.0f, y);
-}
-
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
 {
     const float threshold = 1.0f;
@@ -611,6 +581,34 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
     out *= 0.73f;
 
     return out;
+}
+
+float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
+{
+    if (sampleRate <= 0.0)
+        return x;
+
+    if (channel < 0 || channel >= (int) analogToneStates.size())
+        return x;
+
+    auto& st = analogToneStates[(size_t) channel];
+
+    // One-pole lowpass around 1 kHz (coeff set in prepareToPlay)
+    st.low = analogToneAlpha * st.low + (1.0f - analogToneAlpha) * x;
+
+    const float low  = st.low;
+    const float high = x - low;
+
+    // Gentle tilt tuned from white-noise measurements.
+    // Start point: GK 0-silk was too bassy and slightly darker on top;
+    // this pulls lows down and nudges highs up a bit.
+    constexpr float lowGain  = 0.65f;  // about -3.7 dB
+    constexpr float highGain = 1.15f;  // about +1.2 dB
+
+    float y = lowGain * low + highGain * high;
+
+    // Safety clamp – should never normally hit.
+    return juce::jlimit (-4.0f, 4.0f, y);
 }
 
 //==============================================================
