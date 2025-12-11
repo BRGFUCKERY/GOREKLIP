@@ -284,89 +284,92 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 {
     juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
 
-    auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
-                                          (float) width, (float) height);
+    const auto name      = box.getName();
+    const bool isLookBox = (name == "lookBox");
 
-    // Transparent background – we draw icons only, ComboBox handles text if we let it
-    g.setColour (juce::Colours::transparentBlack);
-    g.fillRect (bounds);
-
-    const auto name           = box.getName();
-    const bool isLookBox      = (name == "lookBox");
-    const bool isOversampBox  = (name == "oversampleBox");
-
-    // Both top combos (SETTINGS + OVERSAMPLE) use the same pentagram icon,
-    // mirrored horizontally so they are perfectly symmetrical.
-    if (isLookBox || isOversampBox)
+    // For everything EXCEPT the left SETTINGS box, just use the normal V4 drawing.
+    // That includes oversampleBox, which should show its text ("x1", "x2", etc.)
+    // and a standard arrow.
+    if (! isLookBox)
     {
-        const float iconSize   = (float) height * 0.55f;
-        const float iconRadius = iconSize * 0.5f;
-
-        const float iconCenterX = isLookBox
-            ? bounds.getRight() - iconSize * 0.9f      // hug the right edge
-            : bounds.getX()     + iconSize * 0.9f;     // hug the left edge (mirror)
-
-        const float iconCenterY = bounds.getCentreY();
-
-        juce::Rectangle<int> starBounds (
-            (int) std::round (iconCenterX - iconRadius),
-            (int) std::round (iconCenterY - iconRadius),
-            (int) std::round (iconRadius * 2.0f),
-            (int) std::round (iconRadius * 2.0f));
-
-        const float cx     = (float) starBounds.getCentreX();
-        const float cy     = (float) starBounds.getCentreY();
-        const float radius = (float) starBounds.getWidth() * 0.45f;
-
-        juce::Point<float> pts[5];
-
-        // Screen coordinates: +Y goes down.
-        // baseAngle = +pi/2 -> first point straight DOWN (one spike down),
-        // which gives an inverted pentagram (two spikes up).
-        const float baseAngle = juce::MathConstants<float>::halfPi;
-        const float step      = juce::MathConstants<float>::twoPi / 5.0f;
-
-        for (int i = 0; i < 5; ++i)
-        {
-            const float angle = baseAngle + step * (float) i;
-            const float x     = cx + radius * std::cos (angle);
-            const float y     = cy + radius * std::sin (angle);
-            pts[i].setXY (x, y);
-        }
-
-        juce::Path pent;
-        pent.startNewSubPath (pts[0]);
-        pent.lineTo (pts[2]);
-        pent.lineTo (pts[4]);
-        pent.lineTo (pts[1]);
-        pent.lineTo (pts[3]);
-        pent.closeSubPath();
-
-        // Pentagram colour follows burnAmount: 0 = black, 1 = white
-        const float burn = juce::jlimit (0.0f, 1.0f, burnAmount);
-
-        auto starColour = juce::Colours::white
-            .interpolatedWith (juce::Colours::black, 1.0f - burn)
-            .withAlpha (0.8f + 0.2f * burn);
-
-        g.setColour (starColour);
-
-        const float strokeThickness =
-            (float) starBounds.getWidth() * 0.10f;
-
-        juce::PathStrokeType stroke (strokeThickness,
-                                     juce::PathStrokeType::mitered,
-                                     juce::PathStrokeType::square);
-        g.strokePath (pent, stroke);
-
-        // Text is still handled by ComboBox itself.
-        // For both top combos, we'll set textColour to transparent from the editor,
-        // so only the pentagrams are visible.
+        juce::LookAndFeel_V4::drawComboBox (g,
+                                            width, height,
+                                            isButtonDown,
+                                            buttonX, buttonY,
+                                            buttonW, buttonH,
+                                            box);
         return;
     }
 
-    // Any other ComboBox using this LNF just gets the transparent
-    // background; JUCE will draw its text normally.
+    // --- Custom drawing for left SETTINGS box (pentagram that burns) ---
+
+    auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
+                                          (float) width, (float) height);
+
+    // Transparent background so the pentagram sits over the plugin art.
+    g.setColour (juce::Colours::transparentBlack);
+    g.fillRect (bounds);
+
+    const float iconSize   = (float) height * 0.55f;
+    const float iconRadius = iconSize * 0.5f;
+
+    // Hug the right edge of the left box
+    const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
+    const float iconCenterY = bounds.getCentreY();
+
+    juce::Rectangle<int> starBounds (
+        (int) std::round (iconCenterX - iconRadius),
+        (int) std::round (iconCenterY - iconRadius),
+        (int) std::round (iconRadius * 2.0f),
+        (int) std::round (iconRadius * 2.0f));
+
+    const float cx     = (float) starBounds.getCentreX();
+    const float cy     = (float) starBounds.getCentreY();
+    const float radius = (float) starBounds.getWidth() * 0.45f;
+
+    juce::Point<float> pts[5];
+
+    // Screen coordinates: +Y goes down.
+    // baseAngle = +pi/2 -> first point straight DOWN (one spike down),
+    // which gives an inverted pentagram (two spikes up).
+    const float baseAngle = juce::MathConstants<float>::halfPi;
+    const float step      = juce::MathConstants<float>::twoPi / 5.0f;
+
+    for (int i = 0; i < 5; ++i)
+    {
+        const float angle = baseAngle + step * (float) i;
+        const float x     = cx + radius * std::cos (angle);
+        const float y     = cy + radius * std::sin (angle);
+        pts[i].setXY (x, y);
+    }
+
+    juce::Path pent;
+    pent.startNewSubPath (pts[0]);
+    pent.lineTo (pts[2]);
+    pent.lineTo (pts[4]);
+    pent.lineTo (pts[1]);
+    pent.lineTo (pts[3]);
+    pent.closeSubPath();
+
+    // Pentagram colour follows burnAmount: 0 = black, 1 = white
+    const float burn = juce::jlimit (0.0f, 1.0f, burnAmount);
+
+    auto starColour = juce::Colours::white
+        .interpolatedWith (juce::Colours::black, 1.0f - burn)
+        .withAlpha (0.8f + 0.2f * burn);
+
+    g.setColour (starColour);
+
+    const float strokeThickness =
+        (float) starBounds.getWidth() * 0.10f;
+
+    juce::PathStrokeType stroke (strokeThickness,
+                                 juce::PathStrokeType::mitered,
+                                 juce::PathStrokeType::square);
+    g.strokePath (pent, stroke);
+
+    // Text is handled by ComboBox itself. For lookBox we keep textColour transparent
+    // so only the pentagram is visible.
 }
 
 juce::Font DownwardComboBoxLookAndFeel::getComboBoxFont (juce::ComboBox& box)
@@ -557,16 +560,22 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lookBox.setInterceptsMouseClicks (false, false); // editor handles clicks
     addAndMakeVisible (lookBox);
 
-    // OVERSAMPLING (right pentagram-button)
+    // OVERSAMPLING (right: LIVE oversample dropdown)
     oversampleBox.setName ("oversampleBox");
     oversampleBox.setJustificationType (juce::Justification::centred);
     oversampleBox.setTextWhenNothingSelected ("x1");
-    oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
-    oversampleBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+
+    // Let this one actually show its text + arrow as a normal combo
+    oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+    oversampleBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
     oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
     oversampleBox.setColour (juce::ComboBox::arrowColourId,      juce::Colours::white);
+
     oversampleBox.setLookAndFeel (&comboLnf);
-    oversampleBox.setInterceptsMouseClicks (false, false); // editor handles clicks
+
+    // This one should behave like a normal ComboBox: user clicks it directly.
+    oversampleBox.setInterceptsMouseClicks (true, true);
+
     addAndMakeVisible (oversampleBox);
 
     // --------------------------------------------------
@@ -951,7 +960,7 @@ void FruityClipAudioProcessorEditor::showOversampleMenu()
     auto& state = processor.getParametersState();
 
     auto content = std::make_unique<OversampleSettingsComponent> (processor, state);
-    content->setSize (320, 150);
+    content->setSize (320, 120);
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle              = "OVERSAMPLING";
@@ -1047,10 +1056,11 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
     const LookMode mode = getLookMode();
 
     // Stable IDs for items
-    constexpr int idLookCooked = 1;
-    constexpr int idLookLufs   = 2;
-    constexpr int idLookStatic = 3;
-    constexpr int idKlipBible  = 4;
+    constexpr int idLookCooked     = 1;
+    constexpr int idLookLufs       = 2;
+    constexpr int idLookStatic     = 3;
+    constexpr int idOversampleMenu = 4;
+    constexpr int idKlipBible      = 5;
 
     // LOOK modes – mutually exclusive, ticked based on current mode
     menu.addItem (idLookCooked,
@@ -1067,6 +1077,11 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
                   "LOOK - STATIC",
                   true,
                   mode == LookMode::Static);
+
+    // New OVERSAMPLE entry (opens oversample settings dialog)
+    menu.addItem (idOversampleMenu,
+                  "OVERSAMPLE",
+                  true);
 
     // Separator line
     menu.addSeparator();
@@ -1094,6 +1109,11 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
                                     setLookMode (LookMode::Static);
                                     break;
 
+                                case idOversampleMenu:
+                                    // Open the oversample settings window (LIVE/OFFLINE/SAME)
+                                    showOversampleMenu();
+                                    break;
+
                                 case idKlipBible:
                                     openKlipBible();
                                     break;
@@ -1113,12 +1133,6 @@ void FruityClipAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
     if (lookBox.getBounds().contains (posInt))
     {
         showSettingsMenu();
-        return;
-    }
-
-    if (oversampleBox.getBounds().contains (posInt))
-    {
-        showOversampleMenu();
         return;
     }
 
