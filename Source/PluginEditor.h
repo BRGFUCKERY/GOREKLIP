@@ -200,6 +200,11 @@ private:
     // LUFS text above CLIPPER/LIMITER finger
     juce::Label  lufsLabel;
 
+    // Value popups while dragging knobs
+    juce::Label gainValueLabel;
+    juce::Label ottValueLabel;
+    juce::Label satValueLabel;
+
     // Oversample mode (x1/x2/x4/x8/x16) – tiny top-right dropdown
     juce::ComboBox oversampleBox;
     juce::ComboBox lookBox;

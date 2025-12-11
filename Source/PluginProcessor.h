@@ -118,6 +118,7 @@ private:
 
     std::vector<KFilterState> kFilterStates;
     float lufsMeanSquare = 1.0e-6f;  // keep > 0 to avoid log(0)
+    float lufsAverageLufs = -60.0f;  // slow (~2s) averaged LUFS in dB for LOOK = LUFS burn
 
     //==========================================================
     // OTT high-pass split state (0–150 Hz dry, >150 Hz OTT)

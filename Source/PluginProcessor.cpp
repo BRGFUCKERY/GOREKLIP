@@ -221,6 +221,7 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     // Reset K-weight filter + LUFS state
     resetKFilterState (getTotalNumOutputChannels());
     lufsMeanSquare = 1.0e-6f;
+    lufsAverageLufs = -60.0f;
 
     // Reset OTT split state
     resetOttState (getTotalNumOutputChannels());
@@ -425,12 +426,14 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Make sure final index is in range 0..6 for updateOversampling
     osIndex = juce::jlimit (0, 6, osIndex);
 
+    const bool bypassNow = gainBypass.load();
+
     //==========================================================
     // GAIN-BYPASS MODE:
     //   - Apply only INPUT GAIN
     //   - Skip OTT, SAT, limiter, oversampling, and metering
     //==========================================================
-    if (gainBypass.load())
+    if (bypassNow)
     {
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -445,21 +448,15 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
         // In bypass mode, keep GUI visuals static
         guiBurn.store (0.0f);
-        guiBurnLufs.store (0.0f);
-
-        // IMPORTANT:
-        // - Do NOT touch guiSignalEnv or guiLufs here.
-        //   We want the editor to keep using the last LUFS value
-        //   and the last gate state while bypass is engaged.
-
-        return;
     }
 
-    // Oversampling mode can be changed at runtime – keep Oversampling object in sync
-    if (osIndex != currentOversampleIndex || (! oversampler))
+    if (! bypassNow)
     {
-        updateOversampling (osIndex, numChannels);
-    }
+        // Oversampling mode can be changed at runtime – keep Oversampling object in sync
+        if (osIndex != currentOversampleIndex || (! oversampler))
+        {
+            updateOversampling (osIndex, numChannels);
+        }
 
     if (oversampler && maxBlockSize < numSamples)
     {
@@ -897,30 +894,31 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         (blockLufs > -60.0f) ||
         (blockMax > 0.01f);
 
-    // LUFS-based burn: -20 LUFS -> 0, -2 LUFS -> 1
-    float targetBurnLufs = 0.0f;
-    {
-        float t = (blockLufs + 20.0f) / 18.0f;  // -20..-2 -> 0..1
-        t = juce::jlimit (0.0f, 1.0f, t);
-        // gentler curve so mid-LUFS still show some burn
-        targetBurnLufs = std::pow (t, 1.6f);
-    }
+    const float tauSeconds   = 2.0f;
+    const float blockSeconds = (float) numSamples / (float) sampleRate;
 
-    // Smooth and gate using hasSignalNow so it falls quickly when music stops
-    float prevBurnLufs = guiBurnLufs.load();
+    const float alphaAvg = juce::jlimit (0.0f, 1.0f,
+                                         blockSeconds / (tauSeconds + blockSeconds));
 
-    // Slow rise for a "vibe" meter, faster fall when signal disappears
-    float alphaOn  = 0.12f;  // when we have signal (very smooth, slow change)
-    float alphaOff = 0.55f;  // when signal disappears (drops back fairly quickly)
+    if (hasSignalNow)
+        lufsAverageLufs = (1.0f - alphaAvg) * lufsAverageLufs + alphaAvg * blockLufs;
 
-    float alpha = hasSignalNow ? alphaOn : alphaOff;
-    float newBurnLufs = (1.0f - alpha) * prevBurnLufs + alpha * targetBurnLufs;
+    float avgForBurn = lufsAverageLufs;
 
-    // If there is no signal and targetBurnLufs is 0, ensure it decays toward 0
-    if (! hasSignalNow && targetBurnLufs <= 0.0f)
-        newBurnLufs *= 0.8f;
+    float norm = 0.0f;
+    if (avgForBurn <= -12.0f)
+        norm = 0.0f;
+    else if (avgForBurn >= -1.0f)
+        norm = 1.0f;
+    else
+        norm = (avgForBurn + 12.0f) / 11.0f;
 
-    guiBurnLufs.store (newBurnLufs);
+    const int numSteps = 11;
+    int stepIndex = (int) std::floor (norm * (float) numSteps + 1.0e-6f);
+    stepIndex = juce::jlimit (0, numSteps, stepIndex);
+
+    const float steppedBurn = (float) stepIndex / (float) numSteps;
+    const float targetBurnLufs = steppedBurn;
 
     // Smooth gate envelope so LUFS label doesn't flicker
     const float prevEnv   = guiSignalEnv.load();
@@ -928,6 +926,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float targetEnv = hasSignalNow ? 1.0f : 0.0f;
     const float newEnv    = (1.0f - gateAlpha) * prevEnv + gateAlpha * targetEnv;
     guiSignalEnv.store (newEnv);
+
+    const float burnEnv = newEnv;
+    guiBurnLufs.store (targetBurnLufs * burnEnv);
 
     //==========================================================
     // GUI LUFS readout – DIRECT calibrated short-term value

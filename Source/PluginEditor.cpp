@@ -120,13 +120,11 @@ public:
             };
         }
 
-        // Info label: plain ASCII text, nice wrapping
-        infoLabel.setText ("High oversampling can sound cleaner but will eat CPU. Use heavy settings mainly for bounces.",
-                           juce::dontSendNotification);
+        // Info label: no longer showing CPU warning text
+        infoLabel.setText ({}, juce::dontSendNotification);
         infoLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.85f));
         infoLabel.setJustificationType (juce::Justification::topLeft);
         infoLabel.setMinimumHorizontalScale (0.8f);
-        addAndMakeVisible (infoLabel);
 
         // Make sure popup menus for these combos are also black/white
         if (auto* lf = dynamic_cast<juce::LookAndFeel_V4*> (&getLookAndFeel()))
@@ -524,6 +522,29 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lufsLabel.setText ("0.00 LUFS", juce::dontSendNotification);
     addAndMakeVisible (lufsLabel);
 
+    auto setupValueLabel = [] (juce::Label& lbl)
+    {
+        lbl.setJustificationType (juce::Justification::centred);
+        lbl.setColour (juce::Label::textColourId, juce::Colours::white);
+        lbl.setInterceptsMouseClicks (false, false);
+
+        juce::FontOptions opts (14.0f);
+        opts = opts.withStyle ("Bold");
+        lbl.setFont (juce::Font (opts));
+    };
+
+    setupValueLabel (gainValueLabel);
+    setupValueLabel (ottValueLabel);
+    setupValueLabel (satValueLabel);
+
+    addAndMakeVisible (gainValueLabel);
+    addAndMakeVisible (ottValueLabel);
+    addAndMakeVisible (satValueLabel);
+
+    gainValueLabel.setVisible (false);
+    ottValueLabel.setVisible (false);
+    satValueLabel.setVisible (false);
+
     // SETTINGS (left pentagram)
     lookBox.setName ("lookBox");
     lookBox.setJustificationType (juce::Justification::centred);
@@ -567,6 +588,49 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
                         apvts, "oversampleMode", oversampleBox);
+
+    auto setupValuePopup = [this] (FineControlSlider& slider,
+                                   juce::Label& lbl,
+                                   std::function<juce::String()> makeText)
+    {
+        slider.onDragStart = [this, &lbl, makeText]()
+        {
+            lbl.setVisible (true);
+            lbl.setText (makeText(), juce::dontSendNotification);
+        };
+
+        slider.onDragEnd = [this, &lbl]()
+        {
+            lbl.setVisible (false);
+        };
+
+        slider.onValueChange = [this, &lbl, makeText]()
+        {
+            if (lbl.isVisible())
+                lbl.setText (makeText(), juce::dontSendNotification);
+        };
+    };
+
+    setupValuePopup (gainSlider, gainValueLabel, [this]()
+    {
+        const double valDb = gainSlider.getValue();
+        juce::String s = (valDb >= 0.0 ? "+" : "") + juce::String (valDb, 1) + " dB";
+        return s;
+    });
+
+    setupValuePopup (ottSlider, ottValueLabel, [this]()
+    {
+        const double raw = ottSlider.getValue();
+        const int percent = (int) std::round (raw * 100.0);
+        return juce::String (percent) + " %";
+    });
+
+    setupValuePopup (satSlider, satValueLabel, [this]()
+    {
+        const double raw = satSlider.getValue();
+        const int percent = (int) std::round (raw * 100.0);
+        return juce::String (percent) + " %";
+    });
 
     // Small helper to keep SAT enable + label in sync with the mode value
     auto updateModeUI = [this]()
@@ -777,6 +841,22 @@ void FruityClipAudioProcessorEditor::resized()
                          modeSlider.getBottom() + 2,
                          modeSlider.getWidth(),
                          labelH);
+
+    const int valueLabelHeight = 18;
+    const int valueLabelMargin = 4;
+
+    auto makeValueBounds = [valueLabelHeight, valueLabelMargin] (const juce::Rectangle<int>& knobBounds)
+    {
+        return juce::Rectangle<int> (
+            knobBounds.getX(),
+            juce::jmax (0, knobBounds.getY() - valueLabelHeight - valueLabelMargin),
+            knobBounds.getWidth(),
+            valueLabelHeight);
+    };
+
+    gainValueLabel.setBounds (makeValueBounds (gainSlider.getBounds()));
+    ottValueLabel .setBounds (makeValueBounds (ottSlider.getBounds()));
+    satValueLabel .setBounds (makeValueBounds (satSlider.getBounds()));
 
     // LUFS label sits above the MODE/clipper finger
     const int lufsHeight = 18;
