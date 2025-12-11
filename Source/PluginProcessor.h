@@ -118,6 +118,8 @@ private:
     float applySilkDeEmphasis   (float x, int channel, float silkAmount);
     float applyClipperAnalogSample (float x);
 
+    float applyAnalogToneMatch (float x, int channel);
+
     // Oversampling config helper
     void updateOversampling (int osIndex, int numChannels);
 
@@ -176,6 +178,16 @@ private:
 
     std::vector<SatState> satStates;
     float satLowAlpha = 0.0f;    // one-pole LP factor for SAT bass tilt
+
+    struct AnalogToneState
+    {
+        float low = 0.0f;
+    };
+
+    void resetAnalogToneState (int numChannels);
+
+    std::vector<AnalogToneState> analogToneStates;
+    float analogToneAlpha = 0.0f;    // one-pole LP for analog tone tilt
 
     //==========================================================
     // Internal state
