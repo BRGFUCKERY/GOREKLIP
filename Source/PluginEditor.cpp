@@ -406,7 +406,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lookSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
 
     oversamplingSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    oversamplingSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
+    oversamplingSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
 
     menuSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
     menuSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
