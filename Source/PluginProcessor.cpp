@@ -329,6 +329,14 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         satLowAlpha = juce::jlimit (0.0f, 1.0f, alphaSat);
     }
 
+    // One-pole lowpass for analog tone tilt (~1 kHz split at base rate)
+    {
+        const float fcAnalog = 1000.0f;
+        const float alphaAnalog = std::exp (
+            -2.0f * juce::MathConstants<float>::pi * fcAnalog / sr);
+        analogToneAlpha = juce::jlimit (0.0f, 1.0f, alphaAnalog);
+    }
+
     lastOttGain = 1.0f;
 
     // Initial oversampling setup from parameter
@@ -422,6 +430,21 @@ void FruityClipAudioProcessor::resetSatState (int numChannels)
 
     satStates.resize ((size_t) numChannels);
     for (auto& st : satStates)
+        st.low = 0.0f;
+}
+
+//==============================================================
+// Analog tone-match reset
+//==============================================================
+void FruityClipAudioProcessor::resetAnalogToneState (int numChannels)
+{
+    analogToneStates.clear();
+
+    if (numChannels <= 0)
+        return;
+
+    analogToneStates.resize ((size_t) numChannels);
+    for (auto& st : analogToneStates)
         st.low = 0.0f;
 }
 
@@ -531,6 +554,37 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel)
     return applySilkDeEmphasis (y, channel, s);
 }
 
+float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
+{
+    if (sampleRate <= 0.0)
+        return x;
+
+    if (channel < 0 || channel >= (int) analogToneStates.size())
+        return x;
+
+    auto& st = analogToneStates[(size_t) channel];
+
+    // One-pole lowpass around 1 kHz (computed in prepareToPlay)
+    st.low = analogToneAlpha * st.low + (1.0f - analogToneAlpha) * x;
+    const float low  = st.low;
+    const float high = x - low;
+
+    // Approximate hardware vs GK 0-silk white-noise difference:
+    //   - hardware is ~+3 dB in lows/mids,
+    //   - ~-3.3 dB in highs.
+    //
+    // Convert to simple linear gains:
+    //   +2.3 dB ≈ 1.3
+    //   -3.1 dB ≈ 0.7
+    constexpr float lowGain  = 1.30f;
+    constexpr float highGain = 0.70f;
+
+    float y = lowGain * low + highGain * high;
+
+    // Just a gentle safety clamp to avoid any weirdness from extreme signals
+    return juce::jlimit (-4.0f, 4.0f, y);
+}
+
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
 {
     const float threshold = 1.0f;
@@ -579,6 +633,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         resetSatState (numChannels);
     if ((int) silkStates.size() < numChannels)
         resetSilkState (numChannels);
+    if ((int) analogToneStates.size() < numChannels)
+        resetAnalogToneState (numChannels);
 
     const bool isOffline = isNonRealtime();
 
@@ -924,6 +980,20 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                     samples[i] = sample;
                 }
+            }
+        }
+
+        //======================================================
+        // ANALOG 0-SILK TONE MATCH (base-rate only)
+        //======================================================
+        if (! limiterOn && clipMode == ClipMode::Analog)
+        {
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                float* s = buffer.getWritePointer (ch);
+
+                for (int i = 0; i < numSamples; ++i)
+                    s[i] = applyAnalogToneMatch (s[i], ch);
             }
         }
 
