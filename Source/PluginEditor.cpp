@@ -204,6 +204,19 @@ public:
         infoLabel.setBounds (r);
     }
 
+public:
+    // Force the LIVE combo to a specific oversample index (0..6 = x1..x64).
+    // This does NOT notify the processor – it's just a visual sync helper
+    // so the OVERSAMPLE window mirrors the current LIVE dropdown.
+    void syncLiveFromIndex (int index)
+    {
+        // Clamp to 0..6 then convert to ComboBox ID (1..7).
+        const int clampedIndex = juce::jlimit (0, 6, index);
+        const int comboId      = clampedIndex + 1;
+
+        liveCombo.setSelectedId (comboId, juce::dontSendNotification);
+    }
+
 private:
     FruityClipAudioProcessor& processor;
     juce::AudioProcessorValueTreeState& parameters;
@@ -978,6 +991,18 @@ void FruityClipAudioProcessorEditor::showOversampleMenu()
     auto& state = processor.getParametersState();
 
     auto content = std::make_unique<OversampleSettingsComponent> (processor, state);
+
+    // Force the LIVE combo inside the OVERSAMPLE dialog to match the
+    // current right-side LIVE dropdown. This guarantees visual sync
+    // even on fresh instances or after any stored/default shenanigans.
+    {
+        // oversampleLiveBox IDs: 1..7 => indices 0..6
+        const int currentId    = oversampleLiveBox.getSelectedId();
+        const int currentIndex = juce::jlimit (0, 6, currentId - 1);
+
+        content->syncLiveFromIndex (currentIndex);
+    }
+
     content->setSize (320, 120);
 
     juce::DialogWindow::LaunchOptions options;
