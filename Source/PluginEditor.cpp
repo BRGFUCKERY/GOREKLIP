@@ -542,6 +542,26 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lookBox.setInterceptsMouseClicks (false, false); // editor handles clicks
     addAndMakeVisible (lookBox);
 
+    // LIVE OVERSAMPLE dropdown (top-right, x1/x2/x4/x8/x16/x32/x64)
+    oversampleLiveBox.setName ("oversampleLiveBox");
+    oversampleLiveBox.setJustificationType (juce::Justification::centred);
+    oversampleLiveBox.setTextWhenNothingSelected ("x1");
+
+    oversampleLiveBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
+    oversampleLiveBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::white.withAlpha (0.2f));
+    oversampleLiveBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+
+    {
+        juce::StringArray modes { "x1", "x2", "x4", "x8", "x16", "x32", "x64" };
+        for (int i = 0; i < modes.size(); ++i)
+        {
+            const int id = i + 1; // 0..6 -> ids 1..7
+            oversampleLiveBox.addItem (modes[i], id);
+        }
+    }
+
+    addAndMakeVisible (oversampleLiveBox);
+
     // --------------------------------------------------
     // PARAMETER ATTACHMENTS
     // --------------------------------------------------
@@ -558,6 +578,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "useLimiter", modeSlider);
+
+    oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+        apvts, "oversampleMode", oversampleLiveBox);
 
     auto setupValuePopup = [this] (FineControlSlider& slider,
                                    juce::Label& lbl,
@@ -754,15 +777,24 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    // --- Top bar: left SETTINGS pentagram ---
+    // --- Top bar: left SETTINGS pentagram + right LIVE oversample dropdown ---
     const int topMargin = 6;
     const int barH      = juce::jmax (16, h / 20);
 
-    const int lookSize = barH;
-    const int lookX    = topMargin;
-    const int lookY    = topMargin;
+    // Make both boxes square: width == height == barH
+    const int boxSize = barH;
 
-    lookBox.setBounds (lookX, lookY, lookSize, barH);
+    // Left SETTINGS box (pentagram)
+    const int lookX = topMargin;
+    const int lookY = topMargin;
+    lookBox.setBounds (lookX, lookY, boxSize, barH);
+
+    // Right LIVE oversample box
+    // Distance from right edge == topMargin -> perfect horizontal symmetry
+    const int osWidth  = boxSize;
+    const int osX      = w - topMargin - osWidth;
+    const int osY      = topMargin;
+    oversampleLiveBox.setBounds (osX, osY, osWidth, barH);
 
     // --------------------------------------------------
     // Existing layout for knobs, labels, LUFS label etc.
