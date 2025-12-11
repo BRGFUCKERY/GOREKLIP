@@ -288,8 +288,6 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     const bool isLookBox = (name == "lookBox");
 
     // For everything EXCEPT the left SETTINGS box, just use the normal V4 drawing.
-    // That includes oversampleBox, which should show its text ("x1", "x2", etc.)
-    // and a standard arrow.
     if (! isLookBox)
     {
         juce::LookAndFeel_V4::drawComboBox (g,
@@ -374,18 +372,6 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 
 juce::Font DownwardComboBoxLookAndFeel::getComboBoxFont (juce::ComboBox& box)
 {
-    // Give the oversample readout a slightly heavier look without overpowering the pentagram.
-    if (box.getName() == "oversampleBox")
-    {
-        // Push a little more weight into the oversample readout without relying on deprecated APIs.
-        const float fontHeight = (float) box.getHeight() * 0.52f * 1.2f;
-
-        juce::FontOptions opts (fontHeight);
-        opts = opts.withStyle ("SemiBold");
-
-        return juce::Font (opts);
-    }
-
     return juce::LookAndFeel_V4::getComboBoxFont (box);
 }
 
@@ -395,18 +381,14 @@ juce::Font DownwardComboBoxLookAndFeel::getComboBoxFont (juce::ComboBox& box)
 FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    auto& lookSelector         = lookBox;
-    auto& oversamplingSelector = oversampleBox;
-    auto& menuSelector         = lookBox;
+    auto& lookSelector = lookBox;
+    auto& menuSelector = lookBox;
 
     setLookAndFeel (&customLookAndFeel);
 
-    // Basic combo colours (we mostly draw via custom LNF)
+    // Basic combo colours for the left SETTINGS box
     lookSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
     lookSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
-
-    oversamplingSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    oversamplingSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
 
     menuSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
     menuSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
@@ -560,39 +542,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lookBox.setInterceptsMouseClicks (false, false); // editor handles clicks
     addAndMakeVisible (lookBox);
 
-    // OVERSAMPLING (right: LIVE oversample dropdown)
-    oversampleBox.setName ("oversampleBox");
-    oversampleBox.setJustificationType (juce::Justification::centred);
-    oversampleBox.setTextWhenNothingSelected ("x1");
-
-    // Let this one actually show its text + arrow as a normal combo
-    oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
-    oversampleBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
-    oversampleBox.setColour (juce::ComboBox::arrowColourId,      juce::Colours::white);
-
-    oversampleBox.setLookAndFeel (&comboLnf);
-
-    // Populate with the same modes as the oversample parameter
-    juce::StringArray osModes { "x1", "x2", "x4", "x8", "x16", "x32", "x64" };
-    for (int i = 0; i < osModes.size(); ++i)
-    {
-        const int id = i + 1; // 1-based IDs matching oversampleMode choice indices
-        oversampleBox.addItem (osModes[i], id);
-    }
-
-    // Sync initial selection to the current parameter value so the readout is visible
-    if (auto* osParam = processor.getParametersState().getRawParameterValue ("oversampleMode"))
-    {
-        const int liveIndex = juce::jlimit (0, 6, (int) osParam->load());
-        oversampleBox.setSelectedId (liveIndex + 1, juce::dontSendNotification);
-    }
-
-    // This one should behave like a normal ComboBox: user clicks it directly.
-    oversampleBox.setInterceptsMouseClicks (true, true);
-
-    addAndMakeVisible (oversampleBox);
-
     // --------------------------------------------------
     // PARAMETER ATTACHMENTS
     // --------------------------------------------------
@@ -609,18 +558,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "useLimiter", modeSlider);
-
-    oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
-                        apvts, "oversampleMode", oversampleBox);
-
-    oversampleBox.onChange = [this]
-    {
-        if (auto* osParam = processor.getParametersState().getRawParameterValue ("oversampleMode"))
-        {
-            const int liveIndex = juce::jlimit (0, 6, (int) osParam->load());
-            processor.setStoredLiveOversampleIndex (liveIndex);
-        }
-    };
 
     auto setupValuePopup = [this] (FineControlSlider& slider,
                                    juce::Label& lbl,
@@ -817,23 +754,15 @@ void FruityClipAudioProcessorEditor::resized()
     const int w = getWidth();
     const int h = getHeight();
 
-    // --- Top bar: perfectly symmetric pentagrams ---
+    // --- Top bar: left SETTINGS pentagram ---
     const int topMargin = 6;
     const int barH      = juce::jmax (16, h / 20);
 
-    // Left: SETTINGS box (square)
     const int lookSize = barH;
     const int lookX    = topMargin;
     const int lookY    = topMargin;
 
-    // Right: OVERSAMPLING box – same size, mirrored position
-    const int osW = lookSize;                // SAME width as left box
-    const int osH = barH;                    // SAME height as left box
-    const int osX = w - osW - topMargin;     // same side margin
-    const int osY = topMargin;               // same distance from top
-
-    lookBox.setBounds       (lookX, lookY, lookSize, barH);
-    oversampleBox.setBounds (osX,  osY,  osW,       osH);
+    lookBox.setBounds (lookX, lookY, lookSize, barH);
 
     // --------------------------------------------------
     // Existing layout for knobs, labels, LUFS label etc.
@@ -961,11 +890,9 @@ void FruityClipAudioProcessorEditor::timerCallback()
         0, 255, (int) std::round (burnForIcons * 255.0f));
     auto burnColour = juce::Colour::fromRGB (level, level, level);
 
-    lookBox.setColour       (juce::ComboBox::arrowColourId, burnColour);
-    oversampleBox.setColour (juce::ComboBox::arrowColourId, burnColour);
+    lookBox.setColour (juce::ComboBox::arrowColourId, burnColour);
 
     lookBox.repaint();
-    oversampleBox.repaint();
 
     repaint();
 }
