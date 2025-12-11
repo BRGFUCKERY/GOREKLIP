@@ -28,7 +28,9 @@ class OversampleSettingsComponent : public juce::Component
 {
 public:
     OversampleSettingsComponent (FruityClipAudioProcessor& proc,
-                                 juce::AudioProcessorValueTreeState& vts)
+                                 juce::AudioProcessorValueTreeState& vts,
+                                 int initialLiveIndex,
+                                 int initialOfflineIndex)
         : processor (proc), parameters (vts)
     {
         setOpaque (true);
@@ -83,17 +85,9 @@ public:
         addAndMakeVisible (liveCombo);
         addAndMakeVisible (offlineCombo);
 
-        // --- Force LIVE combo to match current oversampleMode parameter on open ---
-        {
-            int initialLiveIndex = processor.getStoredLiveOversampleIndex(); // 0..6
-
-            if (auto* osParam = parameters.getRawParameterValue ("oversampleMode"))
-                initialLiveIndex = juce::jlimit (0, 6, (int) osParam->load());
-
-            // Combo item IDs are 1..7 ==> index 0..6
-            liveCombo.setSelectedId (juce::jlimit (0, 6, initialLiveIndex) + 1,
-                                     juce::dontSendNotification);
-        }
+        // --- Force LIVE combo to match supplied oversample index (0..6) ---
+        liveCombo.setSelectedId (juce::jlimit (0, 6, initialLiveIndex) + 1,
+                                 juce::dontSendNotification);
 
         // LIVE column is bound directly to "oversampleMode" parameter (0..6)
         liveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
@@ -111,37 +105,34 @@ public:
         };
 
         // OFFLINE column stored in userSettings
-        {
-            const int offlineIndex = processor.getStoredOfflineOversampleIndex(); // -1..6
+        // -1 => SAME, 0..6 => explicit oversample choice
+        const int clampedOffline = juce::jlimit (-1, 6, initialOfflineIndex);
 
-            if (offlineIndex < 0)
+        if (clampedOffline < 0)
+        {
+            offlineCombo.setSelectedId (1, juce::dontSendNotification); // "SAME"
+        }
+        else
+        {
+            offlineCombo.setSelectedId (clampedOffline + 2, juce::dontSendNotification);
+        }
+
+        offlineCombo.onChange = [this]
+        {
+            const int selectedId = offlineCombo.getSelectedId();
+
+            if (selectedId <= 1)
             {
-                // -1 => SAME
-                offlineCombo.setSelectedId (1, juce::dontSendNotification); // "SAME"
+                // "SAME"
+                processor.setStoredOfflineOversampleIndex (-1);
             }
             else
             {
-                // 0..6 map to ids 2..8
-                offlineCombo.setSelectedId (offlineIndex + 2, juce::dontSendNotification);
+                // explicit oversample index: id 2..8 => 0..6
+                const int idx = juce::jlimit (0, 6, selectedId - 2);
+                processor.setStoredOfflineOversampleIndex (idx);
             }
-
-            offlineCombo.onChange = [this]
-            {
-                const int selectedId = offlineCombo.getSelectedId();
-
-                if (selectedId <= 1)
-                {
-                    // "SAME"
-                    processor.setStoredOfflineOversampleIndex (-1);
-                }
-                else
-                {
-                    // explicit oversample index: id 2..8 => 0..6
-                    const int idx = juce::jlimit (0, 6, selectedId - 2);
-                    processor.setStoredOfflineOversampleIndex (idx);
-                }
-            };
-        }
+        };
 
         // Info label: no longer showing CPU warning text
         infoLabel.setText ({}, juce::dontSendNotification);
@@ -205,18 +196,6 @@ public:
     }
 
 public:
-    // Force the LIVE combo to a specific oversample index (0..6 = x1..x64).
-    // This does NOT notify the processor – it's just a visual sync helper
-    // so the OVERSAMPLE window mirrors the current LIVE dropdown.
-    void syncLiveFromIndex (int index)
-    {
-        // Clamp to 0..6 then convert to ComboBox ID (1..7).
-        const int clampedIndex = juce::jlimit (0, 6, index);
-        const int comboId      = clampedIndex + 1;
-
-        liveCombo.setSelectedId (comboId, juce::dontSendNotification);
-    }
-
 private:
     FruityClipAudioProcessor& processor;
     juce::AudioProcessorValueTreeState& parameters;
@@ -630,6 +609,13 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         apvts, "oversampleMode", oversampleLiveBox);
 
+    // Ensure the visible LIVE dropdown reflects the current parameter value
+    if (auto* osParam = apvts.getRawParameterValue ("oversampleMode"))
+    {
+        const int liveIndex = juce::jlimit (0, 6, (int) osParam->load());
+        oversampleLiveBox.setSelectedId (liveIndex + 1, juce::dontSendNotification);
+    }
+
     auto setupValuePopup = [this] (FineControlSlider& slider,
                                    juce::Label& lbl,
                                    std::function<juce::String()> makeText)
@@ -990,18 +976,16 @@ void FruityClipAudioProcessorEditor::showOversampleMenu()
 {
     auto& state = processor.getParametersState();
 
-    auto content = std::make_unique<OversampleSettingsComponent> (processor, state);
+    int liveIndex = 0;
+    if (auto* osParam = state.getRawParameterValue ("oversampleMode"))
+        liveIndex = juce::jlimit (0, 6, (int) osParam->load());
 
-    // Force the LIVE combo inside the OVERSAMPLE dialog to match the
-    // current right-side LIVE dropdown. This guarantees visual sync
-    // even on fresh instances or after any stored/default shenanigans.
-    {
-        // oversampleLiveBox IDs: 1..7 => indices 0..6
-        const int currentId    = oversampleLiveBox.getSelectedId();
-        const int currentIndex = juce::jlimit (0, 6, currentId - 1);
+    const int offlineIndex = processor.getStoredOfflineOversampleIndex(); // -1..6
 
-        content->syncLiveFromIndex (currentIndex);
-    }
+    auto content = std::make_unique<OversampleSettingsComponent> (processor,
+                                                                   state,
+                                                                   liveIndex,
+                                                                   offlineIndex);
 
     content->setSize (320, 120);
 
