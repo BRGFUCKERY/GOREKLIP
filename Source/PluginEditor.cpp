@@ -581,6 +581,13 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         oversampleBox.addItem (osModes[i], id);
     }
 
+    // Sync initial selection to the current parameter value so the readout is visible
+    if (auto* osParam = processor.getParametersState().getRawParameterValue ("oversampleMode"))
+    {
+        const int liveIndex = juce::jlimit (0, 6, (int) osParam->load());
+        oversampleBox.setSelectedId (liveIndex + 1, juce::dontSendNotification);
+    }
+
     // This one should behave like a normal ComboBox: user clicks it directly.
     oversampleBox.setInterceptsMouseClicks (true, true);
 
@@ -1056,9 +1063,6 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
 
     // Use the same LookAndFeel as the combo arrows – black popup, white text
     menu.setLookAndFeel (&comboLnf);
-
-    // Decorative line above SETTINGS (______ like in KLIPERBIBLE text)
-    menu.addSectionHeader ("________");
 
     // Title
     menu.addSectionHeader ("SETTINGS");
