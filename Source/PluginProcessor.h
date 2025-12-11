@@ -230,7 +230,8 @@ private:
     int  storedOfflineOversampleIndex = -1;
 
     // LIVE oversample index (0 = x1, 1 = x2, 2 = x4, 3 = x8, 4 = x16, 5 = x32, 6 = x64)
-    // This is the global default for new instances.
+    // NOTE: This is now only used at runtime if needed; it is no longer loaded/saved
+    //       from userSettings or used as a global default for new instances.
     int  storedLiveOversampleIndex = 0;
 
     //==========================================================
