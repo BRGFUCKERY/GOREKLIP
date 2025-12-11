@@ -317,6 +317,20 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         analogToneAlpha = juce::jlimit (0.0f, 1.0f, alphaAnalog);
     }
 
+    // Silk Max filters (split frequencies tuned for post-clip coloration)
+    {
+        const float preFc = 4500.0f;
+        const float deFc  = 6500.0f;
+        const float lowFc = 250.0f;
+
+        silkPreAlpha = juce::jlimit (0.0f, 1.0f,
+            std::exp (-2.0f * juce::MathConstants<float>::pi * preFc / sr));
+        silkDeAlpha = juce::jlimit (0.0f, 1.0f,
+            std::exp (-2.0f * juce::MathConstants<float>::pi * deFc / sr));
+        silkLowAlpha = juce::jlimit (0.0f, 1.0f,
+            std::exp (-2.0f * juce::MathConstants<float>::pi * lowFc / sr));
+    }
+
     lastOttGain = 1.0f;
 
     // Initial oversampling setup from parameter
@@ -396,6 +410,7 @@ void FruityClipAudioProcessor::resetSilkState (int numChannels)
     {
         st.pre = 0.0f;
         st.de  = 0.0f;
+        st.low = 0.0f;
     }
 }
 
@@ -455,112 +470,48 @@ float FruityClipAudioProcessor::processLimiterSample (float x)
     return x * limiterGain;
 }
 
-float FruityClipAudioProcessor::applySilkPreEmphasis (float x, int channel, float silkAmount)
+float FruityClipAudioProcessor::applySilkMaxColor (float x, int channel)
 {
+    // Silk Max is tuned against fastcartest.wav → reference_silk_100.wav.
+    // The core clipper stays digital; this block adds the post-clip coloration
+    // that approximates the full-red Silk hardware pass.
     if (sampleRate <= 0.0)
+        return x;
+
+    if (channel < 0 || channel >= (int) silkStates.size())
         return x;
 
     auto& st = silkStates[(size_t) channel];
 
-    // Shape the control for smoother response
-    const float s   = juce::jlimit (0.0f, 1.0f, silkAmount);
-    const float amt = std::pow (s, 0.8f);
+    const float preGain     = dbToGain (kSilkPreEmphasisDb);
+    const float deGain      = dbToGain (kSilkDeEmphasisDb);
+    const float lowShelfG   = dbToGain (kSilkLowShelfDb);
+    const float invSatNorm  = 1.0f / (std::tanh (kSilkMaxDrive + kSilkMaxAsym) - std::tanh (kSilkMaxAsym));
 
-    // One-pole lowpass around a few kHz to derive a "low" band
-    const float fc    = juce::jmap (amt, 0.0f, 1.0f, 2500.0f, 6000.0f);
-    const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / (float) sampleRate);
+    // 1) HF pre-emphasis into the saturator (simple high split)
+    st.pre = silkPreAlpha * st.pre + (1.0f - silkPreAlpha) * x;
+    const float preLow  = st.pre;
+    const float preHigh = x - preLow;
+    const float pre     = preLow + preHigh * preGain;
 
-    st.pre = alpha * st.pre + (1.0f - alpha) * x;
+    // 2) Soft asymmetric saturation for odd/even blend
+    const float driven = pre * kSilkMaxDrive;
+    const float sat    = (std::tanh (driven + kSilkMaxAsym) - std::tanh (kSilkMaxAsym)) * invSatNorm;
 
-    const float low  = st.pre;
-    const float high = x - low;
+    // 3) HF de-emphasis (slightly heavier than pre boost)
+    st.de = silkDeAlpha * st.de + (1.0f - silkDeAlpha) * sat;
+    const float deLow  = st.de;
+    const float deHigh = sat - deLow;
+    const float de     = deLow + deHigh * deGain;
 
-    // Gentle HF tilt – starts at 0, tops out around +2 dB-ish
-    const float tilt = juce::jmap (amt, 0.0f, 1.0f, 0.0f, 0.25f);
+    // 4) Low-mid weight via single-pole shelf approximation
+    st.low = silkLowAlpha * st.low + (1.0f - silkLowAlpha) * de;
+    const float low      = st.low;
+    const float high     = de - low;
+    const float weighted = low * lowShelfG + high;
 
-    return x + tilt * high;
-}
-
-float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float silkAmount)
-{
-    if (sampleRate <= 0.0)
-        return x;
-
-    auto& st = silkStates[(size_t) channel];
-
-    // Same shaped control
-    const float s   = juce::jlimit (0.0f, 1.0f, silkAmount);
-    const float amt = std::pow (s, 0.8f);
-
-    // One-pole lowpass in the upper band to gently smooth top end
-    const float fc    = juce::jmap (amt, 0.0f, 1.0f, 9000.0f, 6500.0f);
-    const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / (float) sampleRate);
-
-    st.de = alpha * st.de + (1.0f - alpha) * x;
-
-    const float blend = juce::jmap (amt, 0.0f, 1.0f, 0.0f, 0.35f);
-
-    return juce::jlimit (-2.5f, 2.5f, x + blend * (st.de - x));
-}
-
-float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel)
-{
-    auto* ottParam = parameters.getRawParameterValue ("ottAmount");
-    const float rawSilk = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
-
-    // Shape the control to avoid "all the action at the top"
-    const float s = std::pow (rawSilk, 0.8f);
-
-    // For effectively zero silk, bypass this stage
-    if (s <= 1.0e-4f)
-        return x;
-
-    // Pre-emphasis: subtle HF tilt into the non-linearity
-    const float pre = applySilkPreEmphasis (x, channel, s);
-
-    // Gentle drive and cubic curve
-    const float drive = 1.0f + 0.25f * s;
-    const float xd    = pre * drive;
-
-    const float a = 0.18f * s;
-    float y       = xd - a * xd * xd * xd;
-
-    // Static trim so silk does not explode the level
-    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, -1.5f);
-    const float trim   = juce::Decibels::decibelsToGain (trimDb);
-    y *= trim;
-
-    // De-emphasis: gently smooth the very top end again
-    return applySilkDeEmphasis (y, channel, s);
-}
-
-float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
-{
-    const float threshold = 1.0f;
-
-    auto* ottParam = parameters.getRawParameterValue ("ottAmount");
-    const float silk = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
-    const float drive = 1.0f + 0.3f * silk;
-
-    const float in = x * drive;
-    const float absIn = std::abs (in);
-    const float sign  = (in >= 0.0f ? 1.0f : -1.0f);
-
-    float out = in;
-
-    if (absIn > threshold)
-    {
-        const float over = absIn - threshold;
-        const float soft = threshold + std::tanh (over);
-        out = sign * soft;
-    }
-
-    // Calibrated vs hardware 0-silk white-noise capture:
-    // 0.73 ~= -2.7 dB trim, bringing GK's analog 0 level much closer
-    // to the real 5060 → Lavry at the same setting.
-    out *= 0.73f;
-
-    return out;
+    // 5) Calibration trim to align loudness vs. analog capture
+    return weighted * kSilkMaxGain;
 }
 
 float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
@@ -709,7 +660,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 for (int i = 0; i < numSamples; ++i)
                 {
                     float y = samples[i] * inputDrive;
-                    y = applySilkAnalogSample (y, ch);
                     samples[i] = y;
                 }
             }
@@ -838,6 +788,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // BASE-RATE SATURATION (always before oversampling)
         //==========================================================
         const bool limiterOn = useLimiter;
+        const bool useSilkMax = (! limiterOn && clipMode == ClipMode::Analog);
 
         if (! limiterOn && satAmount > 0.0f)
         {
@@ -911,13 +862,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         sample = processLimiterSample (sample);
                     }
-                    else if (clipMode == ClipMode::Analog)
-                    {
-                        sample = applyClipperAnalogSample (sample);
-                    }
                     else
                     {
-                        // Pure hard clip in oversampled domain
+                        // Pure hard clip in oversampled domain (shared digital core)
                         if (sample >  1.0f) sample =  1.0f;
                         if (sample < -1.0f) sample = -1.0f;
                     }
@@ -945,8 +892,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // SAT already applied previously if needed.
                     if (limiterOn)
                         sample = processLimiterSample (sample);
-                    else if (clipMode == ClipMode::Analog)
-                        sample = applyClipperAnalogSample (sample);
                     else
                     {
                         // Pure hard clip at base rate
@@ -960,16 +905,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         //======================================================
-        // ANALOG 0-SILK TONE MATCH (base rate only)
+        // SILK MAX COLORATION (base rate only, post-clip)
         //======================================================
-        if (! limiterOn && clipMode == ClipMode::Analog)
+        if (useSilkMax)
         {
             for (int ch = 0; ch < numChannels; ++ch)
             {
                 float* s = buffer.getWritePointer (ch);
 
                 for (int i = 0; i < numSamples; ++i)
-                    s[i] = applyAnalogToneMatch (s[i], ch);
+                    s[i] = applySilkMaxColor (s[i], ch);
             }
         }
 

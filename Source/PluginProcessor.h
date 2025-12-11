@@ -113,10 +113,7 @@ private:
     // Limiter sample processor
     float processLimiterSample (float x);
 
-    float applySilkAnalogSample (float x, int channel);
-    float applySilkPreEmphasis (float x, int channel, float silkAmount);
-    float applySilkDeEmphasis   (float x, int channel, float silkAmount);
-    float applyClipperAnalogSample (float x);
+    float applySilkMaxColor (float x, int channel);
 
     float applyAnalogToneMatch (float x, int channel);
 
