@@ -103,13 +103,13 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
 
         // ------------------------------------------------------
         // OFFLINE oversample global default
-        //   -1 = SAME (follow LIVE)
+        //   default = explicit x1 so both menus start aligned
         // ------------------------------------------------------
         if (! userSettings->containsKey ("offlineOversampleIndex"))
-            userSettings->setValue ("offlineOversampleIndex", -1);
+            userSettings->setValue ("offlineOversampleIndex", 0); // 0 => x1
 
         storedOfflineOversampleIndex =
-            userSettings->getIntValue ("offlineOversampleIndex", -1);
+            userSettings->getIntValue ("offlineOversampleIndex", 0);
 
         // ------------------------------------------------------
         // LIVE oversample global default (0 = x1)
