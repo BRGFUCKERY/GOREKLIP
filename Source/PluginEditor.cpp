@@ -515,9 +515,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     };
 
     setupLabel (gainLabel, "GAIN");
-    setupLabel (ottLabel,  "LOVE");
+    setupLabel (ottLabel,  getLoveSilkLabelText());
     setupLabel (satLabel,  "DEATH");
-    setupLabel (modeLabel, "CLIPPER"); // will flip to LIMITER in runtime
+    setupLabel (modeLabel, getClipperLabelText()); // will flip to LIMITER / 50-69 in runtime
 
     addAndMakeVisible (gainLabel);
     addAndMakeVisible (ottLabel);
@@ -665,7 +665,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     {
         const bool useLimiter = (modeSlider.getValue() >= 0.5f);
         satSlider.setEnabled (! useLimiter);
-        modeLabel.setText (useLimiter ? "LIMITER" : "CLIPPER", juce::dontSendNotification);
+        modeLabel.setText (getClipperLabelText(), juce::dontSendNotification);
     };
 
     // Initial state from parameter
@@ -954,6 +954,9 @@ void FruityClipAudioProcessorEditor::timerCallback()
                            juce::dontSendNotification);
     }
 
+    ottLabel.setText (getLoveSilkLabelText(), juce::dontSendNotification);
+    modeLabel.setText (getClipperLabelText(), juce::dontSendNotification);
+
     // Drive pentagrams / x1 colour from lastBurn (0..1)
     const float burnForIcons = juce::jlimit (0.0f, 1.0f, lastBurn);
     comboLnf.setBurnAmount (burnForIcons);
@@ -1086,6 +1089,29 @@ void FruityClipAudioProcessorEditor::openKlipBible()
     showBypassInfoPopup();
 }
 
+juce::String FruityClipAudioProcessorEditor::getLoveSilkLabelText() const
+{
+    const auto mode = processor.getClipMode();
+    if (mode == FruityClipAudioProcessor::ClipMode::Analog)
+        return "SILK";
+
+    return "LOVE";
+}
+
+juce::String FruityClipAudioProcessorEditor::getClipperLabelText() const
+{
+    const auto mode = processor.getClipMode();
+    const bool limiterOn = processor.isLimiterEnabled();
+
+    if (limiterOn)
+        return "LIMITER";
+
+    if (mode == FruityClipAudioProcessor::ClipMode::Analog)
+        return "50 – 69";
+
+    return "CLIPPER";
+}
+
 void FruityClipAudioProcessorEditor::showSettingsMenu()
 {
     juce::PopupMenu menu;
@@ -1103,26 +1129,43 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
     constexpr int idLookCooked     = 1;
     constexpr int idLookLufs       = 2;
     constexpr int idLookStatic     = 3;
-    constexpr int idOversampleMenu = 4;
-    constexpr int idKlipBible      = 5;
+    constexpr int idModeDigital    = 4;
+    constexpr int idModeAnalog     = 5;
+    constexpr int idOversampleMenu = 6;
+    constexpr int idKlipBible      = 7;
 
     // LOOK modes – mutually exclusive, ticked based on current mode
     menu.addItem (idLookCooked,
-                  "LOOK - COOKED",
+                  "LOOK – COOKED",
                   true,
                   mode == LookMode::Cooked);
 
     menu.addItem (idLookLufs,
-                  "LOOK - LUFS",
+                  "LOOK – LUFS",
                   true,
                   mode == LookMode::Lufs);
 
     menu.addItem (idLookStatic,
-                  "LOOK - STATIC",
+                  "LOOK – STATIC",
                   true,
                   mode == LookMode::Static);
 
-    // Separator between LOOK and OVERSAMPLE
+    // Separator between LOOK and MODE
+    menu.addSeparator();
+
+    const auto clipMode = processor.getClipMode();
+
+    menu.addItem (idModeDigital,
+                  "MODE – DIGITAL",
+                  true,
+                  clipMode == FruityClipAudioProcessor::ClipMode::Digital);
+
+    menu.addItem (idModeAnalog,
+                  "MODE – ANALOG",
+                  true,
+                  clipMode == FruityClipAudioProcessor::ClipMode::Analog);
+
+    // Separator between MODE and OVERSAMPLE
     menu.addSeparator();
 
     // New OVERSAMPLE entry (opens oversample settings dialog)
@@ -1142,6 +1185,9 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
     menu.showMenuAsync (juce::PopupMenu::Options(),
                         [this] (int result)
                         {
+                            auto* clipModeParam = dynamic_cast<juce::AudioParameterChoice*> (
+                                processor.getParametersState().getParameter ("clipMode"));
+
                             switch (result)
                             {
                                 case idLookCooked:
@@ -1154,6 +1200,16 @@ void FruityClipAudioProcessorEditor::showSettingsMenu()
 
                                 case idLookStatic:
                                     setLookMode (LookMode::Static);
+                                    break;
+
+                                case idModeDigital:
+                                    if (clipModeParam != nullptr)
+                                        clipModeParam->setValueNotifyingHost (0.0f);
+                                    break;
+
+                                case idModeAnalog:
+                                    if (clipModeParam != nullptr)
+                                        clipModeParam->setValueNotifyingHost (1.0f);
                                     break;
 
                                 case idOversampleMenu:
