@@ -406,7 +406,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     lookSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
 
     oversamplingSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    oversamplingSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
+    oversamplingSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
 
     menuSelector.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
     menuSelector.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
@@ -565,13 +565,15 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     oversampleBox.setJustificationType (juce::Justification::centred);
     oversampleBox.setTextWhenNothingSelected ("x1");
 
-    // Let this one actually show its text + arrow as a normal combo
+    // Plain JUCE combo: white text on black, normal arrow.
     oversampleBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
     oversampleBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
+    oversampleBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::black);
     oversampleBox.setColour (juce::ComboBox::arrowColourId,      juce::Colours::white);
 
-    oversampleBox.setLookAndFeel (&comboLnf);
+    // IMPORTANT: no custom LNF here – we want default combo drawing.
+    // (It will inherit CustomLookAndFeel from the editor.)
+    // oversampleBox.setLookAndFeel (&comboLnf);  // <-- DELETE THIS LINE
 
     // Populate with the same modes as the oversample parameter
     juce::StringArray osModes { "x1", "x2", "x4", "x8", "x16", "x32", "x64" };
