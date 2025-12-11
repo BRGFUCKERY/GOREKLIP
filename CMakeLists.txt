@@ -85,6 +85,6 @@ target_link_libraries(SilkMaxRender PRIVATE
     juce::juce_audio_processors
     juce::juce_audio_formats
     juce::juce_audio_basics
-    juce::juce_audio_dsp
+    juce::juce_dsp
     juce::juce_core
 )
