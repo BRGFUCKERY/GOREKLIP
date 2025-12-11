@@ -84,6 +84,10 @@ public:
     int  getStoredOfflineOversampleIndex() const;
     void setStoredOfflineOversampleIndex (int index);
 
+    // LIVE oversample index (global default for new instances)
+    int  getStoredLiveOversampleIndex() const;
+    void setStoredLiveOversampleIndex (int index);
+
     // Bypass all processing after input gain (for A/B)
     void setGainBypass (bool shouldBypass)        { gainBypass.store (shouldBypass); }
     bool getGainBypass() const                    { return gainBypass.load(); }
@@ -185,6 +189,10 @@ private:
     //   -1 = follow LIVE setting ("SAME")
     //    0 = x1, 1 = x2, 2 = x4, 3 = x8, 4 = x16, 5 = x32, 6 = x64
     int  storedOfflineOversampleIndex = -1;
+
+    // LIVE oversample index (0 = x1, 1 = x2, 2 = x4, 3 = x8, 4 = x16, 5 = x32, 6 = x64)
+    // This is the global default for new instances.
+    int  storedLiveOversampleIndex = 0;
 
     //==========================================================
     // Oversampling
