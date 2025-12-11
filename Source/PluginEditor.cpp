@@ -356,7 +356,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     pent.closeSubPath();
 
     if (isOversampleLive)
-        pent.applyTransform (juce::AffineTransform::scaled (-1.0f, 1.0f, cx, cy));
+        pent.applyTransform (juce::AffineTransform{}.scaled (-1.0f, 1.0f, cx, cy));
 
     // Pentagram colour follows burnAmount: 0 = black, 1 = white
     const float burn = juce::jlimit (0.0f, 1.0f, burnAmount);
