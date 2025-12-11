@@ -992,16 +992,10 @@ void FruityClipAudioProcessorEditor::showOversampleMenu()
 
     auto content = std::make_unique<OversampleSettingsComponent> (processor, state);
 
-    // Force the LIVE combo inside the OVERSAMPLE dialog to match the
-    // current right-side LIVE dropdown. This guarantees visual sync
-    // even on fresh instances or after any stored/default shenanigans.
-    {
-        // oversampleLiveBox IDs: 1..7 => indices 0..6
-        const int currentId    = oversampleLiveBox.getSelectedId();
-        const int currentIndex = juce::jlimit (0, 6, currentId - 1);
-
-        content->syncLiveFromIndex (currentIndex);
-    }
+    // The OversampleSettingsComponent constructor already initialises
+    // its LIVE combo from the "oversampleMode" parameter (which is
+    // pushed from the stored live oversample index in the processor),
+    // so we do not need to force a manual sync from oversampleLiveBox.
 
     content->setSize (320, 120);
 
