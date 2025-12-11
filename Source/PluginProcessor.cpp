@@ -440,13 +440,15 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // inputGain comes from the finger (in dB).
     const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
 
-    // Fruity hard-clip alignment factor.
-    // Start at 1.0f (no change). You can fine-tune this in ultra-tiny steps
-    // (e.g. 0.99999f, 1.00001f, etc.) to tighten null / crest-factor later.
-    const float fruityCal = 1.0f;
+    // Coarse alignment (kept as 1.0f for now)
+    constexpr float fruityCal = 1.0f;
+
+    // Fine alignment scalar to tune RMS/null vs Fruity.
+    // Start at 1.0f. Later you can try values like 0.99998f, 1.00002f, etc.
+    constexpr float fruityFineCal = 0.99999f;
 
     // This is the actual drive into OTT/SAT/clipper for default mode.
-    const float inputDrive = inputGain * fruityCal;
+    const float inputDrive = inputGain * fruityCal * fruityFineCal;
 
     int osIndex = 0;
 
