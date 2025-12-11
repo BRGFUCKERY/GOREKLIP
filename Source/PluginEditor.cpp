@@ -554,11 +554,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // LIVE OVERSAMPLE dropdown (top-right, x1/x2/x4/x8/x16/x32/x64)
     oversampleLiveBox.setName ("oversampleLiveBox");
     oversampleLiveBox.setJustificationType (juce::Justification::centred);
-    oversampleLiveBox.setTextWhenNothingSelected ("x1");
+    oversampleLiveBox.setTextWhenNothingSelected ("");
 
-    oversampleLiveBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::black);
-    oversampleLiveBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::white.withAlpha (0.2f));
-    oversampleLiveBox.setColour (juce::ComboBox::textColourId,       juce::Colours::white);
+    oversampleLiveBox.setColour (juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    oversampleLiveBox.setColour (juce::ComboBox::outlineColourId,    juce::Colours::transparentBlack);
+    oversampleLiveBox.setColour (juce::ComboBox::textColourId,       juce::Colours::transparentWhite);
+    oversampleLiveBox.setColour (juce::ComboBox::arrowColourId,      juce::Colours::transparentWhite);
+    oversampleLiveBox.setLookAndFeel (&comboLnf);
+    oversampleLiveBox.setInterceptsMouseClicks (false, false);
 
     {
         juce::StringArray modes { "x1", "x2", "x4", "x8", "x16", "x32", "x64" };
@@ -934,6 +937,7 @@ void FruityClipAudioProcessorEditor::timerCallback()
     lookBox.setColour (juce::ComboBox::arrowColourId, burnColour);
 
     lookBox.repaint();
+    oversampleLiveBox.repaint();
 
     repaint();
 }
@@ -953,6 +957,35 @@ void FruityClipAudioProcessorEditor::showOversampleMenu()
     options.useNativeTitleBar        = true;
     options.resizable                = false;
     options.launchAsync();
+}
+
+void FruityClipAudioProcessorEditor::showOversampleLiveMenu()
+{
+    juce::PopupMenu menu;
+    menu.setLookAndFeel (&comboLnf);
+
+    juce::StringArray modes { "x1", "x2", "x4", "x8", "x16", "x32", "x64" };
+
+    int currentIndex = 0;
+    if (auto* osParam = processor.getParametersState().getRawParameterValue ("oversampleMode"))
+        currentIndex = juce::jlimit (0, modes.size() - 1, (int) osParam->load());
+
+    for (int i = 0; i < modes.size(); ++i)
+    {
+        const int id = i + 1;
+        menu.addItem (id, modes[i], true, currentIndex == i);
+    }
+
+    menu.showMenuAsync (juce::PopupMenu::Options(),
+                        [this] (int result)
+                        {
+                            if (result <= 0)
+                                return;
+
+                            const int index = juce::jlimit (0, 6, result - 1);
+                            oversampleLiveBox.setSelectedId (index + 1, juce::sendNotificationSync);
+                            processor.setStoredLiveOversampleIndex (index);
+                        });
 }
 
 void FruityClipAudioProcessorEditor::showBypassInfoPopup()
@@ -1119,6 +1152,12 @@ void FruityClipAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
     if (lookBox.getBounds().contains (posInt))
     {
         showSettingsMenu();
+        return;
+    }
+
+    if (oversampleLiveBox.getBounds().contains (posInt))
+    {
+        showOversampleLiveMenu();
         return;
     }
 
