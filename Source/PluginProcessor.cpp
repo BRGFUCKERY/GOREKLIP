@@ -524,7 +524,10 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
         out = sign * soft;
     }
 
-    out *= 0.9f;
+    // Calibrated vs hardware 0-silk white-noise capture:
+    // 0.73 ~= -2.7 dB trim, bringing GK's analog 0 level much closer
+    // to the real 5060 → Lavry at the same setting.
+    out *= 0.73f;
 
     return out;
 }
