@@ -284,11 +284,12 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
 {
     juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
 
-    const auto name      = box.getName();
-    const bool isLookBox = (name == "lookBox");
+    const auto name             = box.getName();
+    const bool isLookBox        = (name == "lookBox");
+    const bool isOversampleLive = (name == "oversampleLiveBox");
 
-    // For everything EXCEPT the left SETTINGS box, just use the normal V4 drawing.
-    if (! isLookBox)
+    // For everything except the pentagram boxes, just use the normal V4 drawing.
+    if (! isLookBox && ! isOversampleLive)
     {
         juce::LookAndFeel_V4::drawComboBox (g,
                                             width, height,
@@ -299,7 +300,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
         return;
     }
 
-    // --- Custom drawing for left SETTINGS box (pentagram that burns) ---
+    // --- Custom drawing for pentagram boxes (lookBox / oversampleLiveBox) ---
 
     auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
                                           (float) width, (float) height);
@@ -311,9 +312,14 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     const float iconSize   = (float) height * 0.55f;
     const float iconRadius = iconSize * 0.5f;
 
-    // Hug the right edge of the left box
-    const float iconCenterX = bounds.getRight() - iconSize * 0.9f;
+    float iconCenterX = bounds.getRight() - iconSize * 0.9f; // keep existing X logic
     const float iconCenterY = bounds.getCentreY();
+
+    if (isOversampleLive)
+    {
+        const float distanceFromLeft = iconCenterX - bounds.getX();
+        iconCenterX = bounds.getRight() - distanceFromLeft;
+    }
 
     juce::Rectangle<int> starBounds (
         (int) std::round (iconCenterX - iconRadius),
@@ -348,6 +354,9 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     pent.lineTo (pts[1]);
     pent.lineTo (pts[3]);
     pent.closeSubPath();
+
+    if (isOversampleLive)
+        pent.applyTransform (juce::AffineTransform::scaled (-1.0f, 1.0f, cx, cy));
 
     // Pentagram colour follows burnAmount: 0 = black, 1 = white
     const float burn = juce::jlimit (0.0f, 1.0f, burnAmount);
