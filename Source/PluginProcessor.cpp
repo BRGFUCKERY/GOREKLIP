@@ -493,9 +493,9 @@ float FruityClipAudioProcessor::applySilkMaxColor (float x, int channel)
 
     auto& st = silkStates[(size_t) channel];
 
-    const float preGain     = dbToGain (kSilkPreEmphasisDb);
-    const float deGain      = dbToGain (kSilkDeEmphasisDb);
-    const float lowShelfG   = dbToGain (kSilkLowShelfDb);
+    const float preGain     = juce::Decibels::decibelsToGain (kSilkPreEmphasisDb);
+    const float deGain      = juce::Decibels::decibelsToGain (kSilkDeEmphasisDb);
+    const float lowShelfG   = juce::Decibels::decibelsToGain (kSilkLowShelfDb);
     const float invSatNorm  = 1.0f / (std::tanh (kSilkMaxDrive + kSilkMaxAsym) - std::tanh (kSilkMaxAsym));
 
     // 1) HF pre-emphasis into the saturator (simple high split)
