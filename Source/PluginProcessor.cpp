@@ -559,7 +559,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     return applySilkDeEmphasis (y, channel, s);
 }
 
-float FruityClipAudioProcessor::applyClipperAnalogSamplefloat FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, float silkAmount)
+float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, float silkAmount)
 {
     constexpr float threshold = 1.0f;
     constexpr float kneeWidth = 0.38f;
@@ -640,7 +640,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSamplefloat FruityClipAudioPro
     return juce::jlimit (-2.0f, 2.0f, out);
 }
 
-float FruityClipAudioProcessor::applyAnalogToneMatchfloat FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, float silkAmount)
+float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, float silkAmount)
 {
     // Safety: bail out if we don't have a valid sample rate or state
     if (sampleRate <= 0.0)
