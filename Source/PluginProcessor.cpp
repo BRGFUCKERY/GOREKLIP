@@ -451,6 +451,7 @@ void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
     {
         st.biasMemory = 0.0f;
         st.levelEnv   = 0.0f;
+        st.dcBlock    = 0.0f;
     }
 }
 
@@ -628,16 +629,22 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
 
     // Tame bias at insane levels (avoid fuzz)
     bias *= 1.0f / (1.0f + 0.20f * env);
-
     // -------------------------------------------------------------
-    // Bias inside shaper + DC compensation (this is what creates H2)
+    // Bias inside shaper (creates even harmonics)
+    //
+    // IMPORTANT:
+    // We do NOT do (shaped - shaped(bias)) here anymore.
+    // That DC-comp trick was killing the even-harmonic energy.
+    // Instead, we allow the asymmetry to exist, then remove *only DC*
+    // with an ultra-low cutoff one-pole HP (preserves H2/H4/H6).
     // -------------------------------------------------------------
-    const float shaped   = softClip (inRaw + bias);
-    const float biasOnly = softClip (bias);
+    float y = softClip (inRaw + bias);
 
-    float out = shaped - biasOnly;
+    // DC blocker (very low corner) – keeps the expensive even series, removes DC drift
+    st.dcBlock = analogDcAlpha * st.dcBlock + (1.0f - analogDcAlpha) * y;
+    y -= st.dcBlock;
 
-    return juce::jlimit (-2.0f, 2.0f, out);
+    return juce::jlimit (-2.0f, 2.0f, y);
 }
 
 float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, float silkAmount)
@@ -980,6 +987,21 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         //   - In oversampled mode, this runs at higher rate
         //   - No metering here; meters are computed later at base rate
         //==========================================================
+
+        // Compute DC-block coefficient for the analog clipper at the *current processing rate*.
+        // When oversampling is on, applyClipperAnalogSample runs at the oversampled rate.
+        // We want a ~sub-5 Hz corner no matter what.
+        {
+            float effectiveSr = (float) sampleRate;
+            if (oversampler && currentOversampleIndex > 0)
+                effectiveSr *= (float) oversampler->getOversamplingFactor();
+
+            // Ultra-low DC cutoff (Hz)
+            constexpr float dcFc = 3.0f;
+            analogDcAlpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / juce::jmax (1.0f, effectiveSr));
+            analogDcAlpha = juce::jlimit (0.0f, 0.9999999f, analogDcAlpha);
+        }
+
         const bool useOversampling = (oversampler != nullptr && currentOversampleIndex > 0);
 
         if (useOversampling)
@@ -1049,47 +1071,20 @@ samples[i] = sample;
         }
 
         // FINAL SAFETY CEILING AT BASE RATE
-//
-// Digital / limiter-on: strict hard ceiling at ±1.0
-// Analog (limiter OFF): gentle soft safety so we don't destroy asymmetry (H2) with a last-stage hard clamp
-const bool useSoftSafety = (isAnalogMode && ! limiterOn);
-
-auto softSafety = [] (float v) noexcept
-{
-    constexpr float ceiling = 1.05f;
-    constexpr float knee    = 0.12f;
-
-    const float a = std::abs (v);
-    if (a <= ceiling)
-        return v;
-
-    const float over   = a - ceiling;
-    const float shaped = ceiling + std::tanh (over / knee) * knee;
-    return std::copysign (shaped, v);
-};
-
-for (int ch = 0; ch < numChannels; ++ch)
-{
-    float* s = buffer.getWritePointer (ch);
-
-    for (int i = 0; i < numSamples; ++i)
-    {
-        float y = s[i];
-
-        if (useSoftSafety)
+        // We ALWAYS end the chain with a strict Lavry-style 0 dBFS hard ceiling.
+        // (Analog/Digital/OS/no-OS – doesn’t matter. Final output is guaranteed in [-1, +1].)
+        for (int ch = 0; ch < numChannels; ++ch)
         {
-            y = softSafety (y);
-        }
-        else
-        {
-            if (y >  1.0f) y =  1.0f;
-            if (y < -1.0f) y = -1.0f;
-        }
+            float* s = buffer.getWritePointer (ch);
 
-        s[i] = y;
-    }
-}
-
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float y = s[i];
+                if (y >  1.0f) y =  1.0f;
+                if (y < -1.0f) y = -1.0f;
+                s[i] = y;
+            }
+        }
 
 
         {
@@ -1125,7 +1120,10 @@ for (int ch = 0; ch < numChannels; ++ch)
                     // 24-bit style quantization
                     const float q = std::round (s * quantSteps) / quantSteps;
 
-                    samples[i] = q;
+                    float y = q;
+                    if (y >  1.0f) y =  1.0f;
+                    if (y < -1.0f) y = -1.0f;
+                    samples[i] = y;
                 }
             }
         }

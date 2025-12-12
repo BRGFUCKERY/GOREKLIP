@@ -198,6 +198,7 @@ private:
     float analogToneAlpha = 0.0f;    // one-pole LP factor for analog tone tilt
     float analogEnvAttackAlpha  = 0.0f; // envelope follower for analog bias
     float analogEnvReleaseAlpha = 0.0f;
+    float analogDcAlpha         = 0.0f; // DC blocker coefficient for analog clipper (computed per-block for OS rate)
 
 
     //==========================================================
@@ -207,6 +208,7 @@ private:
     {
         float biasMemory = 0.0f;
         float levelEnv   = 0.0f; // slow envelope of |in| for bias engagement
+        float dcBlock    = 0.0f; // ultra-low HP state to remove DC without killing even harmonics
     };
 
     void resetAnalogClipState (int numChannels);
