@@ -80,6 +80,11 @@ target_sources(SilkMaxRender PRIVATE
     Source/PluginProcessor.h
 )
 
+target_include_directories(SilkMaxRender PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source
+)
+
 target_link_libraries(SilkMaxRender PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
