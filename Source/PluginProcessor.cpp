@@ -565,6 +565,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
 
 float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
 {
+    // Safety: bail out if we don't have a valid sample rate or state
     if (sampleRate <= 0.0)
         return x;
 
@@ -573,21 +574,68 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
 
     auto& st = analogToneStates[(size_t) channel];
 
-    // One-pole lowpass around 1 kHz (coeff set in prepareToPlay)
+    // -----------------------------------------------------------------
+    // 1) Split into "low" and "high" around ~1 kHz
+    //
+    // analogToneAlpha is configured in prepareToPlay() to give us
+    // a one-pole lowpass at ~1 kHz. That becomes our "low" band and
+    // (x - low) becomes the complementary "high" band.
+    // -----------------------------------------------------------------
     st.low = analogToneAlpha * st.low + (1.0f - analogToneAlpha) * x;
 
     const float low  = st.low;
     const float high = x - low;
 
-    // Gentle tilt tuned from white-noise measurements.
-    // Start point: GK 0-silk was too bassy and slightly darker on top;
-    // this pulls lows down and nudges highs up a bit.
-    constexpr float lowGain  = 0.65f;  // about -3.7 dB
-    constexpr float highGain = 1.15f;  // about +1.2 dB
+    // -----------------------------------------------------------------
+    // 2) Read SILK (ottAmount) and shape it
+    //
+    // rawSilk comes from the LOVE/SILK knob (0..1). We reuse the same
+    // shaped control curve as the other silk code so the ear feels
+    // consistent: most of the "movement" is towards the top of the knob.
+    // -----------------------------------------------------------------
+    auto* ottParam = parameters.getRawParameterValue ("ottAmount");
+    const float rawSilk = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
+    const float s       = std::pow (rawSilk, 0.8f); // shaped SILK control
 
+    // -----------------------------------------------------------------
+    // 3) 5060-style tone tilt from white-noise measurements
+    //
+    // The hardware captures show:
+    //   • At SILK 0  : lows / low-mids slightly up, top end significantly down.
+    //   • At SILK 100: still darker than Ableton on top, but less extreme
+    //                  and with a touch more low/mid weight.
+    //
+    // We map SILK 0..1 onto two target tilt states:
+    //
+    //   SILK 0:
+    //       low band  ≈ +0.3 dB
+    //       high band ≈ -4.5 dB
+    //
+    //   SILK 1:
+    //       low band  ≈ +0.5 dB
+    //       high band ≈ -2.8 dB
+    //
+    // Then we interpolate in dB space based on the shaped SILK amount "s".
+    // -----------------------------------------------------------------
+    const float lowDbAt0  =  0.3f;  // dB at SILK 0
+    const float highDbAt0 = -4.5f;  // dB at SILK 0
+
+    const float lowDbAt1  =  0.5f;  // dB at SILK 100
+    const float highDbAt1 = -2.8f;  // dB at SILK 100
+
+    const float lowDb  = juce::jmap (s, 0.0f, 1.0f, lowDbAt0,  lowDbAt1);
+    const float highDb = juce::jmap (s, 0.0f, 1.0f, highDbAt0, highDbAt1);
+
+    const float lowGain  = juce::Decibels::decibelsToGain (lowDb);
+    const float highGain = juce::Decibels::decibelsToGain (highDb);
+
+    // -----------------------------------------------------------------
+    // 4) Apply tilt and clamp
+    // -----------------------------------------------------------------
     float y = lowGain * low + highGain * high;
 
-    // Safety clamp – should never normally hit.
+    // Safety clamp – we should never normally hit this,
+    // but it keeps the stage well-behaved in edge cases.
     return juce::jlimit (-4.0f, 4.0f, y);
 }
 
