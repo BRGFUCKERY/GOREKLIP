@@ -536,34 +536,27 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel)
 
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
 {
-    // Base clip threshold – aligns with your general engine "0 dBFS" point.
+    // Base clip threshold – nominal 0 dBFS in the oversampled domain.
     constexpr float threshold = 1.0f;
 
-    // Read SILK (LOVE) control.
+    // Read SILK (LOVE) control (0..1).
     auto* ottParam = parameters.getRawParameterValue ("ottAmount");
     const float silkRaw = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
 
-    // Shape SILK a little so most "movement" is in the upper half
-    // of the knob (consistent with your other silk behaviors).
+    // Shape SILK so most movement is in the upper half of the knob.
     const float silkShape = std::pow (silkRaw, 0.8f);
 
     // -----------------------------------------------------------------
     // 1) Core clip behavior
     //
-    // We aim for:
-    //   - Slightly softer than a razor hard clip, but still very much
-    //     a clipper (not a compressor).
-    //   - Similar THD progression to your 5060 captures:
-    //       -6 dB → low THD
-    //        0 dB → gentle rise
-    //       +6/+12 → high THD, but not absurd.
-    //
-    // We keep drive almost neutral and use a short soft knee
-    // around the threshold to avoid insane overs.
+    // We keep this close to the V2 behavior that gave good THD at
+    // -6 dB and 0 dB:
+    //   • Almost-neutral drive.
+    //   • Very short soft knee around threshold to avoid “digital brick”
+    //     harshness without turning into a compressor.
     // -----------------------------------------------------------------
 
-    // Very small drive change with SILK, so level behavior stays sane.
-    const float drive = 1.0f + 0.05f * silkShape;
+    const float drive = 1.0f + 0.05f * silkShape; // small, SILK-dependent drive
 
     const float in    = x * drive;
     const float absIn = std::abs (in);
@@ -573,76 +566,81 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
 
     if (absIn > threshold)
     {
-        // "Over" is how far past the nominal clip point we are.
         const float over = absIn - threshold;
 
-        // Knee width: very small value → close to hard clip,
-        // but enough to avoid the super-harsh digital brick sound.
+        // Knee width: small value → close to hard clip, but not razor.
         constexpr float kneeWidth = 0.4f;
 
-        // Soft transition using tanh around the knee.
+        // Soft transition into saturation.
         const float shaped = threshold + std::tanh (over / kneeWidth) * kneeWidth;
 
         out = sign * shaped;
     }
 
     // -----------------------------------------------------------------
-    // 2) Gentle even-harmonic asymmetry ("Neve cream")
+    // 2) Even-harmonic “Neve-ish” flavor
     //
-    // Your 1 kHz tests show:
-    //   - At -6 dB, hardware THD ~0.5% and SILK doesn't blow things up.
-    //   - At 0 dB, SILK 100 lifts THD to ~3x hardware's SILK 0 value,
-    //     but not 10-12x.
-    //   - At high levels, hardware adds more even content but is not
-    //     insanely overdriven.
+    // IMPORTANT CHANGE vs V2:
+    //   • In V2 we used sign * out^2 for the extra term, which is an
+    //     odd function and mostly reinforces odd harmonics.
+    //   • Here we use a *pure even* function of out:
+    //         g(out) = out^2 - c
+    //     and add a small multiple of that to the output.
     //
-    // Here we:
-    //   • Add a *very small* asymmetric term.
-    //   • Make it depend on how hard we're hitting the clipper.
-    //   • Scale it modestly with SILK.
+    //   This produces genuine 2nd/4th harmonics and a more “analog
+    //   asymmetry” feel without going nuclear at +6 / +12 dB.
+    //
+    //   The amount:
+    //     • Starts near zero below ~0.8 (-1.9 dBFS).
+    //     • Fades in between 0.8 and 2.0.
+    //     • Scales modestly with SILK.
     // -----------------------------------------------------------------
 
     const float absOut = std::abs (out);
 
-    // Level window where we start caring about the extra harmonics:
-    //   • Below ~0.8 (≈ -1.9 dBFS)  → almost nothing,
-    //   • From 0.8 to ~2.0         → fade in the effect.
-    constexpr float levelStart = 0.8f;
-    constexpr float levelEnd   = 2.0f;
+    constexpr float levelStart = 0.8f; // start of “interesting” region
+    constexpr float levelEnd   = 2.0f; // full effect by here
 
     float levelT = 0.0f;
     if (absOut > levelStart)
         levelT = juce::jlimit (0.0f, 1.0f, (absOut - levelStart) / (levelEnd - levelStart));
 
     // Base even-harmonic amount (SILK 0) and extra with SILK.
-    // These are intentionally small so we stay near your hardware THD.
-    constexpr float baseEven = 0.012f; // subtle bed even at SILK 0 when driven
-    constexpr float silkEven = 0.035f; // additional amount at SILK 100
+    // These remain small – we’re nudging the harmonic profile, not
+    // re-designing the whole clipper.
+    constexpr float baseEven = 0.010f; // subtle 2nd/4th at high drive, SILK 0
+    constexpr float silkEven = 0.030f; // extra at SILK 100
 
     const float evenAmount = (baseEven + silkEven * silkShape) * levelT;
 
     if (evenAmount > 0.0f)
     {
-        // out^2 is always positive → pure even-order shape.
-        const float sq = out * out;
+        // out^2 is an even function. Subtract a small offset so that
+        // around moderate levels we don't introduce a large DC shift.
+        //
+        // offset ≈ 0.5 is a heuristic: for |out| around 1, this keeps
+        // the extra term small but still effective.
+        constexpr float evenOffset = 0.5f;
 
-        // Asymmetric adjustment: we bias the positive vs negative halves
-        // slightly differently via the sign. This generates 2nd/4th harmonics
-        // without wildly changing the overall crest.
-        const float outSign = (out >= 0.0f ? 1.0f : -1.0f);
-        const float asym    = evenAmount * sq * outSign;
+        const float sq   = out * out;
+        const float even = sq - evenOffset;
+
+        // Pure even-harmonic adjustment.
+        const float asym = evenAmount * even;
 
         out += asym;
 
-        // Keep the internal analog value bounded before trim.
+        // Keep the internal analog value bounded before trim so we
+        // don't blow up the downstream tone stage.
         out = juce::jlimit (-2.0f, 2.0f, out);
     }
 
     // -----------------------------------------------------------------
     // 3) Calibration trim vs hardware level
     //
-    // We keep your existing trim so that overall level is still close
-    // to the previous calibration vs 5060 at SILK 0.
+    // Keep your existing trim factor so that overall level at moderate
+    // drive matches your 5060 → Lavry chain (SILK 0) as previously
+    // calibrated.
     // -----------------------------------------------------------------
     constexpr float trim = 0.73f;
     out *= trim;
