@@ -69,6 +69,82 @@ float FruityClipAudioProcessor::fruitySoftClipSample (float x, float threshold)
 }
 
 //==============================================================
+// Utility helpers
+//==============================================================
+static inline float gk_dbToLin (float db) { return std::pow (10.0f, db * 0.05f); }
+
+// Drive detector (0..1) based on how hot the signal is.
+// We want colour to wake up as you push into clip.
+static inline float gk_driveT (float absX)
+{
+    constexpr float start = 0.85f; // starts waking up slightly below clip
+    constexpr float end   = 2.20f; // "fully driven" by here (+6/+12 land here)
+    if (absX <= start) return 0.0f;
+    return juce::jlimit (0.0f, 1.0f, (absX - start) / (end - start));
+}
+
+// 5060 "colour" stage (PRE-CLIP):
+// - tilt response derived from your white-noise calibration
+// - SILK-dependent and DRIVE-dependent (important for realism)
+// - tiny asymmetry bias that increases with SILK + drive (even-harmonic glue)
+// NOTE: This is intentionally mild. The Lavry clip is the brick.
+static inline float apply5060ColorPreClip (float x, float silk01)
+{
+    const float silkShape = std::pow (juce::jlimit (0.0f, 1.0f, silk01), 0.8f);
+
+    const float absX  = std::abs (x);
+    const float drive = gk_driveT (absX);
+
+    // --- Tilt (pre-clip) ---
+    // Your hardware tilt targets (approx):
+    //   SILK 0:  low +0.3dB, high -4.5dB
+    //   SILK 1:  low +0.5dB, high -2.8dB
+    // We apply MOST of this pre-clip, scaled by drive so it doesn't "fan" on quiet parts.
+    const float lowDb  = juce::jmap (silkShape, 0.30f, 0.50f) * drive;
+    const float highDb = juce::jmap (silkShape, -4.50f, -2.80f) * drive;
+
+    const float lowG  = gk_dbToLin (lowDb);
+    const float highG = gk_dbToLin (highDb);
+
+    // Very simple wideband tilt proxy: we use a polarity split trick to avoid adding filters here.
+    // (Fast + stable). We will rely on your existing tone block removal to prevent smearing.
+    // If you want the original 1kHz split filter back here later, we can wire it properly.
+    float y = x;
+    y *= (y >= 0.0f ? highG : lowG);
+
+    // --- Tiny bias for even harmonics (5060 asymmetry) ---
+    // Drive-dependent, SILK-dependent.
+    // This is not the "clip", it's the iron-like bend BEFORE Lavry.
+    const float biasBase = 0.0025f;
+    const float biasSilk = 0.0100f;
+    float bias = (biasBase + biasSilk * silkShape) * drive;
+
+    // prevent runaway at extreme levels:
+    bias *= 1.0f / (1.0f + 0.35f * absX);
+
+    y += bias;
+
+    return y;
+}
+
+// Lavry clip stage (the brick):
+// Clean, mostly symmetric, minimal character.
+// We keep a very short knee so it is not harsh digital.
+// NOTE: This is meant to be "converter clipping" style.
+static inline float applyLavryClip (float x)
+{
+    constexpr float threshold = 1.0f;
+    const float absX = std::abs (x);
+    if (absX <= threshold) return x;
+
+    constexpr float knee = 0.28f; // shorter knee = more Lavry-like (clean but firm)
+    const float sign = (x >= 0.0f ? 1.0f : -1.0f);
+    const float over = absX - threshold;
+
+    return sign * (threshold + std::tanh (over / knee) * knee);
+}
+
+//==============================================================
 // Constructor / Destructor
 //==============================================================
 FruityClipAudioProcessor::FruityClipAudioProcessor()
@@ -536,77 +612,20 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel)
 
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
 {
-    constexpr float threshold = 1.0f;
-
     auto* ottParam = parameters.getRawParameterValue ("ottAmount");
-    const float silkRaw   = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
-    const float silkShape = std::pow (silkRaw, 0.8f);
+    const float silk01 = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
 
-    // Very gentle drive — we rely on bias & shape, not brute force
-    const float drive = 1.0f + 0.06f * silkShape;
+    float pre = apply5060ColorPreClip (x, silk01);
+    float clipped = applyLavryClip (pre);
 
-    float in = x * drive;
-    const float absIn = std::abs (in);
+    const float absClipped = std::abs (clipped);
+    const float driveT     = gk_driveT (absClipped);
 
-    // -------- Bias envelope (engages earlier for +6 realism) --------
-    constexpr float levelStart = 0.90f;
-    constexpr float levelEnd   = 2.20f;
+    clipped += 0.0015f * driveT * (clipped * clipped * clipped);
+    clipped  = juce::jlimit (-2.0f, 2.0f, clipped);
+    clipped *= 0.73f;
 
-    float levelT = 0.0f;
-    if (absIn > levelStart)
-        levelT = juce::jlimit (0.0f, 1.0f, (absIn - levelStart) / (levelEnd - levelStart));
-
-    // -------- Bias amounts (calibrated for illusion > math) --------
-    constexpr float biasBase = 0.0085f;   // more body at SILK 0
-    constexpr float biasSilk = 0.0280f;   // deeper even content at SILK 100
-
-    float targetBias = (biasBase + biasSilk * silkShape) * levelT;
-
-    // Fake analog "memory" (micro hysteresis)
-    // static per-channel state is assumed elsewhere; if not,
-    // you can make this a member variable array.
-    static float biasMemory = 0.0f;
-    constexpr float memoryAlpha = 0.90f; // ~2ms feel
-
-    biasMemory = memoryAlpha * biasMemory + (1.0f - memoryAlpha) * targetBias;
-    float bias = biasMemory;
-
-    // Safety reduction at insane levels
-    bias *= 1.0f / (1.0f + 0.35f * absIn);
-
-    // Apply bias before clip
-    in += bias;
-
-    // -------- Core soft-knee clip --------
-    const float absBiased = std::abs (in);
-    const float sign = (in >= 0.0f ? 1.0f : -1.0f);
-
-    float out = in;
-
-    if (absBiased > threshold)
-    {
-        const float over = absBiased - threshold;
-        constexpr float kneeWidth = 0.38f;
-
-        out = sign * (threshold + std::tanh (over / kneeWidth) * kneeWidth);
-    }
-
-    // Remove bias (true even-harmonic generation)
-    out -= bias;
-
-    // -------- Even-depth enhancer (post-clip, ultra subtle) --------
-    // Adds width/depth without fuzz
-    const float evenDepth = 0.0025f * levelT * (0.3f + silkShape);
-    out += evenDepth * (out * out * out);
-
-    // Bound before trim
-    out = juce::jlimit (-2.0f, 2.0f, out);
-
-    // Calibration trim (matches 5060 + Lavry gain feel)
-    constexpr float trim = 0.73f;
-    out *= trim;
-
-    return out;
+    return clipped;
 }
 
 float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
@@ -1053,20 +1072,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                     samples[i] = sample;
                 }
-            }
-        }
-
-        //======================================================
-        // ANALOG 0-SILK TONE MATCH (base rate only)
-        //======================================================
-        if (! limiterOn && clipMode == ClipMode::Analog)
-        {
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* s = buffer.getWritePointer (ch);
-
-                for (int i = 0; i < numSamples; ++i)
-                    s[i] = applyAnalogToneMatch (s[i], ch);
             }
         }
 
