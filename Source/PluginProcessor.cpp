@@ -437,7 +437,10 @@ void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
 
     analogClipStates.resize ((size_t) numChannels);
     for (auto& st : analogClipStates)
+    {
         st.biasMemory = 0.0f;
+        st.levelEnv   = 0.0f;
+    }
 }
 
 //==============================================================
@@ -574,13 +577,29 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     float in    = x * drive;
     float absIn = std::abs (in);
 
+    // Smoothed level envelope so bias does NOT track the waveform (prevents even cancellation)
+    float env = absIn;
+    if (channel >= 0 && channel < (int) analogClipStates.size())
+    {
+        auto& stEnv = analogClipStates[(size_t) channel];
+        const float xAbs = absIn;
+        if (xAbs > stEnv.levelEnv)
+            stEnv.levelEnv = analogBiasAttackCo  * stEnv.levelEnv + (1.0f - analogBiasAttackCo)  * xAbs;
+        else
+            stEnv.levelEnv = analogBiasReleaseCo * stEnv.levelEnv + (1.0f - analogBiasReleaseCo) * xAbs;
+        env = stEnv.levelEnv;
+    }
+
+
+
+
     // Bias envelope: engages as we approach clipping
-    constexpr float levelStart = 0.20f;
-    constexpr float levelEnd   = 1.30f;
+    constexpr float levelStart = 0.35f;
+    constexpr float levelEnd   = 1.35f;
 
     float levelT = 0.0f;
-    if (absIn > levelStart)
-        levelT = juce::jlimit (0.0f, 1.0f, (absIn - levelStart) / (levelEnd - levelStart));
+    if (env > levelStart)
+        levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
 
     // Shape so bias stays subtle at low/moderate levels but rises fast near clip
     levelT = std::pow (levelT, 1.35f);
@@ -588,8 +607,8 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // Bias amounts:
     // Target: at 1k +12, SILK 0 should already show meaningful H2 (~ -33 dB),
     // while moderate levels remain clean.
-    constexpr float biasBase = 0.050f;  // baseline even content at SILK 0 (scaled by levelT)
-    constexpr float biasSilk = 0.060f;  // additional bias at SILK 100 (scaled by levelT)
+    constexpr float biasBase = 0.090f;  // baseline even content at SILK 0 (scaled by levelT)
+    constexpr float biasSilk = 0.110f;  // additional bias at SILK 100 (scaled by levelT)  // additional bias at SILK 100 (scaled by levelT)
 
     float targetBias = (biasBase + biasSilk * s) * levelT;
 
@@ -599,7 +618,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     auto& st = analogClipStates[(size_t) channel];
 
     // Micro "memory" (fast enough to not smear transients)
-    constexpr float memoryAlpha = 0.80f;
+    constexpr float memoryAlpha = 0.94f;
     st.biasMemory = memoryAlpha * st.biasMemory + (1.0f - memoryAlpha) * targetBias;
 
     float bias = st.biasMemory;

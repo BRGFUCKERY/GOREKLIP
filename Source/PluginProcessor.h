@@ -203,6 +203,7 @@ private:
     struct AnalogClipState
     {
         float biasMemory = 0.0f;
+        float levelEnv   = 0.0f; // smoothed abs level (prevents bias following waveform)
     };
 
     void resetAnalogClipState (int numChannels);
@@ -220,7 +221,11 @@ private:
     float limiterGain      = 1.0f;
     float limiterReleaseCo = 0.0f;
 
-    // GUI burn value (0..1)
+    
+    // Analog bias envelope follower coefficients
+    float analogBiasAttackCo  = 0.0f;
+    float analogBiasReleaseCo = 0.0f;
+// GUI burn value (0..1)
     std::atomic<float> guiBurn { 0.0f };
 
     // GUI LUFS-based burn value (0..1)
