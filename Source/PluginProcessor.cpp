@@ -539,40 +539,45 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
     constexpr float threshold = 1.0f;
 
     auto* ottParam = parameters.getRawParameterValue ("ottAmount");
-    const float silkRaw = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
+    const float silkRaw   = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
     const float silkShape = std::pow (silkRaw, 0.8f);
 
-    // Keep drive almost neutral (we liked V2’s low/med behavior).
-    const float drive = 1.0f + 0.05f * silkShape;
+    // Very gentle drive — we rely on bias & shape, not brute force
+    const float drive = 1.0f + 0.06f * silkShape;
 
     float in = x * drive;
     const float absIn = std::abs (in);
 
-    // LEVEL RAMP for “analog bias”:
-    // - almost nothing below ~0.95
-    // - ramps in up to ~2.2 (covers +6/+12 behavior)
-    constexpr float levelStart = 0.95f;
+    // -------- Bias envelope (engages earlier for +6 realism) --------
+    constexpr float levelStart = 0.90f;
     constexpr float levelEnd   = 2.20f;
 
     float levelT = 0.0f;
     if (absIn > levelStart)
         levelT = juce::jlimit (0.0f, 1.0f, (absIn - levelStart) / (levelEnd - levelStart));
 
-    // Bias amount: tiny at SILK 0, stronger at SILK 100.
-    // This is the main "even harmonic" generator.
-    constexpr float biasBase = 0.006f;   // subtle even content at SILK 0
-    constexpr float biasSilk = 0.020f;   // more even content at SILK 100
+    // -------- Bias amounts (calibrated for illusion > math) --------
+    constexpr float biasBase = 0.0085f;   // more body at SILK 0
+    constexpr float biasSilk = 0.0280f;   // deeper even content at SILK 100
 
-    float bias = (biasBase + biasSilk * silkShape) * levelT;
+    float targetBias = (biasBase + biasSilk * silkShape) * levelT;
 
-    // Extra safety: reduce bias slightly as you get extremely hot to avoid runaway.
-    // (Prevents the +6/+12 region from turning into fuzz.)
+    // Fake analog "memory" (micro hysteresis)
+    // static per-channel state is assumed elsewhere; if not,
+    // you can make this a member variable array.
+    static float biasMemory = 0.0f;
+    constexpr float memoryAlpha = 0.90f; // ~2ms feel
+
+    biasMemory = memoryAlpha * biasMemory + (1.0f - memoryAlpha) * targetBias;
+    float bias = biasMemory;
+
+    // Safety reduction at insane levels
     bias *= 1.0f / (1.0f + 0.35f * absIn);
 
-    // Apply bias before the clip.
+    // Apply bias before clip
     in += bias;
 
-    // --- Core soft-knee clip (same feel as V2) ---
+    // -------- Core soft-knee clip --------
     const float absBiased = std::abs (in);
     const float sign = (in >= 0.0f ? 1.0f : -1.0f);
 
@@ -581,20 +586,23 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
     if (absBiased > threshold)
     {
         const float over = absBiased - threshold;
+        constexpr float kneeWidth = 0.38f;
 
-        constexpr float kneeWidth = 0.4f;
-        const float shaped = threshold + std::tanh (over / kneeWidth) * kneeWidth;
-
-        out = sign * shaped;
+        out = sign * (threshold + std::tanh (over / kneeWidth) * kneeWidth);
     }
 
-    // Remove bias after clipping -> creates asymmetry (even harmonics) without DC buildup.
+    // Remove bias (true even-harmonic generation)
     out -= bias;
 
-    // Keep bounded before trim
+    // -------- Even-depth enhancer (post-clip, ultra subtle) --------
+    // Adds width/depth without fuzz
+    const float evenDepth = 0.0025f * levelT * (0.3f + silkShape);
+    out += evenDepth * (out * out * out);
+
+    // Bound before trim
     out = juce::jlimit (-2.0f, 2.0f, out);
 
-    // Keep your existing calibration trim.
+    // Calibration trim (matches 5060 + Lavry gain feel)
     constexpr float trim = 0.73f;
     out *= trim;
 
