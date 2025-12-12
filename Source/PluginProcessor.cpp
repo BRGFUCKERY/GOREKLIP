@@ -547,18 +547,34 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, float silkAmount)
 {
-    constexpr float threshold = 1.0f;
+    // Lavry-ish clip core with hardware-style even harmonics:
+    // we introduce a small bias INSIDE the shaper, then DC-compensate by subtracting
+    // the shaper response to "bias only". This yields even harmonics without fuzzy polynomial trash.
+
+    auto softClip = [] (float v)
+    {
+        constexpr float threshold = 1.0f;
+        constexpr float kneeWidth = 0.38f;
+
+        const float a = std::abs (v);
+        if (a <= threshold)
+            return v;
+
+        const float over   = a - threshold;
+        const float shaped = threshold + std::tanh (over / kneeWidth) * kneeWidth;
+        return std::copysign (shaped, v);
+    };
 
     // Shaped SILK control
-    const float silkShape = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
+    const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
-    // Very gentle drive — we rely on bias & shape, not brute force
-    const float drive = 1.0f + 0.04f * silkShape;
+    // Very gentle drive — rely on asymmetry + shape, not brute force
+    const float drive = 1.0f + 0.04f * s;
 
-    float in    = x * drive;
+    float in = x * drive;
     float absIn = std::abs (in);
 
-    // -------- Bias envelope (engages earlier for +6 realism) --------
+    // -------- Bias envelope (engages mostly near/over clip) --------
     constexpr float levelStart = 0.90f;
     constexpr float levelEnd   = 2.20f;
 
@@ -566,61 +582,38 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     if (absIn > levelStart)
         levelT = juce::jlimit (0.0f, 1.0f, (absIn - levelStart) / (levelEnd - levelStart));
 
-    // -------- Bias amounts (calibrated for illusion > math) --------
-    constexpr float biasBase = 0.0035f;   // base even content at SILK 0
-    constexpr float biasSilk = 0.0060f;   // additional evenness with SILK
+    // -------- Bias amounts (tuned toward your 5060+Lavry targets) --------
+    // We want meaningful even content even at SILK 0 when driven hard (+12 test),
+    // without turning SILK into fuzz at moderate levels (bias is gated by levelT).
+    constexpr float biasBase = 0.0080f;  // baseline evenness at SILK 0 (when levelT ~ 1)
+    constexpr float biasSilk = 0.0100f;  // additional evenness with SILK
 
-    float targetBias = (biasBase + biasSilk * silkShape) * levelT;
+    float targetBias = (biasBase + biasSilk * s) * levelT;
 
     // Per-channel analog clip state
     if (channel < 0 || channel >= (int) analogClipStates.size())
-        return x; // safety
+        return x;
 
     auto& st = analogClipStates[(size_t) channel];
 
-    // Fake analog "memory" (micro hysteresis)
-    constexpr float memoryAlpha = 0.80f; // ~2ms feel (a bit faster)
-
+    // Micro "memory" / hysteresis
+    constexpr float memoryAlpha = 0.80f;
     st.biasMemory = memoryAlpha * st.biasMemory + (1.0f - memoryAlpha) * targetBias;
+
     float bias = st.biasMemory;
 
     // Safety reduction at insane levels
     bias *= 1.0f / (1.0f + 0.25f * absIn);
 
-    // Apply bias inside shaper
-    float y = in + bias;
-    absIn   = std::abs (y);
+    // Bias inside shaper + DC compensation
+    const float shaped   = softClip (in + bias);
+    const float biasOnly = softClip (bias);
 
-    // -------- Core soft-knee clip --------
-    const float sign = (y >= 0.0f ? 1.0f : -1.0f);
-
-    float out = y;
-
-    if (absIn > threshold)
-    {
-        const float over = absIn - threshold;
-        constexpr float kneeWidth = 0.38f;
-
-        out = sign * (threshold + std::tanh (over / kneeWidth) * kneeWidth);
-    }
-
-    // DC compensation: evaluate shaper at bias alone and subtract
-    float b    = bias;
-    float bAbs = std::abs (b);
-    float bOut = b;
-
-    if (bAbs > threshold)
-    {
-        const float over = bAbs - threshold;
-        constexpr float kneeWidth = 0.38f;
-
-        bOut = (b >= 0.0f ? 1.0f : -1.0f) * (threshold + std::tanh (over / kneeWidth) * kneeWidth);
-    }
-
-    out -= bOut;
+    float out = shaped - biasOnly;
 
     return juce::jlimit (-2.0f, 2.0f, out);
 }
+
 
 float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, float silkAmount)
 {

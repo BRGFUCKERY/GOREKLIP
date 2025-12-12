@@ -122,7 +122,7 @@ private:
     // Analog “Lavry-ish” clipper in oversampled domain
     float applyClipperAnalogSample (float x, int channel, float silkAmount);
 
-    // Analog tone-match tilt, pre-clip at base rate
+    // Analog tone-match tilt, post-clip, back at base rate or in the oversampled block
     float applyAnalogToneMatch (float x, int channel, float silkAmount);
 
     // Oversampling config helper
