@@ -113,12 +113,17 @@ private:
     // Limiter sample processor
     float processLimiterSample (float x);
 
-    float applySilkAnalogSample (float x, int channel);
-    float applySilkPreEmphasis (float x, int channel, float silkAmount);
+    float applySilkPreEmphasis  (float x, int channel, float silkAmount);
     float applySilkDeEmphasis   (float x, int channel, float silkAmount);
-    float applyClipperAnalogSample (float x);
 
-    float applyAnalogToneMatch (float x, int channel);
+    // SILK color stage at base rate, pre-clip
+    float applySilkAnalogSample (float x, int channel, float silkAmount);
+
+    // Analog “Lavry-ish” clipper in oversampled domain
+    float applyClipperAnalogSample (float x, int channel, float silkAmount);
+
+    // Analog tone-match tilt, post-clip, back at base rate or in the oversampled block
+    float applyAnalogToneMatch (float x, int channel, float silkAmount);
 
     // Oversampling config helper
     void updateOversampling (int osIndex, int numChannels);
@@ -191,6 +196,18 @@ private:
 
     std::vector<AnalogToneState> analogToneStates;
     float analogToneAlpha = 0.0f;    // one-pole LP factor for analog tone tilt
+
+    //==========================================================
+    // Analog clipper state (per channel, for bias memory)
+    //==========================================================
+    struct AnalogClipState
+    {
+        float biasMemory = 0.0f;
+    };
+
+    void resetAnalogClipState (int numChannels);
+
+    std::vector<AnalogClipState> analogClipStates;
 
     //==========================================================
     // Internal state

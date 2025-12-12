@@ -284,6 +284,7 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     resetSatState (getTotalNumOutputChannels());
 
     resetSilkState (getTotalNumOutputChannels());
+    resetAnalogClipState (getTotalNumOutputChannels());
 
     const float sr = (float) sampleRate;
 
@@ -428,6 +429,17 @@ void FruityClipAudioProcessor::resetAnalogToneState (int numChannels)
         st.low = 0.0f;
 }
 
+void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
+{
+    analogClipStates.clear();
+    if (numChannels <= 0)
+        return;
+
+    analogClipStates.resize ((size_t) numChannels);
+    for (auto& st : analogClipStates)
+        st.biasMemory = 0.0f;
+}
+
 //==============================================================
 // Limiter sample processor (0 lookahead, zero latency)
 //==============================================================
@@ -503,13 +515,10 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
     return juce::jlimit (-2.5f, 2.5f, x + blend * (st.de - x));
 }
 
-float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel)
+float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, float silkAmount)
 {
-    auto* ottParam = parameters.getRawParameterValue ("ottAmount");
-    const float rawSilk = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
-
-    // Shape the control to avoid "all the action at the top"
-    const float s = std::pow (rawSilk, 0.8f);
+    // Shape control to avoid all action at top
+    const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
     // For effectively zero silk, bypass this stage
     if (s <= 1.0e-4f)
@@ -518,7 +527,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel)
     // Pre-emphasis: subtle HF tilt into the non-linearity
     const float pre = applySilkPreEmphasis (x, channel, s);
 
-    // Gentle drive and cubic curve
+    // Gentle drive and cubic curve – “even-ish” sweetness
     const float drive = 1.0f + 0.25f * s;
     const float xd    = pre * drive;
 
@@ -534,19 +543,18 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel)
     return applySilkDeEmphasis (y, channel, s);
 }
 
-float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
+float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, float silkAmount)
 {
     constexpr float threshold = 1.0f;
 
-    auto* ottParam = parameters.getRawParameterValue ("ottAmount");
-    const float silkRaw   = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
-    const float silkShape = std::pow (silkRaw, 0.8f);
+    // Shaped SILK control
+    const float silkShape = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
     // Very gentle drive — we rely on bias & shape, not brute force
     const float drive = 1.0f + 0.06f * silkShape;
 
-    float in = x * drive;
-    const float absIn = std::abs (in);
+    float in    = x * drive;
+    float absIn = std::abs (in);
 
     // -------- Bias envelope (engages earlier for +6 realism) --------
     constexpr float levelStart = 0.90f;
@@ -562,30 +570,33 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
 
     float targetBias = (biasBase + biasSilk * silkShape) * levelT;
 
+    // Per-channel analog clip state
+    if (channel < 0 || channel >= (int) analogClipStates.size())
+        return x; // safety
+
+    auto& st = analogClipStates[(size_t) channel];
+
     // Fake analog "memory" (micro hysteresis)
-    // static per-channel state is assumed elsewhere; if not,
-    // you can make this a member variable array.
-    static float biasMemory = 0.0f;
     constexpr float memoryAlpha = 0.90f; // ~2ms feel
 
-    biasMemory = memoryAlpha * biasMemory + (1.0f - memoryAlpha) * targetBias;
-    float bias = biasMemory;
+    st.biasMemory = memoryAlpha * st.biasMemory + (1.0f - memoryAlpha) * targetBias;
+    float bias = st.biasMemory;
 
     // Safety reduction at insane levels
     bias *= 1.0f / (1.0f + 0.35f * absIn);
 
     // Apply bias before clip
-    in += bias;
+    in    += bias;
+    absIn  = std::abs (in);
 
     // -------- Core soft-knee clip --------
-    const float absBiased = std::abs (in);
     const float sign = (in >= 0.0f ? 1.0f : -1.0f);
 
     float out = in;
 
-    if (absBiased > threshold)
+    if (absIn > threshold)
     {
-        const float over = absBiased - threshold;
+        const float over = absIn - threshold;
         constexpr float kneeWidth = 0.38f;
 
         out = sign * (threshold + std::tanh (over / kneeWidth) * kneeWidth);
@@ -595,7 +606,6 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
     out -= bias;
 
     // -------- Even-depth enhancer (post-clip, ultra subtle) --------
-    // Adds width/depth without fuzz
     const float evenDepth = 0.0025f * levelT * (0.3f + silkShape);
     out += evenDepth * (out * out * out);
 
@@ -609,7 +619,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x)
     return out;
 }
 
-float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
+float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, float silkAmount)
 {
     // Safety: bail out if we don't have a valid sample rate or state
     if (sampleRate <= 0.0)
@@ -633,15 +643,13 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel)
     const float high = x - low;
 
     // -----------------------------------------------------------------
-    // 2) Read SILK (ottAmount) and shape it
+    // 2) Read SILK amount and shape it
     //
     // rawSilk comes from the LOVE/SILK knob (0..1). We reuse the same
     // shaped control curve as the other silk code so the ear feels
     // consistent: most of the "movement" is towards the top of the knob.
     // -----------------------------------------------------------------
-    auto* ottParam = parameters.getRawParameterValue ("ottAmount");
-    const float rawSilk = ottParam ? juce::jlimit (0.0f, 1.0f, ottParam->load()) : 0.0f;
-    const float s       = std::pow (rawSilk, 0.8f); // shaped SILK control
+    const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f); // shaped SILK control
 
     // -----------------------------------------------------------------
     // 3) 5060-style tone tilt from white-noise measurements
@@ -706,6 +714,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         resetSilkState (numChannels);
     if ((int) analogToneStates.size() < numChannels)
         resetAnalogToneState (numChannels);
+    if ((int) analogClipStates.size() < numChannels)
+        resetAnalogClipState (numChannels);
 
     const bool isOffline = isNonRealtime();
 
@@ -725,7 +735,12 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float ottAmount  = juce::jlimit (0.0f, 1.0f, ottAmountRaw);
     const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
 
-    const bool isAnalogMode = (clipMode == ClipMode::Analog);
+    // In DIGITAL mode, ottAmount = LOVE/OTT amount.
+    // In ANALOG mode, ottAmount = SILK amount.
+    const bool  isAnalogMode = (clipMode == ClipMode::Analog);
+    const float silkAmount   = isAnalogMode ? ottAmount : 0.0f;
+
+    // OTT stage itself should only use ottAmount when NOT in analog mode.
     const float ottForOttStage = isAnalogMode ? 0.0f : ottAmount;
 
     // Global scalars for this block
@@ -806,7 +821,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 for (int i = 0; i < numSamples; ++i)
                 {
                     float y = samples[i] * inputDrive;
-                    y = applySilkAnalogSample (y, ch);
+                    y = applySilkAnalogSample (y, ch, silkAmount);
                     samples[i] = y;
                 }
             }
@@ -1010,13 +1025,22 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     }
                     else if (clipMode == ClipMode::Analog)
                     {
-                        sample = applyClipperAnalogSample (sample);
+                        sample = applyClipperAnalogSample (sample, ch, silkAmount);
                     }
                     else
                     {
                         // Pure hard clip in oversampled domain
                         if (sample >  1.0f) sample =  1.0f;
                         if (sample < -1.0f) sample = -1.0f;
+                    }
+
+                    if (! limiterOn)
+                    {
+                        if (clipMode == ClipMode::Analog)
+                        {
+                            // Apply analog tone-match in oversampled domain per channel
+                            sample = applyAnalogToneMatch (sample, ch, silkAmount);
+                        }
                     }
 
                     samples[i] = sample;
@@ -1043,7 +1067,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     if (limiterOn)
                         sample = processLimiterSample (sample);
                     else if (clipMode == ClipMode::Analog)
-                        sample = applyClipperAnalogSample (sample);
+                        sample = applyClipperAnalogSample (sample, ch, silkAmount);
                     else
                     {
                         // Pure hard clip at base rate
@@ -1051,22 +1075,13 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         if (sample < -1.0f) sample = -1.0f;
                     }
 
+                    if (! limiterOn && clipMode == ClipMode::Analog)
+                    {
+                        sample = applyAnalogToneMatch (sample, ch, silkAmount);
+                    }
+
                     samples[i] = sample;
                 }
-            }
-        }
-
-        //======================================================
-        // ANALOG 0-SILK TONE MATCH (base rate only)
-        //======================================================
-        if (! limiterOn && clipMode == ClipMode::Analog)
-        {
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* s = buffer.getWritePointer (ch);
-
-                for (int i = 0; i < numSamples; ++i)
-                    s[i] = applyAnalogToneMatch (s[i], ch);
             }
         }
 
