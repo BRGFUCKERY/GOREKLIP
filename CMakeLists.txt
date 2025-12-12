@@ -66,3 +66,30 @@ target_link_libraries(GOREKLIP PRIVATE
 target_compile_definitions(GOREKLIP PRIVATE
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
+
+# ============================================================
+#  Silk Max offline render harness
+# ============================================================
+juce_add_console_app(SilkMaxRender
+    PRODUCT_NAME "GKSilkMaxRender"
+)
+
+target_sources(SilkMaxRender PRIVATE
+    Tests/SilkMaxOffline.cpp
+    Source/PluginProcessor.cpp
+    Source/PluginProcessor.h
+)
+
+target_include_directories(SilkMaxRender PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source
+)
+
+target_link_libraries(SilkMaxRender PRIVATE
+    juce::juce_audio_utils
+    juce::juce_audio_processors
+    juce::juce_audio_formats
+    juce::juce_audio_basics
+    juce::juce_dsp
+    juce::juce_core
+)

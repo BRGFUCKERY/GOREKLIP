@@ -113,10 +113,7 @@ private:
     // Limiter sample processor
     float processLimiterSample (float x);
 
-    float applySilkAnalogSample (float x, int channel);
-    float applySilkPreEmphasis (float x, int channel, float silkAmount);
-    float applySilkDeEmphasis   (float x, int channel, float silkAmount);
-    float applyClipperAnalogSample (float x);
+    float applySilkMaxColor (float x, int channel);
 
     float applyAnalogToneMatch (float x, int channel);
 
@@ -160,11 +157,15 @@ private:
     {
         float pre = 0.0f;
         float de  = 0.0f;
+        float low = 0.0f;
     };
 
     void resetSilkState (int numChannels);
 
     std::vector<SilkState> silkStates;
+    float silkPreAlpha = 0.0f;  // one-pole LP factor for pre-emphasis split
+    float silkDeAlpha  = 0.0f;  // one-pole LP factor for de-emphasis split
+    float silkLowAlpha = 0.0f;  // one-pole LP factor for low-mid shelf split
 
     //==========================================================
     // SAT bass-tilt state (for gradual TikTok bass boost)
