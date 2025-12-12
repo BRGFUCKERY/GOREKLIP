@@ -719,29 +719,26 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     const bool isOffline = isNonRealtime();
 
-    auto* gainParam   = parameters.getRawParameterValue ("inputGain");
-    auto* ottParam    = parameters.getRawParameterValue ("ottAmount");
-    auto* satParam    = parameters.getRawParameterValue ("satAmount");
-    auto* modeParam   = parameters.getRawParameterValue ("useLimiter");
+    auto* gainParam     = parameters.getRawParameterValue ("inputGain");
+    auto* loveParam     = parameters.getRawParameterValue ("ottAmount"); // LOVE knob
+    auto* satParam      = parameters.getRawParameterValue ("satAmount");
+    auto* limiterParam  = parameters.getRawParameterValue ("useLimiter");
     auto* clipModeParam = parameters.getRawParameterValue ("clipMode");
 
-    const float inputGainDb   = gainParam   ? gainParam->load()   : 0.0f;
-    const float ottAmountRaw  = ottParam    ? ottParam->load()    : 0.0f;
-    const float satAmountRaw  = satParam    ? satParam->load()    : 0.0f;
-    const bool  useLimiter    = modeParam   ? (modeParam->load() >= 0.5f) : false;
-    const int   clipModeIndex = clipModeParam ? juce::jlimit (0, 1, (int) clipModeParam->load()) : 0;
-    const ClipMode clipMode   = clipModeIndex == 0 ? ClipMode::Digital : ClipMode::Analog;
+    const float inputGainDb  = gainParam    ? gainParam->load()    : 0.0f;
+    const float loveRaw      = loveParam    ? loveParam->load()    : 0.0f;
+    const float satAmountRaw = satParam     ? satParam->load()     : 0.0f;
+    const bool  useLimiter   = limiterParam ? (limiterParam->load() >= 0.5f) : false;
 
-    const float ottAmount  = juce::jlimit (0.0f, 1.0f, ottAmountRaw);
+    const int clipModeIndex  = clipModeParam ? juce::jlimit (0, 1, (int) clipModeParam->load()) : 0;
+    const ClipMode clipMode  = (clipModeIndex == 0 ? ClipMode::Digital : ClipMode::Analog);
+
+    const float loveKnob   = juce::jlimit (0.0f, 1.0f, loveRaw);
     const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
 
-    // In DIGITAL mode, ottAmount = LOVE/OTT amount.
-    // In ANALOG mode, ottAmount = SILK amount.
-    const bool  isAnalogMode = (clipMode == ClipMode::Analog);
-    const float silkAmount   = isAnalogMode ? ottAmount : 0.0f;
-
-    // OTT stage itself should only use ottAmount when NOT in analog mode.
-    const float ottForOttStage = isAnalogMode ? 0.0f : ottAmount;
+    const bool  isAnalogMode      = (clipMode == ClipMode::Analog);
+    const float ottAmountDigital  = isAnalogMode ? 0.0f : loveKnob;  // only used in DIGITAL mode
+    const float silkAmountAnalog  = isAnalogMode ? loveKnob : 0.0f;  // only used in ANALOG mode
 
     // Global scalars for this block
     // inputGain comes from the finger (in dB).
@@ -812,100 +809,99 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // PRE-CHAIN: GAIN + LOVE/SILK (always at base rate)
         //==========================================================
 
-        if (clipMode == ClipMode::Analog)
+        if (isAnalogMode)
         {
+            // ANALOG: LOVE acts as SILK, no OTT.
             for (int ch = 0; ch < numChannels; ++ch)
             {
                 float* samples = buffer.getWritePointer (ch);
 
                 for (int i = 0; i < numSamples; ++i)
                 {
-                    float y = samples[i] * inputDrive;
-                    y = applySilkAnalogSample (y, ch, silkAmount);
-                    samples[i] = y;
+                    float s = samples[i] * inputDrive;
+                    s = applySilkAnalogSample (s, ch, silkAmountAnalog);
+                    samples[i] = s;
                 }
             }
 
-            lastOttGain = 1.0f;
-        }
-        else if (ottForOttStage <= 0.0f)
-        {
-            // DIGITAL: LOVE/OTT at 0 => just INPUT DRIVE.
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* samples = buffer.getWritePointer (ch);
-
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    float y = samples[i] * inputDrive;
-                    samples[i] = y;
-                }
-            }
-
-            lastOttGain = 1.0f;
+            lastOttGain = 1.0f; // keep whatever semantics you had
         }
         else
         {
-            // DIGITAL: OTT active (high band only), using ottForOttStage.
-            juce::AudioBuffer<float> preChain;
-            preChain.makeCopyOf (buffer);
-
-            for (int ch = 0; ch < numChannels; ++ch)
+            // DIGITAL mode pre-chain: GAIN + optional OTT
+            if (ottAmountDigital <= 0.0f)
             {
-                float* x = preChain.getWritePointer (ch);
-                auto&  ott = ottStates[(size_t) ch];
-
-                for (int i = 0; i < numSamples; ++i)
+                // LOVE = 0 -> just drive
+                for (int ch = 0; ch < numChannels; ++ch)
                 {
-                    // 1) INPUT DRIVE
-                    float y = x[i] * inputDrive;
-
-                    // 2) OTT high-band only (0–150 dry, >150 processed)
-                    ott.low = ottAlpha * ott.low + (1.0f - ottAlpha) * y;
-                    const float lowDry = ott.low;
-                    const float hiDry  = y - lowDry;
-
-                    const float absHi = std::abs (hiDry);
-                    ott.env = ottEnvAlpha * ott.env + (1.0f - ottEnvAlpha) * absHi;
-                    const float env = ott.env;
-
-                    constexpr float refLevel = 0.10f;
-                    float lev = env / (refLevel + 1.0e-6f);
-
-                    float dynGain = 1.0f;
-
-                    if (lev < 1.0f)
-                    {
-                        float t = juce::jlimit (0.0f, 1.0f, 1.0f - lev);
-                        dynGain = 1.0f + 0.9f * t;
-                    }
-                    else
-                    {
-                        float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
-                        dynGain = 1.0f - 0.35f * t;
-                    }
-
-                    float hiProcessed = hiDry * dynGain;
-
-                    float mix = std::pow (ottForOttStage, 1.2f);
-                    float hiOut = hiDry + mix * (hiProcessed - hiDry);
-
-                    x[i] = lowDry + hiOut;
+                    float* samples = buffer.getWritePointer (ch);
+                    for (int i = 0; i < numSamples; ++i)
+                        samples[i] *= inputDrive;
                 }
-            }
 
-            // Apply OTT result back to main buffer with static trim if desired.
-            // For now, 1:1 copy:
-            for (int ch = 0; ch < numChannels; ++ch)
+                lastOttGain = 1.0f;
+            }
+            else
             {
-                const float* src = preChain.getReadPointer (ch);
-                float*       dst = buffer.getWritePointer (ch);
+                // DIGITAL: run OTT using ottAmountDigital.
+                juce::AudioBuffer<float> preChain;
+                preChain.makeCopyOf (buffer);
 
-                for (int i = 0; i < numSamples; ++i)
-                    dst[i] = src[i];
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* x = preChain.getWritePointer (ch);
+                    auto&  ott = ottStates[(size_t) ch];
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        float y = x[i] * inputDrive;
+
+                        // 150 Hz split
+                        ott.low = ottAlpha * ott.low + (1.0f - ottAlpha) * y;
+                        const float lowDry = ott.low;
+                        const float hiDry  = y - lowDry;
+
+                        const float absHi = std::abs (hiDry);
+                        ott.env = ottEnvAlpha * ott.env + (1.0f - ottEnvAlpha) * absHi;
+                        const float env = ott.env;
+
+                        constexpr float refLevel = 0.10f;
+                        float lev = env / (refLevel + 1.0e-6f);
+
+                        float dynGain = 1.0f;
+
+                        if (lev < 1.0f)
+                        {
+                            float t = juce::jlimit (0.0f, 1.0f, 1.0f - lev);
+                            dynGain = 1.0f + 0.9f * t;
+                        }
+                        else
+                        {
+                            float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
+                            dynGain = 1.0f - 0.35f * t;
+                        }
+
+                        float hiProcessed = hiDry * dynGain;
+
+                        float mix = std::pow (ottAmountDigital, 1.2f);
+                        float hiOut = hiDry + mix * (hiProcessed - hiDry);
+
+                        x[i] = lowDry + hiOut;
+                    }
+                }
+
+                // Copy OTT result back into main buffer
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    const float* src = preChain.getReadPointer (ch);
+                    float*       dst = buffer.getWritePointer (ch);
+
+                    for (int i = 0; i < numSamples; ++i)
+                        dst[i] = src[i];
+                }
+
+                lastOttGain = 1.0f; // or whatever scaling you had
             }
-
-            lastOttGain = 1.0f;
         }
 
         //==========================================================
@@ -984,20 +980,21 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         sample = processLimiterSample (sample);
                     }
-                    else if (clipMode == ClipMode::Analog)
+                    else if (isAnalogMode)
                     {
-                        sample = applyClipperAnalogSample (sample, ch, silkAmount);
+                        sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
                     }
                     else
                     {
+                        // DIGITAL clip
                         if (sample >  1.0f) sample =  1.0f;
                         if (sample < -1.0f) sample = -1.0f;
                     }
 
-                    if (! limiterOn && clipMode == ClipMode::Analog)
+                    if (! limiterOn && isAnalogMode)
                     {
                         // Apply analog tone-match in oversampled domain per channel
-                        sample = applyAnalogToneMatch (sample, ch, silkAmount);
+                        sample = applyAnalogToneMatch (sample, ch, silkAmountAnalog);
                     }
 
                     samples[i] = sample;
@@ -1023,8 +1020,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // SAT already applied previously if needed.
                     if (limiterOn)
                         sample = processLimiterSample (sample);
-                    else if (clipMode == ClipMode::Analog)
-                        sample = applyClipperAnalogSample (sample, ch, silkAmount);
+                    else if (isAnalogMode)
+                        sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
                     else
                     {
                         // Pure hard clip at base rate
@@ -1032,9 +1029,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         if (sample < -1.0f) sample = -1.0f;
                     }
 
-                    if (! limiterOn && clipMode == ClipMode::Analog)
+                    if (! limiterOn && isAnalogMode)
                     {
-                        sample = applyAnalogToneMatch (sample, ch, silkAmount);
+                        sample = applyAnalogToneMatch (sample, ch, silkAmountAnalog);
                     }
 
                     samples[i] = sample;
