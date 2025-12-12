@@ -310,9 +310,9 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         satLowAlpha = juce::jlimit (0.0f, 1.0f, alphaSat);
     }
 
-    // One-pole lowpass for analog tone tilt (~1 kHz split at base rate)
+    // One-pole lowpass for analog tone tilt (~900 Hz split at base rate)
     {
-        const float fcAnalog = 1000.0f;
+        const float fcAnalog = 900.0f;
         const float alphaAnalog =
             std::exp (-2.0f * juce::MathConstants<float>::pi * fcAnalog / sr);
         analogToneAlpha = juce::jlimit (0.0f, 1.0f, alphaAnalog);
@@ -479,7 +479,7 @@ float FruityClipAudioProcessor::applySilkPreEmphasis (float x, int channel, floa
     const float amt = std::pow (s, 0.8f);
 
     // One-pole lowpass around a few kHz to derive a "low" band
-    const float fc    = juce::jmap (amt, 0.0f, 1.0f, 2500.0f, 6000.0f);
+    const float fc    = juce::jmap (amt, 0.0f, 1.0f, 2400.0f, 6500.0f);
     const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / (float) sampleRate);
 
     st.pre = alpha * st.pre + (1.0f - alpha) * x;
@@ -487,8 +487,8 @@ float FruityClipAudioProcessor::applySilkPreEmphasis (float x, int channel, floa
     const float low  = st.pre;
     const float high = x - low;
 
-    // Gentle HF tilt – starts at 0, tops out around +2 dB-ish
-    const float tilt = juce::jmap (amt, 0.0f, 1.0f, 0.0f, 0.25f);
+    // Gentle HF tilt – starts at 0, tops out around +2–2.5 dB-ish
+    const float tilt = juce::jmap (amt, 0.0f, 1.0f, 0.0f, 0.32f);
 
     return x + tilt * high;
 }
@@ -505,12 +505,12 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
     const float amt = std::pow (s, 0.8f);
 
     // One-pole lowpass in the upper band to gently smooth top end
-    const float fc    = juce::jmap (amt, 0.0f, 1.0f, 9000.0f, 6500.0f);
+    const float fc    = juce::jmap (amt, 0.0f, 1.0f, 9500.0f, 6200.0f);
     const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / (float) sampleRate);
 
     st.de = alpha * st.de + (1.0f - alpha) * x;
 
-    const float blend = juce::jmap (amt, 0.0f, 1.0f, 0.0f, 0.35f);
+    const float blend = juce::jmap (amt, 0.0f, 1.0f, 0.0f, 0.42f);
 
     return juce::jlimit (-2.5f, 2.5f, x + blend * (st.de - x));
 }
@@ -528,14 +528,14 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     const float pre = applySilkPreEmphasis (x, channel, s);
 
     // Gentle drive and cubic curve – “even-ish” sweetness
-    const float drive = 1.0f + 0.25f * s;
+    const float drive = 1.0f + 0.32f * s;
     const float xd    = pre * drive;
 
-    const float a = 0.18f * s;
+    const float a = 0.22f * s;
     float y       = xd - a * xd * xd * xd;
 
     // Static trim so silk does not explode the level
-    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, -1.5f);
+    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, -1.2f);
     const float trim   = juce::Decibels::decibelsToGain (trimDb);
     y *= trim;
 
@@ -565,8 +565,8 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
         levelT = juce::jlimit (0.0f, 1.0f, (absIn - levelStart) / (levelEnd - levelStart));
 
     // -------- Bias amounts (calibrated for illusion > math) --------
-    constexpr float biasBase = 0.0085f;   // more body at SILK 0
-    constexpr float biasSilk = 0.0280f;   // deeper even content at SILK 100
+    constexpr float biasBase = 0.0160f;   // more body at SILK 0
+    constexpr float biasSilk = 0.0180f;   // deeper even content at SILK 100
 
     float targetBias = (biasBase + biasSilk * silkShape) * levelT;
 
@@ -605,18 +605,25 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // Remove bias (true even-harmonic generation)
     out -= bias;
 
-    // -------- Even-depth enhancer (post-clip, ultra subtle) --------
-    const float evenDepth = 0.0025f * levelT * (0.3f + silkShape);
-    out += evenDepth * (out * out * out);
+    const float xSym  = out;                     // mostly odd-ish from bias+clip
+    const float xEven = xSym * std::abs (xSym);  // strong even generator
+
+    // Base even amount (SILK 0 still has even harmonics)
+    const float evenBase  = 0.12f;
+    const float evenExtra = 0.16f;
+
+    const float silkEvenAmount = evenBase + evenExtra * silkShape;
+
+    float outEven = xSym + silkEvenAmount * xEven;
 
     // Bound before trim
-    out = juce::jlimit (-2.0f, 2.0f, out);
+    outEven = juce::jlimit (-2.0f, 2.0f, outEven);
 
     // Calibration trim (matches 5060 + Lavry gain feel)
     constexpr float trim = 0.73f;
-    out *= trim;
+    outEven *= trim;
 
-    return out;
+    return outEven;
 }
 
 float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, float silkAmount)
@@ -662,20 +669,20 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // We map SILK 0..1 onto two target tilt states:
     //
     //   SILK 0:
-    //       low band  ≈ +0.3 dB
-    //       high band ≈ -4.5 dB
+    //       low band  ≈ +0.4 dB
+    //       high band ≈ -7.5 dB
     //
     //   SILK 1:
-    //       low band  ≈ +0.5 dB
-    //       high band ≈ -2.8 dB
+    //       low band  ≈ +0.7 dB
+    //       high band ≈ -4.5 dB
     //
     // Then we interpolate in dB space based on the shaped SILK amount "s".
     // -----------------------------------------------------------------
-    const float lowDbAt0  =  0.3f;  // dB at SILK 0
-    const float highDbAt0 = -4.5f;  // dB at SILK 0
+    const float lowDbAt0  =  0.4f;  // dB at SILK 0
+    const float highDbAt0 = -7.5f;  // dB at SILK 0
 
-    const float lowDbAt1  =  0.5f;  // dB at SILK 100
-    const float highDbAt1 = -2.8f;  // dB at SILK 100
+    const float lowDbAt1  =  0.7f;  // dB at SILK 100
+    const float highDbAt1 = -4.5f;  // dB at SILK 100
 
     const float lowDb  = juce::jmap (s, 0.0f, 1.0f, lowDbAt0,  lowDbAt1);
     const float highDb = juce::jmap (s, 0.0f, 1.0f, highDbAt0, highDbAt1);
