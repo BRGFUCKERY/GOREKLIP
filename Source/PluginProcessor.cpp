@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+// GK_BUILD_TAG: SOFT_SAFETY_ANALOG_v1_2025_12_12
+
 #include <cmath>
 
 //==============================================================
@@ -1035,22 +1037,45 @@ samples[i] = sample;
         }
 
         // FINAL SAFETY CEILING AT BASE RATE (catches any residual intersample overs)
-        for (int ch = 0; ch < numChannels; ++ch)
+//
+// Digital / Limiter: hard clamp at ±1.0
+// Analog (limiter OFF): DO NOT re-hardclip at base rate (this kills asymmetry + adds “chainsaws”).
+// Instead use a gentle soft safety with a slightly higher ceiling.
+auto softSafety = [] (float v) noexcept
+{
+    constexpr float ceiling = 1.05f;
+    constexpr float knee    = 0.12f;
+
+    const float a = std::abs (v);
+    if (a <= ceiling)
+        return v;
+
+    const float over   = a - ceiling;
+    const float shaped = ceiling + std::tanh (over / knee) * knee;
+    return std::copysign (shaped, v);
+};
+
+for (int ch = 0; ch < numChannels; ++ch)
+{
+    float* s = buffer.getWritePointer (ch);
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        float y = s[i];
+
+        if (isAnalogMode && ! limiterOn)
+            y = softSafety (y);
+        else
         {
-            float* s = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
-            {
-                float y = s[i];
-
-                if (y >  1.0f) y =  1.0f;
-                if (y < -1.0f) y = -1.0f;
-
-                s[i] = y;
-            }
+            if (y >  1.0f) y =  1.0f;
+            if (y < -1.0f) y = -1.0f;
         }
 
-        {
+        s[i] = y;
+    }
+}
+
+{
             const int numChannels = buffer.getNumChannels();
             const int numSamples  = buffer.getNumSamples();
 
