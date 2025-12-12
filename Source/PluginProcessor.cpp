@@ -725,6 +725,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float ottAmount  = juce::jlimit (0.0f, 1.0f, ottAmountRaw);
     const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
 
+    const bool isAnalogMode = (clipMode == ClipMode::Analog);
+    const float ottForOttStage = isAnalogMode ? 0.0f : ottAmount;
+
     // Global scalars for this block
     // inputGain comes from the finger (in dB).
     const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
@@ -810,7 +813,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
             lastOttGain = 1.0f;
         }
-        else if (ottAmount <= 0.0f)
+        else if (ottForOttStage <= 0.0f)
         {
             // OTT fully bypassed: apply only INPUT DRIVE in place.
             for (int ch = 0; ch < numChannels; ++ch)
@@ -871,18 +874,18 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         float t = 1.0f - lev;                        // 0..1
                         t = juce::jlimit (0.0f, 1.0f, t);
                         const float maxUp = 1.7f;                    // up to +6 dB
-                        dynGain += t * (maxUp - 1.0f) * ottAmount;
+                        dynGain += t * (maxUp - 1.0f) * ottForOttStage;
                     }
                     else
                     {
                         // Downward region – softened a lot so tails stay alive
                         float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
                         const float minGain = 0.90f;                 // only ~ -1.4 dB max tame
-                        dynGain -= t * (1.0f - minGain) * ottAmount;
+                        dynGain -= t * (1.0f - minGain) * ottForOttStage;
                     }
 
                     // 5) Static tilt
-                    const float staticBoost = 1.0f + 0.7f * ottAmount;
+                    const float staticBoost = 1.0f + 0.7f * ottForOttStage;
 
                     // Apply combined static + dynamic gain to high band
                     float hiProc = hiDry * staticBoost * dynGain;
@@ -891,7 +894,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     hiProc = std::tanh (hiProc);
 
                     // 7) Parallel blend (high band only)
-                    const float hiMix = hiDry + ottAmount * (hiProc - hiDry);
+                    const float hiMix = hiDry + ottForOttStage * (hiProc - hiDry);
 
                     // 8) Recombine with untouched low band
                     y = lowDry + hiMix;
@@ -907,10 +910,10 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             //   with most of the reduction happening near the very top.
             float staticTrimDb = 0.0f;
 
-            if (ottAmount > 0.5f)
+            if (ottForOttStage > 0.5f)
             {
                 // normalise OTT 0.5 -> 1.0 to 0..1
-                float t = (ottAmount - 0.5f) / 0.5f;
+                float t = (ottForOttStage - 0.5f) / 0.5f;
                 t = juce::jlimit (0.0f, 1.0f, t);
 
                 // shape so most of the trim happens near the top of the range
