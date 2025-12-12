@@ -545,8 +545,13 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     return applySilkDeEmphasis (y, channel, s);
 }
 
+
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, float silkAmount)
 {
+    // "Lavry-ish" oversampled clip with controlled asymmetry.
+    constexpr float threshold = 1.0f;
+    constexpr float kneeWidth = 0.38f;
+
     auto softClip = [] (float v)
     {
         constexpr float threshold = 1.0f;
@@ -561,36 +566,39 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
         return std::copysign (shaped, v);
     };
 
-    // Shaped SILK control
-    const float silkShape = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
+    const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
-    // Gentle drive — rely on asymmetry, not brute force
-    const float drive = 1.0f + 0.04f * silkShape;
+    // Gentle drive — we rely on asymmetry & shape, not brute force
+    const float drive = 1.0f + 0.04f * s;
 
     float in    = x * drive;
     float absIn = std::abs (in);
 
-    // Bias envelope: engages mostly near/above clip
-    constexpr float levelStart = 0.90f;
-    constexpr float levelEnd   = 2.20f;
+    // Bias envelope: engages as we approach clipping
+    constexpr float levelStart = 0.20f;
+    constexpr float levelEnd   = 1.30f;
 
     float levelT = 0.0f;
     if (absIn > levelStart)
         levelT = juce::jlimit (0.0f, 1.0f, (absIn - levelStart) / (levelEnd - levelStart));
 
-    // Bias amounts (tuned to hit strong even harmonics at high drive)
-    // NOTE: bias is still gated by levelT so moderate levels remain clean.
-    constexpr float biasBase = 0.090f;   // even content at SILK 0 (when pushed)
-    constexpr float biasSilk = 0.120f;   // additional evenness with SILK
+    // Shape so bias stays subtle at low/moderate levels but rises fast near clip
+    levelT = std::pow (levelT, 1.35f);
 
-    float targetBias = (biasBase + biasSilk * silkShape) * levelT;
+    // Bias amounts:
+    // Target: at 1k +12, SILK 0 should already show meaningful H2 (~ -33 dB),
+    // while moderate levels remain clean.
+    constexpr float biasBase = 0.050f;  // baseline even content at SILK 0 (scaled by levelT)
+    constexpr float biasSilk = 0.060f;  // additional bias at SILK 100 (scaled by levelT)
+
+    float targetBias = (biasBase + biasSilk * s) * levelT;
 
     if (channel < 0 || channel >= (int) analogClipStates.size())
         return x;
 
     auto& st = analogClipStates[(size_t) channel];
 
-    // Micro “memory” (fast enough to not smear transients)
+    // Micro "memory" (fast enough to not smear transients)
     constexpr float memoryAlpha = 0.80f;
     st.biasMemory = memoryAlpha * st.biasMemory + (1.0f - memoryAlpha) * targetBias;
 
@@ -599,7 +607,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // Safety reduction at insane levels
     bias *= 1.0f / (1.0f + 0.25f * absIn);
 
-    // Bias inside shaper + DC compensation
+    // Bias inside shaper + DC compensation (hardware-like even harmonics, no fuzz)
     const float shaped   = softClip (in + bias);
     const float biasOnly = softClip (bias);
 
@@ -607,6 +615,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
 
     return juce::jlimit (-2.0f, 2.0f, out);
 }
+
 
 float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, float silkAmount)
 {
@@ -660,11 +669,11 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     //
     // Then we interpolate in dB space based on the shaped SILK amount "s".
     // -----------------------------------------------------------------
-    const float lowDbAt0  =  1.2f;  // dB at SILK 0  // dB at SILK 0
-    const float highDbAt0 = -4.8f;  // dB at SILK 0  // dB at SILK 0
+    const float lowDbAt0  =  0.4f;  // dB at SILK 0
+    const float highDbAt0 = -7.5f;  // dB at SILK 0
 
-    const float lowDbAt1  =  1.0f;  // dB at SILK 100  // dB at SILK 100
-    const float highDbAt1 = -3.8f;  // dB at SILK 100  // dB at SILK 100
+    const float lowDbAt1  =  0.7f;  // dB at SILK 100
+    const float highDbAt1 = -4.5f;  // dB at SILK 100
 
     const float lowDb  = juce::jmap (s, 0.0f, 1.0f, lowDbAt0,  lowDbAt1);
     const float highDb = juce::jmap (s, 0.0f, 1.0f, highDbAt0, highDbAt1);
@@ -677,7 +686,7 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // -----------------------------------------------------------------
     float y = lowGain * low + highGain * high;
 
-    // Makeup so the tilt doesn’t cause a big perceived level drop
+    // Makeup so average level stays roughly consistent
     const float avg = 0.5f * (lowGain + highGain);
     const float makeup = (avg > 1.0e-6f ? (1.0f / avg) : 1.0f);
     y *= makeup;
@@ -985,8 +994,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         if (sample >  1.0f) sample =  1.0f;
                         if (sample < -1.0f) sample = -1.0f;
                     }
-
-                    if (! limiterOn && isAnalogMode)
                     samples[i] = sample;
                 }
             }
@@ -1023,47 +1030,47 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
         }
 
-        
-// FINAL SAFETY CEILING AT BASE RATE
-//
-// Digital mode: hard clamp at ±1.0 (classic clip safety)
-// Analog mode (limiter OFF): avoid base-rate re-clipping (creates “chainsaws”),
-// so we use a gentle soft safety with a slightly higher ceiling.
-auto softSafety = [] (float v)
-{
-    constexpr float ceiling = 1.05f;
-    constexpr float knee    = 0.12f;
-
-    const float a = std::abs (v);
-    if (a <= ceiling)
-        return v;
-
-    const float over   = a - ceiling;
-    const float shaped = ceiling + std::tanh (over / knee) * knee;
-    return std::copysign (shaped, v);
-};
-
-for (int ch = 0; ch < numChannels; ++ch)
-{
-    float* s = buffer.getWritePointer (ch);
-
-    for (int i = 0; i < numSamples; ++i)
-    {
-        float y = s[i];
-
+        // FINAL SAFETY CEILING AT BASE RATE (catches any residual intersample overs)
         if (isAnalogMode && ! limiterOn)
         {
-            y = softSafety (y);
+            auto softSafety = [] (float v)
+            {
+                constexpr float ceiling = 1.05f;
+                constexpr float knee    = 0.12f;
+
+                const float a = std::abs (v);
+                if (a <= ceiling)
+                    return v;
+
+                const float over   = a - ceiling;
+                const float shaped = ceiling + std::tanh (over / knee) * knee;
+                return std::copysign (shaped, v);
+            };
+
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                float* s = buffer.getWritePointer (ch);
+                for (int i = 0; i < numSamples; ++i)
+                    s[i] = softSafety (s[i]);
+            }
         }
         else
         {
-            if (y >  1.0f) y =  1.0f;
-            if (y < -1.0f) y = -1.0f;
-        }
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                float* s = buffer.getWritePointer (ch);
 
-        s[i] = y;
-    }
-}
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float y = s[i];
+
+                    if (y >  1.0f) y =  1.0f;
+                    if (y < -1.0f) y = -1.0f;
+
+                    s[i] = y;
+                }
+            }
+        }
 
         {
             const int numChannels = buffer.getNumChannels();
