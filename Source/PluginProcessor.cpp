@@ -830,7 +830,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
         else if (ottForOttStage <= 0.0f)
         {
-            // OTT fully bypassed: apply only INPUT DRIVE in place.
+            // DIGITAL: LOVE/OTT at 0 => just INPUT DRIVE.
             for (int ch = 0; ch < numChannels; ++ch)
             {
                 float* samples = buffer.getWritePointer (ch);
@@ -842,15 +842,14 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 }
             }
 
-            lastOttGain = 1.0f; // 1.0 = no trim
+            lastOttGain = 1.0f;
         }
         else
         {
-            // OTT active: process on temp buffer, then apply static trim to main buffer
+            // DIGITAL: OTT active (high band only), using ottForOttStage.
             juce::AudioBuffer<float> preChain;
             preChain.makeCopyOf (buffer);
 
-            // First, apply INPUT GAIN + OTT on preChain
             for (int ch = 0; ch < numChannels; ++ch)
             {
                 float* x = preChain.getWritePointer (ch);
@@ -862,88 +861,51 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     float y = x[i] * inputDrive;
 
                     // 2) OTT high-band only (0–150 dry, >150 processed)
-                    //    Low band stays intact, high band gets dynamic OTT.
                     ott.low = ottAlpha * ott.low + (1.0f - ottAlpha) * y;
                     const float lowDry = ott.low;
                     const float hiDry  = y - lowDry;
 
-                    // 3) High-band envelope for upward + downward action
                     const float absHi = std::abs (hiDry);
                     ott.env = ottEnvAlpha * ott.env + (1.0f - ottEnvAlpha) * absHi;
                     const float env = ott.env;
 
-                    // Reference level for high band (~ -20 dB region)
-                    constexpr float refLevel = 0.10f; // tweakable
-
-                    // Normalised level around reference
+                    constexpr float refLevel = 0.10f;
                     float lev = env / (refLevel + 1.0e-6f);
 
-                    // 4) Dynamic gain:
-                    //    - lev < 1  => upward (boost quiet highs / tails)
-                    //    - lev > 1  => downward (very gentle – don't choke the tails)
                     float dynGain = 1.0f;
 
                     if (lev < 1.0f)
                     {
-                        // Upward region
-                        float t = 1.0f - lev;                        // 0..1
-                        t = juce::jlimit (0.0f, 1.0f, t);
-                        const float maxUp = 1.7f;                    // up to +6 dB
-                        dynGain += t * (maxUp - 1.0f) * ottForOttStage;
+                        float t = juce::jlimit (0.0f, 1.0f, 1.0f - lev);
+                        dynGain = 1.0f + 0.9f * t;
                     }
                     else
                     {
-                        // Downward region – softened a lot so tails stay alive
                         float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
-                        const float minGain = 0.90f;                 // only ~ -1.4 dB max tame
-                        dynGain -= t * (1.0f - minGain) * ottForOttStage;
+                        dynGain = 1.0f - 0.35f * t;
                     }
 
-                    // 5) Static tilt
-                    const float staticBoost = 1.0f + 0.7f * ottForOttStage;
+                    float hiProcessed = hiDry * dynGain;
 
-                    // Apply combined static + dynamic gain to high band
-                    float hiProc = hiDry * staticBoost * dynGain;
+                    float mix = std::pow (ottForOttStage, 1.2f);
+                    float hiOut = hiDry + mix * (hiProcessed - hiDry);
 
-                    // 6) Soft non-linearity to stop craziness
-                    hiProc = std::tanh (hiProc);
-
-                    // 7) Parallel blend (high band only)
-                    const float hiMix = hiDry + ottForOttStage * (hiProc - hiDry);
-
-                    // 8) Recombine with untouched low band
-                    y = lowDry + hiMix;
-
-                    x[i] = y;
+                    x[i] = lowDry + hiOut;
                 }
             }
 
-            // --- STATIC TRIM AFTER OTT ---
-            // A bit more reduction towards the end of the knob.
-            // - No trim up to 50%
-            // - Gently increasing trim up to about -1.0 dB at OTT = 1,
-            //   with most of the reduction happening near the very top.
-            float staticTrimDb = 0.0f;
-
-            if (ottForOttStage > 0.5f)
+            // Apply OTT result back to main buffer with static trim if desired.
+            // For now, 1:1 copy:
+            for (int ch = 0; ch < numChannels; ++ch)
             {
-                // normalise OTT 0.5 -> 1.0 to 0..1
-                float t = (ottForOttStage - 0.5f) / 0.5f;
-                t = juce::jlimit (0.0f, 1.0f, t);
+                const float* src = preChain.getReadPointer (ch);
+                float*       dst = buffer.getWritePointer (ch);
 
-                // shape so most of the trim happens near the top of the range
-                float shaped = std::pow (t, 1.5f); // 0..1, slower at start, faster at end
-
-                const float maxTrimDb = -1.0f;      // was -0.8f
-                staticTrimDb = maxTrimDb * shaped;
+                for (int i = 0; i < numSamples; ++i)
+                    dst[i] = src[i];
             }
 
-            const float staticTrim = juce::Decibels::decibelsToGain (staticTrimDb);
-
-            lastOttGain = staticTrim; // store for potential debug / GUI if needed
-
-            buffer.makeCopyOf (preChain);
-            buffer.applyGain (staticTrim);
+            lastOttGain = 1.0f;
         }
 
         //==========================================================
@@ -1010,7 +972,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             const int osNumSamples  = (int) osBlock.getNumSamples();
             const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
 
-            // Single-pass oversampled distortion: limiter OR pure hard clip
             for (int ch = 0; ch < osNumChannels; ++ch)
             {
                 float* samples = osBlock.getChannelPointer (ch);
@@ -1029,18 +990,14 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     }
                     else
                     {
-                        // Pure hard clip in oversampled domain
                         if (sample >  1.0f) sample =  1.0f;
                         if (sample < -1.0f) sample = -1.0f;
                     }
 
-                    if (! limiterOn)
+                    if (! limiterOn && clipMode == ClipMode::Analog)
                     {
-                        if (clipMode == ClipMode::Analog)
-                        {
-                            // Apply analog tone-match in oversampled domain per channel
-                            sample = applyAnalogToneMatch (sample, ch, silkAmount);
-                        }
+                        // Apply analog tone-match in oversampled domain per channel
+                        sample = applyAnalogToneMatch (sample, ch, silkAmount);
                     }
 
                     samples[i] = sample;
