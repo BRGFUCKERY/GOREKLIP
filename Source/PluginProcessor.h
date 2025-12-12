@@ -195,10 +195,10 @@ private:
     void resetAnalogToneState (int numChannels);
 
     std::vector<AnalogToneState> analogToneStates;
+    // Analog bias envelope coefficients (attack/release)
+    float analogBiasAttackCo  = 0.0f;
+    float analogBiasReleaseCo = 0.0f;
     float analogToneAlpha = 0.0f;    // one-pole LP factor for analog tone tilt
-
-    float analogClipEnvAttack = 0.0f; // one-pole coef for clip env attack
-    float analogClipEnvRelease = 0.0f; // one-pole coef for clip env release
 
     //==========================================================
     // Analog clipper state (per channel, for bias memory)
@@ -206,7 +206,7 @@ private:
     struct AnalogClipState
     {
         float biasMemory = 0.0f;
-        float clipEnv    = 0.0f; // envelope of clipping amount (drives bias)
+        float clipEnv    = 0.0f;
     };
 
     void resetAnalogClipState (int numChannels);
