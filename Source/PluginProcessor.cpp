@@ -566,7 +566,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     // Quadratic (even) mix coefficient.
     // For a pure sine, H2 amplitude ≈ coeff/2  ->  -33 dB => coeff ~ 0.045
-    const float evenCoeff = (0.045f + 0.015f * s) * driveT;
+    const float evenCoeff = (0.035f + 0.0115f * s) * driveT; // tuned from 710: ~-2 dB H2 overall, slightly less SILK delta
 
     float e = pre * pre;
 
@@ -574,7 +574,8 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     st.evenDc = silkEvenDcAlpha * st.evenDc + (1.0f - silkEvenDcAlpha) * e;
     e -= st.evenDc;
 
-    float y = pre + evenCoeff * e;
+    const float evenCoeffCapped = juce::jlimit (0.0f, 0.060f, evenCoeff);
+    float y = pre + evenCoeffCapped * e;
 
     // De-emphasis (existing)
     return applySilkDeEmphasis (y, channel, s);
