@@ -565,8 +565,8 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     driveT = driveT * driveT;
 
     // Quadratic (even) mix coefficient.
-    // For a pure sine, H2 amplitude ≈ coeff/2  ->  -33 dB => coeff ~ 0.045
-    const float evenCoeff = (0.045f + 0.015f * s) * driveT;
+    // For a pure sine, H2 amplitude ≈ coeff/2  ->  -33 dB => coeff ~ 0.035
+    const float evenCoeff = (0.035f + 0.012f * s) * driveT;
 
     float e = pre * pre;
 
