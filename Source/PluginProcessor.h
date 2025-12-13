@@ -122,7 +122,7 @@ private:
     // Analog “Lavry-ish” clipper in oversampled domain
     float applyClipperAnalogSample (float x, int channel, float silkAmount);
 
-    // Analog tone-match tilt, pre-clip at base rate
+    // Analog tone-match tilt, post-clip, back at base rate or in the oversampled block
     float applyAnalogToneMatch (float x, int channel, float silkAmount);
 
     // Oversampling config helper
@@ -196,6 +196,10 @@ private:
 
     std::vector<AnalogToneState> analogToneStates;
     float analogToneAlpha = 0.0f;    // one-pole LP factor for analog tone tilt
+    float analogEnvAttackAlpha  = 0.0f; // envelope follower for analog bias
+    float analogEnvReleaseAlpha = 0.0f;
+    float analogDcAlpha         = 0.0f; // DC blocker coefficient for analog clipper (computed per-block for OS rate)
+
 
     //==========================================================
     // Analog clipper state (per channel, for bias memory)
@@ -203,6 +207,9 @@ private:
     struct AnalogClipState
     {
         float biasMemory = 0.0f;
+        float levelEnv   = 0.0f; // slow envelope of |in| for bias engagement
+        float dcBlock    = 0.0f; // ultra-low HP state to remove DC without killing even harmonics
+        float evenDc    = 0.0f; // DC removal for quadratic even-harmonic term
     };
 
     void resetAnalogClipState (int numChannels);
