@@ -163,13 +163,15 @@ private:
 
     struct SilkState
     {
-        float pre = 0.0f;
-        float de  = 0.0f;
+        float pre    = 0.0f;
+        float de     = 0.0f;
+        float evenDc = 0.0f; // DC tracker for quadratic even term (SILK)
     };
 
     void resetSilkState (int numChannels);
 
     std::vector<SilkState> silkStates;
+    float silkEvenDcAlpha = 0.0f; // base-rate DC blocker coeff for SILK quadratic term
 
     //==========================================================
     // SAT bass-tilt state (for gradual TikTok bass boost)

@@ -288,6 +288,14 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
 
     const float sr = (float) sampleRate;
 
+
+    // Base-rate DC blocker for SILK quadratic term (remove DC without killing even harmonics)
+    {
+        constexpr float dcFc = 2.0f; // Hz
+        silkEvenDcAlpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / sr);
+        silkEvenDcAlpha = juce::jlimit (0.0f, 0.9999999f, silkEvenDcAlpha);
+    }
+
     // Analog bias envelope follower coefficients (slow vs waveform, fast vs transients)
     {
         const float attackMs  = 1.5f;   // 1.5 ms attack
@@ -406,8 +414,9 @@ void FruityClipAudioProcessor::resetSilkState (int numChannels)
 
     for (auto& st : silkStates)
     {
-        st.pre = 0.0f;
-        st.de  = 0.0f;
+        st.pre    = 0.0f;
+        st.de     = 0.0f;
+        st.evenDc = 0.0f;
     }
 }
 
@@ -533,43 +542,30 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
 
 float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, float silkAmount)
 {
-    // 5060-style colour stage (pre-Lavry clip)
-    //
-    // Targets from your hardware @ 1k +12:
-    //   silk 0   : H2 ≈ -33 dB rel
-    //   silk 100 : H2 ≈ -30.5 dB rel
-    //
-    // We generate EVEN harmonics primarily here (quadratic term),
-    // and keep the Lavry ceiling mostly symmetric.
-
+    // Shape control to avoid all action at top
     const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
-    if (channel < 0 || channel >= (int) silkStates.size())
+    if (s <= 1.0e-4f)
         return x;
 
-    auto& st = silkStates[(size_t) channel];
-
-    // Pre-emphasis (existing)
+    // Pre-emphasis: subtle HF tilt into the non-linearity
     const float pre = applySilkPreEmphasis (x, channel, s);
 
-    // Engage more at high level so it doesn't fuzz quiet material
-    float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.20f) / 0.80f);
-    driveT = driveT * driveT;
+    // Mild tanh saturator with a touch of bias for transformer-like evenness
+    const float drive = 1.0f + 0.18f * s;
+    const float bias  = 0.0015f + 0.0035f * s;
 
-    // Quadratic (even) mix coefficient.
-    // For a pure sine, H2 amplitude ≈ coeff/2  ->  -33 dB => coeff ~ 0.045
-    const float evenCoeff = (0.035f + 0.0115f * s) * driveT; // tuned from 710: ~-2 dB H2 overall, slightly less SILK delta
+    float y = std::tanh ((pre + bias) * drive) - std::tanh (bias * drive);
 
-    float e = pre * pre;
+    // Normalise so unity stays roughly unity at chosen drive
+    const float norm = 1.0f / std::tanh (drive);
+    y *= norm;
 
-    // Remove DC from the quadratic term only (preserves even series)
-    st.evenDc = silkEvenDcAlpha * st.evenDc + (1.0f - silkEvenDcAlpha) * e;
-    e -= st.evenDc;
+    // Tiny trim to avoid overall loudness lift with SILK
+    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, -0.4f);
+    y *= juce::Decibels::decibelsToGain (trimDb);
 
-    const float evenCoeffCapped = juce::jlimit (0.0f, 0.060f, evenCoeff);
-    float y = pre + evenCoeffCapped * e;
-
-    // De-emphasis (existing)
+    // De-emphasis: gently smooth the very top end again
     return applySilkDeEmphasis (y, channel, s);
 }
 
