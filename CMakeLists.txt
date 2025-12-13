@@ -16,6 +16,8 @@ juce_add_binary_data(GOREKLIPData
         Assets/bg.png
         Assets/finger.png
         Assets/gorekliper_logo.png
+        Assets/crime.JPG
+        Assets/invertcrime.png
         Assets/slam.jpg
 )
 

@@ -8,11 +8,11 @@
     <key>CFBundleIconFile</key>
     <string></string>
     <key>CFBundleIdentifier</key>
-    <string>com.yourcompany.FRUITYCLIP</string>
+    <string>com.yourcompany.GOREKLIP</string>
     <key>CFBundleName</key>
-    <string>FRUITYCLIP</string>
+    <string>GOREKLIP</string>
     <key>CFBundleDisplayName</key>
-    <string>FRUITYCLIP</string>
+    <string>GOREKLIP</string>
     <key>CFBundlePackageType</key>
     <string></string>
     <key>CFBundleSignature</key>

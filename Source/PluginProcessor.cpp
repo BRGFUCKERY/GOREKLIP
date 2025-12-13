@@ -26,6 +26,10 @@ FruityClipAudioProcessor::createParameterLayout()
         "satAmount", "Saturation Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
+    params.push_back (std::make_unique<juce::AudioParameterFloat>(
+        "analogHeadroomDb", "Analog Headroom (dB)",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.5f));
+
     // MODE – 0 = clipper, 1 = limiter
     params.push_back (std::make_unique<juce::AudioParameterBool>(
         "useLimiter", "Use Limiter", false));
@@ -763,11 +767,13 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto* satParam      = parameters.getRawParameterValue ("satAmount");
     auto* limiterParam  = parameters.getRawParameterValue ("useLimiter");
     auto* clipModeParam = parameters.getRawParameterValue ("clipMode");
+    auto* analogHeadroomParam = parameters.getRawParameterValue ("analogHeadroomDb");
 
     const float inputGainDb  = gainParam    ? gainParam->load()    : 0.0f;
     const float loveRaw      = loveParam    ? loveParam->load()    : 0.0f;
     const float satAmountRaw = satParam     ? satParam->load()     : 0.0f;
     const bool  useLimiter   = limiterParam ? (limiterParam->load() >= 0.5f) : false;
+    const float analogHeadroomDb = analogHeadroomParam ? analogHeadroomParam->load() : 0.5f;
 
     const int clipModeIndex  = clipModeParam ? juce::jlimit (0, 1, (int) clipModeParam->load()) : 0;
     const ClipMode clipMode  = (clipModeIndex == 0 ? ClipMode::Digital : ClipMode::Analog);
@@ -1077,6 +1083,26 @@ samples[i] = sample;
                         if (sample < -1.0f) sample = -1.0f;
                     }
 samples[i] = sample;
+                }
+            }
+        }
+
+        // ANALOG HEADROOM: post-analog, post-DC-block
+        if (isAnalogMode)
+        {
+            const float headroomDb   = juce::jlimit (0.0f, 1.0f, analogHeadroomDb);
+            const float headroomGain = juce::Decibels::decibelsToGain (headroomDb);
+
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                float* s = buffer.getWritePointer (ch);
+
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float y = s[i] * headroomGain;
+                    if (y >  1.0f) y =  1.0f;
+                    if (y < -1.0f) y = -1.0f;
+                    s[i] = y;
                 }
             }
         }
