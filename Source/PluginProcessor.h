@@ -163,13 +163,16 @@ private:
 
     struct SilkState
     {
-        float pre = 0.0f;
-        float de  = 0.0f;
+        float pre    = 0.0f;
+        float de     = 0.0f;
+        float evenDc = 0.0f; // DC tracker for quadratic (even-harmonic) term
     };
 
     void resetSilkState (int numChannels);
 
     std::vector<SilkState> silkStates;
+
+    float silkEvenDcAlpha = 0.0f; // DC servo coeff for quadratic even term (base rate)
 
     //==========================================================
     // SAT bass-tilt state (for gradual TikTok bass boost)
@@ -209,7 +212,6 @@ private:
         float biasMemory = 0.0f;
         float levelEnv   = 0.0f; // slow envelope of |in| for bias engagement
         float dcBlock    = 0.0f; // ultra-low HP state to remove DC without killing even harmonics
-        float evenDc    = 0.0f; // DC removal for quadratic even-harmonic term
     };
 
     void resetAnalogClipState (int numChannels);
