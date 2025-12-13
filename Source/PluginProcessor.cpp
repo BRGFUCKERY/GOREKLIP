@@ -265,19 +265,6 @@ void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesPerBlock)
 {
     sampleRate   = (newSampleRate > 0.0 ? newSampleRate : 44100.0);
-
-    // Even-term DC tracker (removes the quadratic's DC before it can hit the clipper)
-    {
-        const double evenDcFc = 3.0; // Hz
-        silkEvenDcAlpha = (float) std::exp (-2.0 * juce::MathConstants<double>::pi * evenDcFc / sampleRate);
-    }
-
-    // DC servo used right before the final hard clip (keeps output centered while still ending in a clip)
-    {
-        const double postDcFc = 2.0; // Hz
-        postDcAlpha = (float) std::exp (-2.0 * juce::MathConstants<double>::pi * postDcFc / sampleRate);
-    }
-
     limiterGain  = 1.0f;
     maxBlockSize = juce::jmax (1, samplesPerBlock);
 
@@ -298,10 +285,15 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
 
     resetSilkState (getTotalNumOutputChannels());
     resetAnalogClipState (getTotalNumOutputChannels());
-    resetAnalogToneState (getTotalNumOutputChannels());
-    resetPostDcState();
 
     const float sr = (float) sampleRate;
+
+    // DC tracker for quadratic even term in the 5060 (SILK) stage
+    {
+        constexpr float dcFc = 2.0f; // Hz (very low: remove drift, keep audio band)
+        silkEvenDcAlpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / sr);
+        silkEvenDcAlpha = juce::jlimit (0.0f, 0.9999999f, silkEvenDcAlpha);
+    }
 
     // Analog bias envelope follower coefficients (slow vs waveform, fast vs transients)
     {
@@ -456,12 +448,6 @@ void FruityClipAudioProcessor::resetAnalogToneState (int numChannels)
         st.low = 0.0f;
 }
 
-void FruityClipAudioProcessor::resetPostDcState()
-{
-    postDcStates.assign(getTotalNumInputChannels(), 0.0f);
-}
-
-
 void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
 {
     analogClipStates.clear();
@@ -553,39 +539,47 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
     return juce::jlimit (-2.5f, 2.5f, x + blend * (st.de - x));
 }
 
-float FruityClipAudioProcessor::applySilkAnalogSample(float x, float silkAmount01, SilkState& st)
+float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, float silkAmount)
 {
-    const float s = juce::jlimit(0.0f, 1.0f, silkAmount01);
+    // 5060-style colour stage (pre-Lavry clip)
+    //
+    // Targets from your hardware @ 1k +12:
+    //   silk 0   : H2 ≈ -33 dB rel
+    //   silk 100 : H2 ≈ -30.5 dB rel
+    //
+    // We generate EVEN harmonics primarily here (quadratic term),
+    // and keep the Lavry ceiling mostly symmetric.
 
-    // Pre-emphasis (with s==0 this is effectively bypassed)
-    const float pre = applySilkPreEmphasis(x, s, st);
+    const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
-    // Even-harmonic generator (quadratic, zero-mean), level-dependent
-    const float absPre  = std::abs(pre);
-    const float driveT  = juce::jlimit(0.0f, 1.0f, (absPre - 0.25f) / 0.75f);
-    const float driveT2 = driveT * driveT;
+    if (channel < 0 || channel >= (int) silkStates.size())
+        return x;
 
-    // Starting point aimed at 1k +12 captures:
-    // silk=0 : H2 ~ -33 dB
-    // silk=1 : H2 ~ -30.5 dB
-    const float evenBase  = 0.0120f;
-    const float evenSilk  = 0.0040f;
-    const float evenCoeff = (evenBase + evenSilk * s) * driveT2;
+    auto& st = silkStates[(size_t) channel];
 
-    float e = pre * pre; // quadratic => DC + even series
+    // Pre-emphasis (existing)
+    const float pre = applySilkPreEmphasis (x, channel, s);
+
+    // Engage more at high level so it doesn't fuzz quiet material
+    float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.20f) / 0.80f);
+    driveT = driveT * driveT;
+
+    // Quadratic (even) mix coefficient.
+    // For a pure sine, H2 amplitude ≈ coeff/2  ->  -33 dB => coeff ~ 0.045
+    const float evenCoeff = (0.045f + 0.015f * s) * driveT;
+
+    float e = pre * pre;
+
+    // Remove DC from the quadratic term only (preserves even series)
     st.evenDc = silkEvenDcAlpha * st.evenDc + (1.0f - silkEvenDcAlpha) * e;
-    e -= st.evenDc;      // remove DC so we don't offset the clipper
+    e -= st.evenDc;
 
     float y = pre + evenCoeff * e;
 
-    // Tiny level trim (very small, just to keep averages close)
-    const float trimDb = 0.10f * s; // 0..+0.10 dB
-    y *= juce::Decibels::decibelsToGain(trimDb);
-
-    // De-emphasis back to flat
-    y = applySilkDeEmphasis(y, s, st);
-    return y;
+    // De-emphasis (existing)
+    return applySilkDeEmphasis (y, channel, s);
 }
+
 
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, float silkAmount)
 {
@@ -1118,27 +1112,7 @@ samples[i] = sample;
             const int numChannels = buffer.getNumChannels();
             const int numSamples  = buffer.getNumSamples();
 
-            if ((int) postDcStates.size() != numChannels)
-                postDcStates.assign((size_t) numChannels, 0.0f);
-
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                auto* s = buffer.getWritePointer(ch);
-                float dc = postDcStates[(size_t) ch];
-
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    float y = s[i] - dc;
-                    y = juce::jlimit(-1.0f, 1.0f, y); // final hard clip
-
-                    dc = postDcAlpha * dc + (1.0f - postDcAlpha) * y; // measure DC after clip
-                    s[i] = y;
-                }
-
-                postDcStates[(size_t) ch] = dc;
-            }
-
-// We quantize to 24-bit domain: ±2^23 discrete steps.
+            // We quantize to 24-bit domain: ±2^23 discrete steps.
             constexpr float quantSteps = 8388608.0f;       // 2^23
             constexpr float ditherAmp  = 1.0f / quantSteps; // ~ -138 dBFS
 

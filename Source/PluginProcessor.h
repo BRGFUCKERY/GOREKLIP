@@ -163,14 +163,16 @@ private:
 
     struct SilkState
     {
-        float pre = 0.0f;
-        float de  = 0.0f;
-        float evenDc = 0.0f;
+        float pre    = 0.0f;
+        float de     = 0.0f;
+        float evenDc = 0.0f; // DC tracker for quadratic (even-harmonic) term
     };
 
     void resetSilkState (int numChannels);
 
     std::vector<SilkState> silkStates;
+
+    float silkEvenDcAlpha = 0.0f; // DC servo coeff for quadratic even term (base rate)
 
     //==========================================================
     // SAT bass-tilt state (for gradual TikTok bass boost)
@@ -220,9 +222,6 @@ private:
     // Internal state
     //==========================================================
     double sampleRate      = 44100.0;
-    float silkEvenDcAlpha = 0.0f; // DC tracker for even-harmonic quadratic term
-    float postDcAlpha = 0.0f; // DC servo before final hard clip
-    std::vector<float> postDcStates;
     float  postGain        = 1.0f;          // kept for potential special modes
     float  thresholdLinear = 0.5f;         // updated in ctor
 
@@ -268,7 +267,5 @@ private:
     int currentOversampleIndex = 0;   // 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32, 6=x64
     int maxBlockSize           = 0;   // for oversampler->initProcessing
 
-        void resetPostDcState();
-
-JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
 };
