@@ -819,6 +819,13 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
                          cropHeight);
         }
     }
+
+    // Build stamp (debug)
+    g.setFont (12.0f);
+    g.setColour (juce::Colours::white.withAlpha (0.55f));
+    g.drawText (juce::String ("BUILD: ") + FruityClipAudioProcessor::kBuildStamp,
+                8, getHeight() - 18, getWidth() - 16, 14,
+                juce::Justification::centredLeft, true);
 }
 
 //==============================================================
