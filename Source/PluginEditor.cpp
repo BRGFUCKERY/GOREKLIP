@@ -480,8 +480,8 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     bgImage = juce::ImageCache::getFromMemory (BinaryData::bg_png,
                                                BinaryData::bg_pngSize);
 
-    analogBgImage = juce::ImageCache::getFromMemory (BinaryData::crime_jpg,
-                                                     BinaryData::crime_jpgSize);
+    analogBgImage = juce::ImageCache::getFromMemory (BinaryData::crime_JPG,
+                                                     BinaryData::crime_JPGSize);
 
     slamImage = juce::ImageCache::getFromMemory (BinaryData::slam_jpg,
                                                  BinaryData::slam_jpgSize);
