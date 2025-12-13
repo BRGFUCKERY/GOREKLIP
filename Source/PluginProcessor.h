@@ -165,7 +165,7 @@ private:
     {
         float pre = 0.0f;
         float de  = 0.0f;
-        float evenDc = 0.0f; // DC tracker for quadratic even generator (x^2)
+        float evenDc = 0.0f;
     };
 
     void resetSilkState (int numChannels);
@@ -200,7 +200,6 @@ private:
     float analogEnvAttackAlpha  = 0.0f; // envelope follower for analog bias
     float analogEnvReleaseAlpha = 0.0f;
     float analogDcAlpha         = 0.0f; // DC blocker coefficient for analog clipper (computed per-block for OS rate)
-    float silkEvenDcAlpha      = 0.0f; // base-rate DC tracker for silk quadratic term
 
 
     //==========================================================
@@ -221,6 +220,9 @@ private:
     // Internal state
     //==========================================================
     double sampleRate      = 44100.0;
+    float silkEvenDcAlpha = 0.0f; // DC tracker for even-harmonic quadratic term
+    float postDcAlpha = 0.0f; // DC servo before final hard clip
+    std::vector<float> postDcStates;
     float  postGain        = 1.0f;          // kept for potential special modes
     float  thresholdLinear = 0.5f;         // updated in ctor
 
@@ -266,5 +268,7 @@ private:
     int currentOversampleIndex = 0;   // 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32, 6=x64
     int maxBlockSize           = 0;   // for oversampler->initProcessing
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
+        void resetPostDcState();
+
+JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
 };
