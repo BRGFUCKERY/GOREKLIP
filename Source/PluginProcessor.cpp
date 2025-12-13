@@ -575,7 +575,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     // Tiny trim to keep SILK from going *quieter*.
     // Hardware max-silk captures are slightly denser, not cleaner.
-    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, +0.25f);
+    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, +0.65f);
     y *= juce::Decibels::decibelsToGain (trimDb);
 
     // De-emphasis: gently smooth the very top end again
@@ -642,8 +642,8 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     //   HW silk0  : H2 ~ -33 dB rel
     //   HW silkMax: H2 ~ -30.5 dB rel
     // The previous values were ~6x too hot (H2 ~ -17 dB rel).
-    constexpr float biasBase = 0.0032f;
-    constexpr float biasSilk = 0.0010f;
+    constexpr float biasBase = 0.0160f;
+    constexpr float biasSilk = 0.0052f;
 
     float targetBias = (biasBase + biasSilk * silkShape) * levelT;
 
