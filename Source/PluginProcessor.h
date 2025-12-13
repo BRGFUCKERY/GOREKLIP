@@ -209,6 +209,7 @@ private:
         float biasMemory = 0.0f;
         float levelEnv   = 0.0f; // slow envelope of |in| for bias engagement
         float dcBlock    = 0.0f; // ultra-low HP state to remove DC without killing even harmonics
+            float evenDc    = 0.0f; // DC tracker for quadratic even engine (keep H2, remove DC)
     };
 
     void resetAnalogClipState (int numChannels);

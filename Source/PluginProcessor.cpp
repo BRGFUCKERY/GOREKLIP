@@ -630,41 +630,55 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // -------------------------------------------------------------
     // Bias envelope (engages near clipping)
     // -------------------------------------------------------------
-    constexpr float levelStart = 0.55f; // start engaging below threshold
-    constexpr float levelEnd   = 1.45f;
-
-    float levelT = 0.0f;
-    if (env > levelStart)
-        levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
-
-    // Baseline even content at SILK 0, more with SILK
-    // Tuned to match your hardware captures:
-    //   HW silk0  : H2 ~ -33 dB rel
-    //   HW silkMax: H2 ~ -30.5 dB rel
-    // The previous values were ~6x too hot (H2 ~ -17 dB rel).
-    constexpr float biasBase = 0.0160f;
-    constexpr float biasSilk = 0.0052f;
-
-    float targetBias = (biasBase + biasSilk * silkShape) * levelT;
-
-    // Micro "memory" on bias itself
-    constexpr float biasAlpha = 0.992f; // ~4 ms @ 48k
-    st.biasMemory = biasAlpha * st.biasMemory + (1.0f - biasAlpha) * targetBias;
-
-    float bias = st.biasMemory;
-
-    // Tame bias at insane levels (avoid fuzz)
-    bias *= 1.0f / (1.0f + 0.20f * env);
     // -------------------------------------------------------------
-    // Bias inside shaper (creates even harmonics)
-    //
-    // IMPORTANT:
-    // We do NOT do (shaped - shaped(bias)) here anymore.
-    // That DC-comp trick was killing the even-harmonic energy.
-    // Instead, we allow the asymmetry to exist, then remove *only DC*
-    // with an ultra-low cutoff one-pole HP (preserves H2/H4/H6).
-    // -------------------------------------------------------------
-    float y = softClip (inRaw + bias);
+// Bias + even-harmonic engine (engages near clipping)
+//
+// Goal (from your hardware prints @ 1k +12):
+//   silk 0   : H2 ≈ -33 dB (rel to H1)
+//   silk 100 : H2 ≈ -30.6 dB
+//
+// Strategy:
+//   1) A quadratic term (x^2) mixed into x creates strong even harmonics.
+//   2) A small bias "memory" adds realism/feel without DC drift.
+//   3) Both are gated by levelT^2 so they only bloom near the ceiling.
+// -------------------------------------------------------------
+constexpr float levelStart = 0.50f; // start engaging below threshold
+constexpr float levelEnd   = 1.10f; // fully engaged around clipping
+
+float levelT = 0.0f;
+if (env > levelStart)
+    levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
+
+const float levelT2 = levelT * levelT; // steeper engage -> less fuzz below clip
+
+// --- Quadratic even engine (baseline at silk 0, slightly more with silk) ---
+// Ratio target silk100/silk0 ≈ 1.32 (+2.4 dB), so evenSilk ≈ 0.32 * evenBase.
+constexpr float evenBase = 0.0190f;
+constexpr float evenSilk = 0.0061f;
+
+float quad = inRaw * inRaw; // even function -> when mixed into x, yields even harmonics
+st.evenDc  = analogDcAlpha * st.evenDc + (1.0f - analogDcAlpha) * quad;
+quad      -= st.evenDc; // remove DC from the quadratic before mixing
+
+const float evenAmt = (evenBase + evenSilk * silkShape) * levelT2;
+const float inEven  = inRaw + evenAmt * quad;
+
+// --- Bias-based asymmetry (fine detail / subtle "memory") ---
+constexpr float biasBase = 0.0200f;
+constexpr float biasSilk = 0.0064f;
+
+float targetBias = (biasBase + biasSilk * silkShape) * levelT2;
+
+// Micro "memory" on bias itself
+constexpr float biasAlpha = 0.992f; // a few ms @ 48k
+st.biasMemory = biasAlpha * st.biasMemory + (1.0f - biasAlpha) * targetBias;
+
+float bias = st.biasMemory;
+
+// Tame bias at insane levels (avoid fuzz)
+bias *= 1.0f / (1.0f + 0.20f * env);
+
+float y = softClip (inEven + bias);
 
     // DC blocker (very low corner) – keeps the expensive even series, removes DC drift
     st.dcBlock = analogDcAlpha * st.dcBlock + (1.0f - analogDcAlpha) * y;
