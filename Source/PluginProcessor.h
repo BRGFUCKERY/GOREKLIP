@@ -165,6 +165,7 @@ private:
     {
         float pre = 0.0f;
         float de  = 0.0f;
+        float evenDc = 0.0f; // DC tracker for quadratic even generator (x^2)
     };
 
     void resetSilkState (int numChannels);
@@ -199,6 +200,7 @@ private:
     float analogEnvAttackAlpha  = 0.0f; // envelope follower for analog bias
     float analogEnvReleaseAlpha = 0.0f;
     float analogDcAlpha         = 0.0f; // DC blocker coefficient for analog clipper (computed per-block for OS rate)
+    float silkEvenDcAlpha      = 0.0f; // base-rate DC tracker for silk quadratic term
 
 
     //==========================================================
@@ -209,22 +211,11 @@ private:
         float biasMemory = 0.0f;
         float levelEnv   = 0.0f; // slow envelope of |in| for bias engagement
         float dcBlock    = 0.0f; // ultra-low HP state to remove DC without killing even harmonics
-            float evenDc    = 0.0f; // DC tracker for quadratic even engine (keep H2, remove DC)
     };
 
     void resetAnalogClipState (int numChannels);
 
     std::vector<AnalogClipState> analogClipStates;
-
-    //==========================================================
-    // Post-chain DC blocker (base rate)
-    //   - Real 5060/Lavry paths are AC-coupled; we want the same.
-    //   - This runs *right before* the final safety ceiling, so the
-    //     last thing in the chain is still a strict clip-to-0 stage.
-    //==========================================================
-    void resetPostDcState (int numChannels);
-    std::vector<float> postDcStates;
-    float postDcAlpha = 0.0f;
 
     //==========================================================
     // Internal state

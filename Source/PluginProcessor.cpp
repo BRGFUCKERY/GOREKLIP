@@ -284,18 +284,15 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     resetSatState (getTotalNumOutputChannels());
 
     resetSilkState (getTotalNumOutputChannels());
-    resetAnalogToneState (getTotalNumOutputChannels());
     resetAnalogClipState (getTotalNumOutputChannels());
-    resetPostDcState (getTotalNumOutputChannels());
 
     const float sr = (float) sampleRate;
 
-    // Base-rate post DC blocker (AC-coupling) coefficient
+    // Silk quadratic DC tracker (base rate) – remove DC from x^2 only, keep even harmonics.
     {
-        // Ultra-low cutoff (Hz). We only want to remove DC + subsonic drift.
         constexpr float dcFc = 2.0f;
-        postDcAlpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / sr);
-        postDcAlpha = juce::jlimit (0.0f, 0.9999999f, postDcAlpha);
+        silkEvenDcAlpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / sr);
+        silkEvenDcAlpha = juce::jlimit (0.0f, 0.9999999f, silkEvenDcAlpha);
     }
 
     // Analog bias envelope follower coefficients (slow vs waveform, fast vs transients)
@@ -418,6 +415,7 @@ void FruityClipAudioProcessor::resetSilkState (int numChannels)
     {
         st.pre = 0.0f;
         st.de  = 0.0f;
+        st.evenDc = 0.0f;
     }
 }
 
@@ -463,17 +461,6 @@ void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
         st.levelEnv   = 0.0f;
         st.dcBlock    = 0.0f;
     }
-}
-
-//==============================================================
-void FruityClipAudioProcessor::resetPostDcState (int numChannels)
-{
-    postDcStates.clear();
-
-    if (numChannels <= 0)
-        return;
-
-    postDcStates.resize ((size_t) numChannels, 0.0f);
 }
 
 
@@ -554,33 +541,58 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
 
 float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, float silkAmount)
 {
-    // Shape control to avoid all action at top
+    // 5060-style colour stage (pre-clip).
+    //
+    // Must match (your hardware @ 1 kHz +12):
+    //   silk 0   : H2 ≈ -33 dB rel
+    //   silk 100 : H2 ≈ -30.5 dB rel
+    //
+    // Current observed problem:
+    //   • silk 0 is already close, but silk 100 *loses drive* and H2 collapses.
+    //
+    // Fix strategy:
+    //   • Put the "even engine" in the 5060 stage (quadratic term), not the Lavry ceiling.
+    //   • Prevent peak-softening at higher SILK (tiny make-up trim).
+    //   • Remove DC from the quadratic term only (preserves H2/H4/H6).
+
     const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
-    if (s <= 1.0e-4f)
+    if (channel < 0 || channel >= (int) silkStates.size())
         return x;
 
-    // Pre-emphasis: subtle HF tilt into the non-linearity
+    auto& st = silkStates[(size_t) channel];
+
+    // Pre-emphasis: subtle HF tilt into the colour stage
     const float pre = applySilkPreEmphasis (x, channel, s);
 
-    // Mild tanh saturator with a touch of bias for transformer-like evenness
-    const float drive = 1.0f + 0.18f * s;
-    const float bias  = 0.0015f + 0.0035f * s;
+    // Engage colour mostly when we're near "clipping territory"
+    float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.25f) / 0.75f);
+    driveT = driveT * driveT;
 
-    float y = std::tanh ((pre + bias) * drive) - std::tanh (bias * drive);
+    // Quadratic even generator (dominant H2) with DC removal.
+    // We keep baseline at ~0 so SILK=0 stays where the Lavry stage already is,
+    // and we add most missing H2 at high SILK.
+    constexpr float evenBase = 0.0000f;  // baseline at SILK 0
+    constexpr float evenSilk = 0.0500f;  // main even at SILK 100 (calibrated from H2 deficit)
 
-    // Normalise so unity stays roughly unity at chosen drive
-    const float norm = 1.0f / std::tanh (drive);
-    y *= norm;
+    const float evenCoeff = (evenBase + evenSilk * s) * driveT;
 
-    // Tiny trim to keep SILK from going *quieter*.
-    // Hardware max-silk captures are slightly denser, not cleaner.
-    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, +0.65f);
+    float e = pre * pre;
+
+    // Remove DC from quadratic term only.
+    st.evenDc = silkEvenDcAlpha * st.evenDc + (1.0f - silkEvenDcAlpha) * e;
+    e -= st.evenDc;
+
+    float y = pre + evenCoeff * e;
+
+    // Make-up to prevent silk from reducing clip depth (silk100 was ~0.44 dB less dense than HW).
+    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, +0.55f);
     y *= juce::Decibels::decibelsToGain (trimDb);
 
-    // De-emphasis: gently smooth the very top end again
+    // De-emphasis: gently smooth the very top again
     return applySilkDeEmphasis (y, channel, s);
 }
+
 
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, float silkAmount)
 {
@@ -630,55 +642,37 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // -------------------------------------------------------------
     // Bias envelope (engages near clipping)
     // -------------------------------------------------------------
+    constexpr float levelStart = 0.55f; // start engaging below threshold
+    constexpr float levelEnd   = 1.45f;
+
+    float levelT = 0.0f;
+    if (env > levelStart)
+        levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
+
+    // Baseline even content at SILK 0, more with SILK
+    constexpr float biasBase = 0.020f;
+    constexpr float biasSilk = 0.018f;
+
+    float targetBias = (biasBase + biasSilk * silkShape) * levelT;
+
+    // Micro "memory" on bias itself
+    constexpr float biasAlpha = 0.992f; // ~4 ms @ 48k
+    st.biasMemory = biasAlpha * st.biasMemory + (1.0f - biasAlpha) * targetBias;
+
+    float bias = st.biasMemory;
+
+    // Tame bias at insane levels (avoid fuzz)
+    bias *= 1.0f / (1.0f + 0.20f * env);
     // -------------------------------------------------------------
-// Bias + even-harmonic engine (engages near clipping)
-//
-// Goal (from your hardware prints @ 1k +12):
-//   silk 0   : H2 ≈ -33 dB (rel to H1)
-//   silk 100 : H2 ≈ -30.6 dB
-//
-// Strategy:
-//   1) A quadratic term (x^2) mixed into x creates strong even harmonics.
-//   2) A small bias "memory" adds realism/feel without DC drift.
-//   3) Both are gated by levelT^2 so they only bloom near the ceiling.
-// -------------------------------------------------------------
-constexpr float levelStart = 0.50f; // start engaging below threshold
-constexpr float levelEnd   = 1.10f; // fully engaged around clipping
-
-float levelT = 0.0f;
-if (env > levelStart)
-    levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
-
-const float levelT2 = levelT * levelT; // steeper engage -> less fuzz below clip
-
-// --- Quadratic even engine (baseline at silk 0, slightly more with silk) ---
-// Ratio target silk100/silk0 ≈ 1.32 (+2.4 dB), so evenSilk ≈ 0.32 * evenBase.
-constexpr float evenBase = 0.0190f;
-constexpr float evenSilk = 0.0061f;
-
-float quad = inRaw * inRaw; // even function -> when mixed into x, yields even harmonics
-st.evenDc  = analogDcAlpha * st.evenDc + (1.0f - analogDcAlpha) * quad;
-quad      -= st.evenDc; // remove DC from the quadratic before mixing
-
-const float evenAmt = (evenBase + evenSilk * silkShape) * levelT2;
-const float inEven  = inRaw + evenAmt * quad;
-
-// --- Bias-based asymmetry (fine detail / subtle "memory") ---
-constexpr float biasBase = 0.0200f;
-constexpr float biasSilk = 0.0064f;
-
-float targetBias = (biasBase + biasSilk * silkShape) * levelT2;
-
-// Micro "memory" on bias itself
-constexpr float biasAlpha = 0.992f; // a few ms @ 48k
-st.biasMemory = biasAlpha * st.biasMemory + (1.0f - biasAlpha) * targetBias;
-
-float bias = st.biasMemory;
-
-// Tame bias at insane levels (avoid fuzz)
-bias *= 1.0f / (1.0f + 0.20f * env);
-
-float y = softClip (inEven + bias);
+    // Bias inside shaper (creates even harmonics)
+    //
+    // IMPORTANT:
+    // We do NOT do (shaped - shaped(bias)) here anymore.
+    // That DC-comp trick was killing the even-harmonic energy.
+    // Instead, we allow the asymmetry to exist, then remove *only DC*
+    // with an ultra-low cutoff one-pole HP (preserves H2/H4/H6).
+    // -------------------------------------------------------------
+    float y = softClip (inRaw + bias);
 
     // DC blocker (very low corner) – keeps the expensive even series, removes DC drift
     st.dcBlock = analogDcAlpha * st.dcBlock + (1.0f - analogDcAlpha) * y;
@@ -784,8 +778,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         resetAnalogToneState (numChannels);
     if ((int) analogClipStates.size() < numChannels)
         resetAnalogClipState (numChannels);
-    if ((int) postDcStates.size() < numChannels)
-        resetPostDcState (numChannels);
 
     const bool isOffline = isNonRealtime();
 
@@ -1112,28 +1104,20 @@ samples[i] = sample;
             }
         }
 
-        // POST DC-BLOCK (base rate) + FINAL SAFETY CEILING
+        // FINAL SAFETY CEILING AT BASE RATE
         // We ALWAYS end the chain with a strict Lavry-style 0 dBFS hard ceiling.
-        // PostDc emulates AC-coupling in the real path, but the *last* operation remains clip-to-0.
+        // (Analog/Digital/OS/no-OS – doesn’t matter. Final output is guaranteed in [-1, +1].)
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* s = buffer.getWritePointer (ch);
-            float  dc = postDcStates[(size_t) ch];
 
             for (int i = 0; i < numSamples; ++i)
             {
                 float y = s[i];
-
-                // Ultra-low HP (remove DC drift without touching audio band)
-                dc = postDcAlpha * dc + (1.0f - postDcAlpha) * y;
-                y -= dc;
-
                 if (y >  1.0f) y =  1.0f;
                 if (y < -1.0f) y = -1.0f;
                 s[i] = y;
             }
-
-            postDcStates[(size_t) ch] = dc;
         }
 
 
