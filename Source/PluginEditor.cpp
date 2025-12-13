@@ -425,6 +425,38 @@ juce::Font DownwardComboBoxLookAndFeel::getComboBoxFont (juce::ComboBox& box)
 }
 
 //==============================================================
+// Helpers
+//==============================================================
+void FruityClipAudioProcessorEditor::drawImageCover (juce::Graphics& g,
+                                                     const juce::Image& img,
+                                                     const juce::Rectangle<int>& bounds) const
+{
+    if (! img.isValid())
+        return;
+
+    const float srcW = (float) img.getWidth();
+    const float srcH = (float) img.getHeight();
+
+    if (srcW <= 0.0f || srcH <= 0.0f)
+        return;
+
+    const float dstW = (float) bounds.getWidth();
+    const float dstH = (float) bounds.getHeight();
+
+    const float scale = juce::jmax (dstW / srcW, dstH / srcH);
+
+    const int drawW = (int) std::ceil (srcW * scale);
+    const int drawH = (int) std::ceil (srcH * scale);
+
+    const int x = bounds.getX() + (bounds.getWidth()  - drawW) / 2;
+    const int y = bounds.getY() + (bounds.getHeight() - drawH) / 2;
+
+    g.drawImage (img,
+                 x, y, drawW, drawH,
+                 0, 0, img.getWidth(), img.getHeight());
+}
+
+//==============================================================
 // Editor
 //==============================================================
 FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioProcessor& p)
@@ -448,8 +480,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     bgImage = juce::ImageCache::getFromMemory (BinaryData::bg_png,
                                                BinaryData::bg_pngSize);
 
+    analogBgImage = juce::ImageCache::getFromMemory (BinaryData::crime_jpg,
+                                                     BinaryData::crime_jpgSize);
+
     slamImage = juce::ImageCache::getFromMemory (BinaryData::slam_jpg,
                                                  BinaryData::slam_jpgSize);
+
+    analogBurnImage = juce::ImageCache::getFromMemory (BinaryData::invertcrime_png,
+                                                       BinaryData::invertcrime_pngSize);
 
     logoImage = juce::ImageCache::getFromMemory (BinaryData::gorekliper_logo_png,
                                                  BinaryData::gorekliper_logo_pngSize);
@@ -475,9 +513,11 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
                                                                BinaryData::finger_pngSize);
     fingerLnf.setKnobImage (fingerImage);
 
-    if (bgImage.isValid())
-        setSize ((int) (bgImage.getWidth()  * bgScale),
-                 (int) (bgImage.getHeight() * bgScale));
+    juce::Image primaryBg = bgImage.isValid() ? bgImage : analogBgImage;
+
+    if (primaryBg.isValid())
+        setSize ((int) (primaryBg.getWidth()  * bgScale),
+                 (int) (primaryBg.getHeight() * bgScale));
     else
         setSize (600, 400);
 
@@ -533,7 +573,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     setupLabel (gainLabel, "GAIN");
     setupLabel (ottLabel,  getLoveSilkLabelText());
-    setupLabel (satLabel,  "DEATH");
+    setupLabel (satLabel,  getDeathHeadroomLabelText());
     setupLabel (modeLabel, getClipperLabelText()); // will flip to LIMITER / 50-69 in runtime
 
     addAndMakeVisible (gainLabel);
@@ -625,14 +665,17 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     ottAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "ottAmount", ottSlider);
 
-    satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                        apvts, "satAmount", satSlider);
-
     modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "useLimiter", modeSlider);
 
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         apvts, "oversampleMode", oversampleLiveBox);
+
+    lastClipModeForSat = processor.getClipMode() == FruityClipAudioProcessor::ClipMode::Analog
+                             ? FruityClipAudioProcessor::ClipMode::Digital
+                             : FruityClipAudioProcessor::ClipMode::Analog;
+
+    updateSatAttachmentForMode();
 
     auto setupValuePopup = [this] (FineControlSlider& slider,
                                    juce::Label& lbl,
@@ -672,9 +715,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     setupValuePopup (satSlider, satValueLabel, [this]()
     {
-        const double raw = satSlider.getValue();
-        const int percent = (int) std::round (raw * 100.0);
-        return juce::String (percent) + " %";
+        return getSatDisplayText();
     });
 
     // Small helper to keep SAT enable + label in sync with the mode value
@@ -758,6 +799,8 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     const int w = getWidth();
     const int h = getHeight();
 
+    const bool isAnalogMode = (processor.getClipMode() == FruityClipAudioProcessor::ClipMode::Analog);
+
     // Map burn into 0..1
     const float burnRaw = juce::jlimit (0.0f, 1.0f, lastBurn);
 
@@ -765,18 +808,33 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     const float burnShaped = std::pow (burnRaw, 1.3f);
 
     // 1) Base background
-    if (bgImage.isValid())
+    if (isAnalogMode && analogBgImage.isValid())
+    {
+        drawImageCover (g, analogBgImage, getLocalBounds());
+    }
+    else if (bgImage.isValid())
+    {
         g.drawImageWithin (bgImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+    }
     else
+    {
         g.fillAll (juce::Colours::black);
+    }
 
     // 2) Slam background
-    if (slamImage.isValid() && burnShaped > 0.02f)
+    const juce::Image& burnImage = (isAnalogMode && analogBurnImage.isValid()) ? analogBurnImage
+                                                                               : slamImage;
+
+    if (burnImage.isValid() && burnShaped > 0.02f)
     {
         juce::Graphics::ScopedSaveState save (g);
 
         g.setOpacity (burnShaped);
-        g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+
+        if (isAnalogMode && analogBurnImage.isValid())
+            drawImageCover (g, burnImage, getLocalBounds());
+        else
+            g.drawImageWithin (burnImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     }
 
     // 3) Logo – normal at low slam, fades to white as you pin it
@@ -940,6 +998,8 @@ void FruityClipAudioProcessorEditor::timerCallback()
     auto lookMode = getLookMode();
     currentLookMode = lookMode;
 
+    updateSatAttachmentForMode();
+
     // Base burn from processor (GUI burn or LUFS burn or static)
     switch (lookMode)
     {
@@ -979,6 +1039,7 @@ void FruityClipAudioProcessorEditor::timerCallback()
     }
 
     ottLabel.setText (getLoveSilkLabelText(), juce::dontSendNotification);
+    satLabel.setText (getDeathHeadroomLabelText(), juce::dontSendNotification);
     modeLabel.setText (getClipperLabelText(), juce::dontSendNotification);
 
     // Drive pentagrams / x1 colour from lastBurn (0..1)
@@ -1054,6 +1115,38 @@ void FruityClipAudioProcessorEditor::showOversampleLiveMenu()
                         });
 }
 
+void FruityClipAudioProcessorEditor::updateSatAttachmentForMode()
+{
+    const auto mode = processor.getClipMode();
+    auto& apvts = processor.getParametersState();
+
+    if (mode == FruityClipAudioProcessor::ClipMode::Analog)
+    {
+        if (! headroomAttachment || lastClipModeForSat != mode)
+        {
+            satAttachment.reset();
+            headroomAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                apvts, "analogHeadroomDb", satSlider);
+        }
+    }
+    else
+    {
+        if (! satAttachment || lastClipModeForSat != mode)
+        {
+            headroomAttachment.reset();
+            satAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                apvts, "satAmount", satSlider);
+        }
+    }
+
+    lastClipModeForSat = mode;
+
+    satLabel.setText (getDeathHeadroomLabelText(), juce::dontSendNotification);
+
+    if (satValueLabel.isVisible())
+        satValueLabel.setText (getSatDisplayText(), juce::dontSendNotification);
+}
+
 void FruityClipAudioProcessorEditor::showBypassInfoPopup()
 {
     juce::String text;
@@ -1070,6 +1163,12 @@ void FruityClipAudioProcessorEditor::showBypassInfoPopup()
     text << "• Fine-Tune Control\n";
     text << "Hold SHIFT while turning any knob for tiny mastering adjustments -\n";
     text << "normal drag = big moves, SHIFT drag = precise control.\n\n";
+
+    text << "HEADROOM (Analog mode)\n";
+    text << "Analog mode is calibrated to match a real 5060 → Lavry chain. Real hardware reaches its “natural loudness ceiling” earlier than a pure digital clipper. HEADROOM adds post-Lavry gain into a clean hard clip to recover up to +1.0 dB loudness without changing the analog tone.\n";
+    text << "0.0 dB = true hardware behavior\n";
+    text << "0.5 dB (default) = fair loudness match\n";
+    text << "1.0 dB (max) = extra loudness without touching the analog engine\n\n";
 
     text << "—\n\n";
     text << "FOLLOW ME ON INSTAGRAM\n";
@@ -1122,6 +1221,28 @@ void FruityClipAudioProcessorEditor::setLookMode (LookMode mode)
 void FruityClipAudioProcessorEditor::openKlipBible()
 {
     showBypassInfoPopup();
+}
+
+juce::String FruityClipAudioProcessorEditor::getDeathHeadroomLabelText() const
+{
+    const auto mode = processor.getClipMode();
+    if (mode == FruityClipAudioProcessor::ClipMode::Analog)
+        return "HEADROOM";
+
+    return "DEATH";
+}
+
+juce::String FruityClipAudioProcessorEditor::getSatDisplayText() const
+{
+    if (processor.getClipMode() == FruityClipAudioProcessor::ClipMode::Analog)
+    {
+        const double valDb = satSlider.getValue();
+        return juce::String (valDb, 2) + " dB";
+    }
+
+    const double raw = satSlider.getValue();
+    const int percent = (int) std::round (raw * 100.0);
+    return juce::String (percent) + " %";
 }
 
 juce::String FruityClipAudioProcessorEditor::getLoveSilkLabelText() const
