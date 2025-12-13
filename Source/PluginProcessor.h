@@ -16,9 +16,6 @@ public:
     FruityClipAudioProcessor();
     ~FruityClipAudioProcessor() override;
 
-    // Build stamp (helps verify which binary your DAW loaded)
-    static constexpr const char* kBuildStamp = "GK_5060LAVRY_755a";
-
     //==========================================================
     // Core AudioProcessor overrides
     //==========================================================
@@ -168,13 +165,11 @@ private:
     {
         float pre = 0.0f;
         float de  = 0.0f;
-        float evenDc = 0.0f; // DC tracker for quadratic even term
     };
 
     void resetSilkState (int numChannels);
 
     std::vector<SilkState> silkStates;
-    float silkEvenDcAlpha = 0.0f; // DC removal for quadratic even term in SILK stage
 
     //==========================================================
     // SAT bass-tilt state (for gradual TikTok bass boost)

@@ -26,10 +26,6 @@ FruityClipAudioProcessor::createParameterLayout()
         "satAmount", "Saturation Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
-    params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "analogHeadroomDb", "Analog Headroom (dB)",
-        juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.5f));
-
     // MODE – 0 = clipper, 1 = limiter
     params.push_back (std::make_unique<juce::AudioParameterBool>(
         "useLimiter", "Use Limiter", false));
@@ -412,7 +408,6 @@ void FruityClipAudioProcessor::resetSilkState (int numChannels)
     {
         st.pre = 0.0f;
         st.de  = 0.0f;
-        st.evenDc = 0.0f;
     }
 }
 
@@ -538,10 +533,14 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
 
 float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, float silkAmount)
 {
-    // 5060-style colour stage (pre-clip).
-    // Calibrated on your captures:
-    //   silk0  : H2 ≈ -33 dB rel
-    //   silk100: H2 ≈ -30.5 dB rel
+    // 5060-style colour stage (pre-Lavry clip)
+    //
+    // Targets from your hardware @ 1k +12:
+    //   silk 0   : H2 ≈ -33 dB rel
+    //   silk 100 : H2 ≈ -30.5 dB rel
+    //
+    // We generate EVEN harmonics primarily here (quadratic term),
+    // and keep the Lavry ceiling mostly symmetric.
 
     const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
@@ -550,30 +549,29 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     auto& st = silkStates[(size_t) channel];
 
-    // Pre-emphasis into the colour stage
+    // Pre-emphasis (existing)
     const float pre = applySilkPreEmphasis (x, channel, s);
 
-    // Engage mostly near clip-level so low-level program stays clean
-    float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.25f) / 0.75f);
+    // Engage more at high level so it doesn't fuzz quiet material
+    float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.20f) / 0.80f);
     driveT = driveT * driveT;
 
-    // Quadratic even generator: y = x + k*(x^2 - DC)
-    // Micro tweak to nail silk100: bump silk term slightly.
-    float k = (0.035f + 0.0130f * s) * driveT;
-    k = juce::jlimit (0.0f, 0.060f, k); // safety cap
+    // Quadratic (even) mix coefficient.
+    // For a pure sine, H2 amplitude ≈ coeff/2  ->  -33 dB => coeff ~ 0.045
+    const float evenCoeff = (0.035f + 0.0115f * s) * driveT; // tuned from 710: ~-2 dB H2 overall, slightly less SILK delta
 
     float e = pre * pre;
 
-    // Remove DC from the quadratic term only (keeps H2/H4/H6; kills DC drift)
+    // Remove DC from the quadratic term only (preserves even series)
     st.evenDc = silkEvenDcAlpha * st.evenDc + (1.0f - silkEvenDcAlpha) * e;
     e -= st.evenDc;
 
-    float y = pre + k * e;
+    const float evenCoeffCapped = juce::jlimit (0.0f, 0.060f, evenCoeff);
+    float y = pre + evenCoeffCapped * e;
 
-    // De-emphasis after colour stage
+    // De-emphasis (existing)
     return applySilkDeEmphasis (y, channel, s);
 }
-
 
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, float silkAmount)
 {
@@ -767,13 +765,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto* satParam      = parameters.getRawParameterValue ("satAmount");
     auto* limiterParam  = parameters.getRawParameterValue ("useLimiter");
     auto* clipModeParam = parameters.getRawParameterValue ("clipMode");
-    auto* analogHeadroomParam = parameters.getRawParameterValue ("analogHeadroomDb");
 
     const float inputGainDb  = gainParam    ? gainParam->load()    : 0.0f;
     const float loveRaw      = loveParam    ? loveParam->load()    : 0.0f;
     const float satAmountRaw = satParam     ? satParam->load()     : 0.0f;
     const bool  useLimiter   = limiterParam ? (limiterParam->load() >= 0.5f) : false;
-    const float analogHeadroomDb = analogHeadroomParam ? analogHeadroomParam->load() : 0.5f;
 
     const int clipModeIndex  = clipModeParam ? juce::jlimit (0, 1, (int) clipModeParam->load()) : 0;
     const ClipMode clipMode  = (clipModeIndex == 0 ? ClipMode::Digital : ClipMode::Analog);
@@ -1083,26 +1079,6 @@ samples[i] = sample;
                         if (sample < -1.0f) sample = -1.0f;
                     }
 samples[i] = sample;
-                }
-            }
-        }
-
-        // ANALOG HEADROOM: post-analog, post-DC-block
-        if (isAnalogMode)
-        {
-            const float headroomDb   = juce::jlimit (0.0f, 1.0f, analogHeadroomDb);
-            const float headroomGain = juce::Decibels::decibelsToGain (headroomDb);
-
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* s = buffer.getWritePointer (ch);
-
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    float y = s[i] * headroomGain;
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
-                    s[i] = y;
                 }
             }
         }

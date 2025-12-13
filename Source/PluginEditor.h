@@ -179,8 +179,6 @@ private:
     // Background & logo
     juce::Image bgImage;
     juce::Image slamImage;       // "slammed" background
-    juce::Image analogBgImage;   // analog background
-    juce::Image analogBurnImage; // analog burn overlay
     juce::Image logoImage;
     juce::Image logoWhiteImage;  // precomputed white version of logo (same alpha)
     const float bgScale = 0.35f; // scale for bg.png
@@ -218,7 +216,6 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   headroomAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
 
@@ -235,8 +232,6 @@ private:
     float fingerAnimSpeed = 0.15f; // seconds
     AnimationTimer animationTimer;
 
-    FruityClipAudioProcessor::ClipMode lastClipModeForSat { FruityClipAudioProcessor::ClipMode::Digital };
-
     void mouseDown (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
@@ -248,10 +243,6 @@ private:
     void showBypassInfoPopup();
     void showOversampleMenu();
     void showOversampleLiveMenu();
-    void updateSatAttachmentForMode();
-    void drawImageCover (juce::Graphics& g, const juce::Image& img, const juce::Rectangle<int>& bounds) const;
-    juce::String getDeathHeadroomLabelText() const;
-    juce::String getSatDisplayText() const;
 
     friend class MiddleFingerLookAndFeel;
 
