@@ -349,17 +349,10 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     g.setColour (juce::Colours::transparentBlack);
     g.fillRect (bounds);
 
-    const float iconSize   = (float) height * 0.55f;
-    const float iconRadius = iconSize * 0.5f;
-
-    float iconCenterX = bounds.getRight() - iconSize * 0.9f; // keep existing X logic
+    const float iconSize    = (float) height * 0.55f;
+    const float iconRadius  = iconSize * 0.5f;
+    const float iconCenterX = bounds.getCentreX();
     const float iconCenterY = bounds.getCentreY();
-
-    if (isOversampleLive)
-    {
-        const float distanceFromLeft = iconCenterX - bounds.getX();
-        iconCenterX = bounds.getRight() - distanceFromLeft;
-    }
 
     juce::Rectangle<int> starBounds (
         (int) std::round (iconCenterX - iconRadius),
