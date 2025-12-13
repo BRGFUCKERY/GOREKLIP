@@ -284,9 +284,19 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     resetSatState (getTotalNumOutputChannels());
 
     resetSilkState (getTotalNumOutputChannels());
+    resetAnalogToneState (getTotalNumOutputChannels());
     resetAnalogClipState (getTotalNumOutputChannels());
+    resetPostDcState (getTotalNumOutputChannels());
 
     const float sr = (float) sampleRate;
+
+    // Base-rate post DC blocker (AC-coupling) coefficient
+    {
+        // Ultra-low cutoff (Hz). We only want to remove DC + subsonic drift.
+        constexpr float dcFc = 2.0f;
+        postDcAlpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / sr);
+        postDcAlpha = juce::jlimit (0.0f, 0.9999999f, postDcAlpha);
+    }
 
     // Analog bias envelope follower coefficients (slow vs waveform, fast vs transients)
     {
@@ -452,8 +462,18 @@ void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
         st.biasMemory = 0.0f;
         st.levelEnv   = 0.0f;
         st.dcBlock    = 0.0f;
-        st.evenDc    = 0.0f;
     }
+}
+
+//==============================================================
+void FruityClipAudioProcessor::resetPostDcState (int numChannels)
+{
+    postDcStates.clear();
+
+    if (numChannels <= 0)
+        return;
+
+    postDcStates.resize ((size_t) numChannels, 0.0f);
 }
 
 
@@ -553,9 +573,9 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     const float norm = 1.0f / std::tanh (drive);
     y *= norm;
 
-    // Tiny trim to avoid overall loudness lift with SILK
-    // Keep SILK from stealing drive into the Lavry stage (hardware 0-silk and max-silk clip similarly)
-    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, +0.8f);
+    // Tiny trim to keep SILK from going *quieter*.
+    // Hardware max-silk captures are slightly denser, not cleaner.
+    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, +0.25f);
     y *= juce::Decibels::decibelsToGain (trimDb);
 
     // De-emphasis: gently smooth the very top end again
@@ -585,7 +605,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     const float silkShape = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
     // Very gentle drive — we rely on bias & shape, not brute force
-    const float drive = 1.0f + 0.06f * silkShape;
+    const float drive = 1.0f + 0.04f * silkShape;
 
     const float inRaw = x * drive;
     const float absIn = std::abs (inRaw);
@@ -610,33 +630,22 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // -------------------------------------------------------------
     // Bias envelope (engages near clipping)
     // -------------------------------------------------------------
-    constexpr float levelStart = 0.50f; // start engaging a bit below threshold
-    constexpr float levelEnd   = 1.05f; // fully engaged right around clipping
+    constexpr float levelStart = 0.55f; // start engaging below threshold
+    constexpr float levelEnd   = 1.45f;
 
     float levelT = 0.0f;
     if (env > levelStart)
         levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
 
-    const float levelT2 = levelT * levelT; // steeper engage -> less "fuzz" below clip
+    // Baseline even content at SILK 0, more with SILK
+    // Tuned to match your hardware captures:
+    //   HW silk0  : H2 ~ -33 dB rel
+    //   HW silkMax: H2 ~ -30.5 dB rel
+    // The previous values were ~6x too hot (H2 ~ -17 dB rel).
+    constexpr float biasBase = 0.0032f;
+    constexpr float biasSilk = 0.0010f;
 
-    // --- Even harmonic engine (target: ~ -33 dB H2 at 1k +12, SILK 0) ---
-    // Quadratic term generates strong H2 without changing the odd series much.
-    // We DC-block the quadratic separately so we don't introduce output DC.
-    constexpr float evenBase = 0.12f;
-    constexpr float evenSilk = 0.04f;
-
-    float quad = inRaw * inRaw;
-    st.evenDc = analogDcAlpha * st.evenDc + (1.0f - analogDcAlpha) * quad;
-    quad -= st.evenDc;
-
-    const float evenAmt = (evenBase + evenSilk * silkShape) * levelT2;
-    const float inEven  = inRaw + evenAmt * quad;
-
-    // Bias-based asymmetry (fine detail / “memory”)
-    constexpr float biasBase = 0.14f;
-    constexpr float biasSilk = 0.07f;
-
-    float targetBias = (biasBase + biasSilk * silkShape) * levelT2;
+    float targetBias = (biasBase + biasSilk * silkShape) * levelT;
 
     // Micro "memory" on bias itself
     constexpr float biasAlpha = 0.992f; // ~4 ms @ 48k
@@ -655,8 +664,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // Instead, we allow the asymmetry to exist, then remove *only DC*
     // with an ultra-low cutoff one-pole HP (preserves H2/H4/H6).
     // -------------------------------------------------------------
-    bias = -bias; // match the polarity of the captured hardware (negative DC tendency)
-    float y = softClip (inEven + bias);
+    float y = softClip (inRaw + bias);
 
     // DC blocker (very low corner) – keeps the expensive even series, removes DC drift
     st.dcBlock = analogDcAlpha * st.dcBlock + (1.0f - analogDcAlpha) * y;
@@ -762,6 +770,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         resetAnalogToneState (numChannels);
     if ((int) analogClipStates.size() < numChannels)
         resetAnalogClipState (numChannels);
+    if ((int) postDcStates.size() < numChannels)
+        resetPostDcState (numChannels);
 
     const bool isOffline = isNonRealtime();
 
@@ -1088,20 +1098,28 @@ samples[i] = sample;
             }
         }
 
-        // FINAL SAFETY CEILING AT BASE RATE
+        // POST DC-BLOCK (base rate) + FINAL SAFETY CEILING
         // We ALWAYS end the chain with a strict Lavry-style 0 dBFS hard ceiling.
-        // (Analog/Digital/OS/no-OS – doesn’t matter. Final output is guaranteed in [-1, +1].)
+        // PostDc emulates AC-coupling in the real path, but the *last* operation remains clip-to-0.
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* s = buffer.getWritePointer (ch);
+            float  dc = postDcStates[(size_t) ch];
 
             for (int i = 0; i < numSamples; ++i)
             {
                 float y = s[i];
+
+                // Ultra-low HP (remove DC drift without touching audio band)
+                dc = postDcAlpha * dc + (1.0f - postDcAlpha) * y;
+                y -= dc;
+
                 if (y >  1.0f) y =  1.0f;
                 if (y < -1.0f) y = -1.0f;
                 s[i] = y;
             }
+
+            postDcStates[(size_t) ch] = dc;
         }
 
 

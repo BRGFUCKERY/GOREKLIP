@@ -209,12 +209,21 @@ private:
         float biasMemory = 0.0f;
         float levelEnv   = 0.0f; // slow envelope of |in| for bias engagement
         float dcBlock    = 0.0f; // ultra-low HP state to remove DC without killing even harmonics
-        float evenDc    = 0.0f; // DC removal for quadratic even-harmonic term
     };
 
     void resetAnalogClipState (int numChannels);
 
     std::vector<AnalogClipState> analogClipStates;
+
+    //==========================================================
+    // Post-chain DC blocker (base rate)
+    //   - Real 5060/Lavry paths are AC-coupled; we want the same.
+    //   - This runs *right before* the final safety ceiling, so the
+    //     last thing in the chain is still a strict clip-to-0 stage.
+    //==========================================================
+    void resetPostDcState (int numChannels);
+    std::vector<float> postDcStates;
+    float postDcAlpha = 0.0f;
 
     //==========================================================
     // Internal state
