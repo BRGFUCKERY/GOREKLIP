@@ -26,6 +26,10 @@ FruityClipAudioProcessor::createParameterLayout()
         "satAmount", "Saturation Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
+    params.push_back (std::make_unique<juce::AudioParameterFloat>(
+        "headroomDb", "Headroom",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.5f));
+
     // MODE – 0 = clipper, 1 = limiter
     params.push_back (std::make_unique<juce::AudioParameterBool>(
         "useLimiter", "Use Limiter", false));
@@ -779,21 +783,25 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto* satParam      = parameters.getRawParameterValue ("satAmount");
     auto* limiterParam  = parameters.getRawParameterValue ("useLimiter");
     auto* clipModeParam = parameters.getRawParameterValue ("clipMode");
+    auto* headroomParam = parameters.getRawParameterValue ("headroomDb");
 
     const float inputGainDb  = gainParam    ? gainParam->load()    : 0.0f;
     const float loveRaw      = loveParam    ? loveParam->load()    : 0.0f;
     const float satAmountRaw = satParam     ? satParam->load()     : 0.0f;
+    const float headroomRaw  = headroomParam? headroomParam->load(): 0.5f;
     const bool  useLimiter   = limiterParam ? (limiterParam->load() >= 0.5f) : false;
 
     const int clipModeIndex  = clipModeParam ? juce::jlimit (0, 1, (int) clipModeParam->load()) : 0;
     const ClipMode clipMode  = (clipModeIndex == 0 ? ClipMode::Digital : ClipMode::Analog);
 
     const float loveKnob   = juce::jlimit (0.0f, 1.0f, loveRaw);
-    const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
+    const float headroomDb = juce::jlimit (0.0f, 1.0f, headroomRaw);
 
     const bool  isAnalogMode      = (clipMode == ClipMode::Analog);
     const float ottAmountDigital  = isAnalogMode ? 0.0f : loveKnob;  // only used in DIGITAL mode
     const float silkAmountAnalog  = isAnalogMode ? loveKnob : 0.0f;  // only used in ANALOG mode
+
+    const float satAmount = isAnalogMode ? 0.0f : juce::jlimit (0.0f, 1.0f, satAmountRaw);
 
     // Global scalars for this block
     // inputGain comes from the finger (in dB).
@@ -1093,6 +1101,24 @@ samples[i] = sample;
                         if (sample < -1.0f) sample = -1.0f;
                     }
 samples[i] = sample;
+                }
+            }
+        }
+
+        if (isAnalogMode && headroomDb > 0.0f)
+        {
+            const float hg = juce::Decibels::decibelsToGain (headroomDb);
+
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                float* s = buffer.getWritePointer (ch);
+
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float y = s[i] * hg;
+                    if (y >  1.0f) y =  1.0f;
+                    if (y < -1.0f) y = -1.0f;
+                    s[i] = y;
                 }
             }
         }
