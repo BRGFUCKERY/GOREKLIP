@@ -179,6 +179,8 @@ private:
     // Background & logo
     juce::Image bgImage;
     juce::Image slamImage;       // "slammed" background
+    juce::Image analogBgImage;
+    juce::Image analogBurnImage;
     juce::Image logoImage;
     juce::Image logoWhiteImage;  // precomputed white version of logo (same alpha)
     const float bgScale = 0.35f; // scale for bg.png
@@ -219,6 +221,12 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
 
+    float lastDigitalLove = 0.0f;
+    float lastAnalogLove  = 0.0f;
+    float lastDigitalDeath = 0.0f;
+    float lastAnalogHeadroom = 0.5f;
+    int lastClipModeIndex = -1;
+
     // GUI burn value (cached from processor)
     float lastBurn = 0.0f;
 
@@ -239,6 +247,8 @@ private:
     void timerCallback() override;
 
     void startFingerAnimation (bool limiterMode);
+    void handleClipModeChanged();
+    void refreshSatAttachment();
 
     void showBypassInfoPopup();
     void showOversampleMenu();
