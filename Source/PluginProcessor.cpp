@@ -566,11 +566,8 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     // Quadratic (even) mix coefficient.
     // For a pure sine, H2 amplitude ≈ coeff/2  ->  -33 dB => coeff ~ 0.045
-    // --- H2 boost to better match hardware (≈ +10 dB H2) ---
-    // +10 dB in harmonic amplitude ≈ x3.162
-    constexpr float h2Boost = 3.16227766f;
-
-    const float evenCoeff = h2Boost * (0.035f + 0.0115f * s) * driveT; // tuned from 710: ~-2 dB H2 overall, slightly less SILK delta
+    constexpr float h2Trim = 0.316227766f; // -10 dB in harmonic amplitude
+    const float evenCoeff = h2Trim * (0.035f + 0.0115f * s) * driveT;
 
     float e = pre * pre;
 
@@ -578,8 +575,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     st.evenDc = silkEvenDcAlpha * st.evenDc + (1.0f - silkEvenDcAlpha) * e;
     e -= st.evenDc;
 
-    // Raise cap so the boost can actually take effect at hot levels
-    const float evenCoeffCapped = juce::jlimit (0.0f, 0.20f, evenCoeff);
+    const float evenCoeffCapped = juce::jlimit (0.0f, 0.060f, evenCoeff);
     float y = pre + evenCoeffCapped * e;
 
     // De-emphasis (existing)
