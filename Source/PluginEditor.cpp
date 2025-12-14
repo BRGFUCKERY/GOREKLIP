@@ -398,12 +398,7 @@ void DownwardComboBoxLookAndFeel::drawComboBox (juce::Graphics& g,
     if (isOversampleLive)
         pent.applyTransform (juce::AffineTransform{}.scaled (-1.0f, 1.0f, cx, cy));
 
-    // Pentagram colour follows burnAmount: 0 = black, 1 = white
-    const float burn = juce::jlimit (0.0f, 1.0f, burnAmount);
-
-    auto starColour = juce::Colours::white
-        .interpolatedWith (juce::Colours::black, 1.0f - burn)
-        .withAlpha (0.8f + 0.2f * burn);
+    auto starColour = juce::Colours::white.withAlpha (1.0f);
 
     g.setColour (starColour);
 
@@ -451,6 +446,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     slamImage = juce::ImageCache::getFromMemory (BinaryData::slam_jpg,
                                                  BinaryData::slam_jpgSize);
 
+    analogBgImage   = bgImage;
+    analogBurnImage = slamImage;
+
     logoImage = juce::ImageCache::getFromMemory (BinaryData::gorekliper_logo_png,
                                                  BinaryData::gorekliper_logo_pngSize);
 
@@ -473,7 +471,19 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     juce::Image fingerImage = juce::ImageCache::getFromMemory (BinaryData::finger_png,
                                                                BinaryData::finger_pngSize);
-    fingerLnf.setKnobImage (fingerImage);
+    juce::Image fingerWhite = fingerImage.createCopy();
+    {
+        juce::Image::BitmapData data (fingerWhite, juce::Image::BitmapData::readWrite);
+        for (int y = 0; y < data.height; ++y)
+            for (int x = 0; x < data.width; ++x)
+            {
+                auto c = data.getPixelColour (x, y);
+                auto a = c.getAlpha();
+                if (a > 0)
+                    data.setPixelColour (x, y, juce::Colour::fromRGBA (255, 255, 255, a));
+            }
+    }
+    fingerLnf.setKnobImage (fingerWhite);
 
     if (bgImage.isValid())
         setSize ((int) (bgImage.getWidth()  * bgScale),
@@ -625,14 +635,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     ottAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "ottAmount", ottSlider);
 
-    satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                        apvts, "satAmount", satSlider);
-
     modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "useLimiter", modeSlider);
 
     oversampleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
         apvts, "oversampleMode", oversampleLiveBox);
+
+    lastAnalogClipMode = (processor.getClipMode() == FruityClipAudioProcessor::ClipMode::Analog);
+    updateSatAttachment();
 
     auto setupValuePopup = [this] (FineControlSlider& slider,
                                    juce::Label& lbl,
@@ -672,6 +682,18 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     setupValuePopup (satSlider, satValueLabel, [this]()
     {
+        const auto mode = processor.getClipMode();
+
+        if (mode == FruityClipAudioProcessor::ClipMode::Analog)
+        {
+            const double raw = satSlider.getValue();
+            double db = 0.0;
+            if (raw > 0.5)
+                db = (raw - 0.5) * 2.0 * 1.0; // 0..+1
+
+            return juce::String ("+") + juce::String (db, 2) + " dB";
+        }
+
         const double raw = satSlider.getValue();
         const int percent = (int) std::round (raw * 100.0);
         return juce::String (percent) + " %";
@@ -764,19 +786,42 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     // Visual slam comes in later – you really have to hit it
     const float burnShaped = std::pow (burnRaw, 1.3f);
 
+    const bool isAnalog = (processor.getClipMode() == FruityClipAudioProcessor::ClipMode::Analog);
+
     // 1) Base background
-    if (bgImage.isValid())
+    if (isAnalog && analogBgImage.isValid())
+    {
+        juce::Graphics::ScopedSaveState save (g);
+        g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi,
+                                                         w * 0.5f, h * 0.5f));
+        g.drawImageWithin (analogBgImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+    }
+    else if (bgImage.isValid())
+    {
         g.drawImageWithin (bgImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+    }
     else
+    {
         g.fillAll (juce::Colours::black);
+    }
 
     // 2) Slam background
-    if (slamImage.isValid() && burnShaped > 0.02f)
+    if (burnShaped > 0.02f)
     {
         juce::Graphics::ScopedSaveState save (g);
 
         g.setOpacity (burnShaped);
-        g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+
+        if (isAnalog && analogBurnImage.isValid())
+        {
+            g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi,
+                                                             w * 0.5f, h * 0.5f));
+            g.drawImageWithin (analogBurnImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+        }
+        else if (slamImage.isValid())
+        {
+            g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+        }
     }
 
     // 3) Logo – normal at low slam, fades to white as you pin it
@@ -936,6 +981,14 @@ void FruityClipAudioProcessorEditor::resized()
 //==============================================================
 void FruityClipAudioProcessorEditor::timerCallback()
 {
+    const bool isAnalog = (processor.getClipMode() == FruityClipAudioProcessor::ClipMode::Analog);
+
+    if (isAnalog != lastAnalogClipMode)
+    {
+        lastAnalogClipMode = isAnalog;
+        updateSatAttachment();
+    }
+
     // Always read the look mode from the processor so we stay in sync
     auto lookMode = getLookMode();
     currentLookMode = lookMode;
@@ -1052,6 +1105,29 @@ void FruityClipAudioProcessorEditor::showOversampleLiveMenu()
                             oversampleLiveBox.setSelectedId (index + 1, juce::sendNotificationSync);
                             processor.setStoredLiveOversampleIndex (index);
                         });
+}
+
+void FruityClipAudioProcessorEditor::updateSatAttachment()
+{
+    auto& apvts = processor.getParametersState();
+    const bool isAnalog = (processor.getClipMode() == FruityClipAudioProcessor::ClipMode::Analog);
+
+    if (isAnalog)
+    {
+        if (! headroomAttachment)
+            headroomAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                apvts, "headroomDb", satSlider);
+
+        satAttachment.reset();
+    }
+    else
+    {
+        if (! satAttachment)
+            satAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                apvts, "satAmount", satSlider);
+
+        headroomAttachment.reset();
+    }
 }
 
 void FruityClipAudioProcessorEditor::showBypassInfoPopup()

@@ -179,6 +179,8 @@ private:
     // Background & logo
     juce::Image bgImage;
     juce::Image slamImage;       // "slammed" background
+    juce::Image analogBgImage;
+    juce::Image analogBurnImage;
     juce::Image logoImage;
     juce::Image logoWhiteImage;  // precomputed white version of logo (same alpha)
     const float bgScale = 0.35f; // scale for bg.png
@@ -216,6 +218,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   headroomAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
 
@@ -243,6 +246,9 @@ private:
     void showBypassInfoPopup();
     void showOversampleMenu();
     void showOversampleLiveMenu();
+    void updateSatAttachment();
+
+    bool lastAnalogClipMode = false;
 
     friend class MiddleFingerLookAndFeel;
 
