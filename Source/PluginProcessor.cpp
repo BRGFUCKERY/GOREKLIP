@@ -26,6 +26,10 @@ FruityClipAudioProcessor::createParameterLayout()
         "satAmount", "Saturation Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
+    params.push_back (std::make_unique<juce::AudioParameterFloat>(
+        "headroomDb", "Headroom",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.0001f), 0.5f));
+
     // MODE – 0 = clipper, 1 = limiter
     params.push_back (std::make_unique<juce::AudioParameterBool>(
         "useLimiter", "Use Limiter", false));
@@ -777,12 +781,14 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     auto* gainParam     = parameters.getRawParameterValue ("inputGain");
     auto* loveParam     = parameters.getRawParameterValue ("ottAmount"); // LOVE knob
     auto* satParam      = parameters.getRawParameterValue ("satAmount");
+    auto* headroomParam = parameters.getRawParameterValue ("headroomDb");
     auto* limiterParam  = parameters.getRawParameterValue ("useLimiter");
     auto* clipModeParam = parameters.getRawParameterValue ("clipMode");
 
     const float inputGainDb  = gainParam    ? gainParam->load()    : 0.0f;
     const float loveRaw      = loveParam    ? loveParam->load()    : 0.0f;
     const float satAmountRaw = satParam     ? satParam->load()     : 0.0f;
+    const float headroomRaw  = headroomParam ? headroomParam->load() : 0.5f;
     const bool  useLimiter   = limiterParam ? (limiterParam->load() >= 0.5f) : false;
 
     const int clipModeIndex  = clipModeParam ? juce::jlimit (0, 1, (int) clipModeParam->load()) : 0;
@@ -794,6 +800,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const bool  isAnalogMode      = (clipMode == ClipMode::Analog);
     const float ottAmountDigital  = isAnalogMode ? 0.0f : loveKnob;  // only used in DIGITAL mode
     const float silkAmountAnalog  = isAnalogMode ? loveKnob : 0.0f;  // only used in ANALOG mode
+
+    float headroomDbMapped = 0.0f;
+    if (headroomRaw > 0.5f)
+        headroomDbMapped = (headroomRaw - 0.5f) * 2.0f * 1.0f; // 0..+1 dB
+    const float headroomGain = juce::Decibels::decibelsToGain (headroomDbMapped);
 
     // Global scalars for this block
     // inputGain comes from the finger (in dB).
@@ -1058,10 +1069,18 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     else
                     {
                         // DIGITAL clip
-                        if (sample >  1.0f) sample =  1.0f;
-                        if (sample < -1.0f) sample = -1.0f;
+                        sample = juce::jlimit (-1.0f, 1.0f, sample);
                     }
-samples[i] = sample;
+
+                    if (isAnalogMode)
+                    {
+                        if (headroomDbMapped > 0.0f)
+                            sample *= headroomGain;
+
+                        sample = juce::jlimit (-1.0f, 1.0f, sample);
+                    }
+
+                    samples[i] = sample;
                 }
             }
 
@@ -1089,10 +1108,18 @@ samples[i] = sample;
                     else
                     {
                         // Pure hard clip at base rate
-                        if (sample >  1.0f) sample =  1.0f;
-                        if (sample < -1.0f) sample = -1.0f;
+                        sample = juce::jlimit (-1.0f, 1.0f, sample);
                     }
-samples[i] = sample;
+
+                    if (isAnalogMode)
+                    {
+                        if (headroomDbMapped > 0.0f)
+                            sample *= headroomGain;
+
+                        sample = juce::jlimit (-1.0f, 1.0f, sample);
+                    }
+
+                    samples[i] = sample;
                 }
             }
         }
