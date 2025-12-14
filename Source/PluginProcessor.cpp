@@ -568,7 +568,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     // For a pure sine, H2 amplitude ≈ coeff/2  ->  -33 dB => coeff ~ 0.045
     // --- H2 boost to better match hardware (≈ +10 dB H2) ---
     // +10 dB in harmonic amplitude ≈ x3.162
-    constexpr float h2Boost = 0.40f;
+    constexpr float h2Boost = 0.54f;
 
     const float evenCoeff = h2Boost * (0.035f + 0.0115f * s) * driveT; // tuned from 710: ~-2 dB H2 overall, slightly less SILK delta
 
