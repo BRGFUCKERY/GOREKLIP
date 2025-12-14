@@ -288,6 +288,14 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
 
     const float sr = (float) sampleRate;
 
+
+    // Base-rate DC blocker for SILK quadratic term (remove DC without killing even harmonics)
+    {
+        constexpr float dcFc = 2.0f; // Hz
+        silkEvenDcAlpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / sr);
+        silkEvenDcAlpha = juce::jlimit (0.0f, 0.9999999f, silkEvenDcAlpha);
+    }
+
     // Analog bias envelope follower coefficients (slow vs waveform, fast vs transients)
     {
         const float attackMs  = 1.5f;   // 1.5 ms attack
@@ -406,8 +414,8 @@ void FruityClipAudioProcessor::resetSilkState (int numChannels)
 
     for (auto& st : silkStates)
     {
-        st.pre = 0.0f;
-        st.de  = 0.0f;
+        st.pre    = 0.0f;
+        st.de     = 0.0f;
         st.evenDc = 0.0f;
     }
 }
@@ -534,42 +542,32 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
 
 float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, float silkAmount)
 {
-    // 5060-style colour stage (pre-clip).
-    // Calibrated on your captures:
-    //   silk0  : H2 ≈ -33 dB rel
-    //   silk100: H2 ≈ -30.5 dB rel
-
+    // Shape control to avoid all action at top
     const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
-    if (channel < 0 || channel >= (int) silkStates.size())
+    if (s <= 1.0e-4f)
         return x;
 
-    auto& st = silkStates[(size_t) channel];
-
-    // Pre-emphasis into the colour stage
+    // Pre-emphasis: subtle HF tilt into the non-linearity
     const float pre = applySilkPreEmphasis (x, channel, s);
 
-    // Engage mostly near clip-level so low-level program stays clean
-    float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.25f) / 0.75f);
-    driveT = driveT * driveT;
+    // Mild tanh saturator with a touch of bias for transformer-like evenness
+    const float drive = 1.0f + 0.18f * s;
+    const float bias  = 0.0015f + 0.0035f * s;
 
-    // Quadratic even generator: y = x + k*(x^2 - DC)
-    // Micro tweak to nail silk100: bump silk term slightly.
-    float k = (0.035f + 0.0130f * s) * driveT;
-    k = juce::jlimit (0.0f, 0.060f, k); // safety cap
+    float y = std::tanh ((pre + bias) * drive) - std::tanh (bias * drive);
 
-    float e = pre * pre;
+    // Normalise so unity stays roughly unity at chosen drive
+    const float norm = 1.0f / std::tanh (drive);
+    y *= norm;
 
-    // Remove DC from the quadratic term only (keeps H2/H4/H6; kills DC drift)
-    st.evenDc = silkEvenDcAlpha * st.evenDc + (1.0f - silkEvenDcAlpha) * e;
-    e -= st.evenDc;
+    // Tiny trim to avoid overall loudness lift with SILK
+    const float trimDb = juce::jmap (s, 0.0f, 1.0f, 0.0f, -0.4f);
+    y *= juce::Decibels::decibelsToGain (trimDb);
 
-    float y = pre + k * e;
-
-    // De-emphasis after colour stage
+    // De-emphasis: gently smooth the very top end again
     return applySilkDeEmphasis (y, channel, s);
 }
-
 
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, float silkAmount)
 {

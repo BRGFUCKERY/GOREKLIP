@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXAggregateTarget section */
-		DB6ABB8244CC2B5F9CBA565F /* FRUITYCLIP - All */ = {
+		DB6ABB8244CC2B5F9CBA565F /* GOREKLIP - All */ = {
 			isa = PBXAggregateTarget;
 			buildConfigurationList = EEA97DA7042245160863BA7E;
 			buildPhases = (
@@ -19,8 +19,8 @@
 				DC4AC99DE37DBDC27FC0BBC6,
 				1B1D6722C67E56E48E1BD6FE,
 			);
-			name = "FRUITYCLIP - All";
-			productName = FRUITYCLIP;
+			name = "GOREKLIP - All";
+			productName = GOREKLIP;
 		};
 /* End PBXAggregateTarget section */
 
@@ -40,21 +40,21 @@
 
 /* Begin PBXFileReference section */
 		00F9E01013491813F6CB2F17 /* Info-Standalone_Plugin.plist */ /* Info-Standalone_Plugin.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Info-Standalone_Plugin.plist"; path = "Info-Standalone_Plugin.plist"; sourceTree = SOURCE_ROOT; };
-		1B684AA71143988318E9FDCC /* VST3 */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FRUITYCLIP.vst3; sourceTree = BUILT_PRODUCTS_DIR; };
+		1B684AA71143988318E9FDCC /* VST3 */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GOREKLIP.vst3; sourceTree = BUILT_PRODUCTS_DIR; };
 		22065D0FA785CF7AD850C1F8 /* VST3 Manifest Helper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = juce_vst3_helper; sourceTree = BUILT_PRODUCTS_DIR; };
 		22E612F2E30DDA7744B7EA11 /* PluginProcessor.cpp */ /* PluginProcessor.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PluginProcessor.cpp; path = ../../Source/PluginProcessor.cpp; sourceTree = SOURCE_ROOT; };
 		2C6B85CF0E8F90108810EAFE /* Info-VST3_Manifest_Helper.plist */ /* Info-VST3_Manifest_Helper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Info-VST3_Manifest_Helper.plist"; path = "Info-VST3_Manifest_Helper.plist"; sourceTree = SOURCE_ROOT; };
-		2DC872BACE421A00F3223842 /* AU */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FRUITYCLIP.component; sourceTree = BUILT_PRODUCTS_DIR; };
+		2DC872BACE421A00F3223842 /* AU */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GOREKLIP.component; sourceTree = BUILT_PRODUCTS_DIR; };
 		49907BDA1177286750B4B843 /* Cocoa.framework */ /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		53B2935A8F6942B0325AD06E /* PluginEditor.cpp */ /* PluginEditor.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PluginEditor.cpp; path = ../../Source/PluginEditor.cpp; sourceTree = SOURCE_ROOT; };
 		67E5FC45091FF6AB7F120697 /* JucePluginDefines.h */ /* JucePluginDefines.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = JucePluginDefines.h; path = ../../JuceLibraryCode/JucePluginDefines.h; sourceTree = SOURCE_ROOT; };
 		93C5E7CB70021AFEC18082E5 /* PluginEditor.h */ /* PluginEditor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PluginEditor.h; path = ../../Source/PluginEditor.h; sourceTree = SOURCE_ROOT; };
 		A211EE55C2FD41CCAE290FD8 /* Info-AU.plist */ /* Info-AU.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Info-AU.plist"; path = "Info-AU.plist"; sourceTree = SOURCE_ROOT; };
 		C97B203C6A097D1FD60BED64 /* RecentFilesMenuTemplate.nib */ /* RecentFilesMenuTemplate.nib */ = {isa = PBXFileReference; lastKnownFileType = file.nib; name = RecentFilesMenuTemplate.nib; path = RecentFilesMenuTemplate.nib; sourceTree = SOURCE_ROOT; };
-		CEA40900B8C9F689BDD4E42B /* Shared Code */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libFRUITYCLIP.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		CEA40900B8C9F689BDD4E42B /* Shared Code */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libGOREKLIP.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		D1EB9792BB5102EC22694F61 /* PluginProcessor.h */ /* PluginProcessor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = PluginProcessor.h; path = ../../Source/PluginProcessor.h; sourceTree = SOURCE_ROOT; };
 		D4375C52D03886AB22F5BAD6 /* CoreAudioKit.framework */ /* CoreAudioKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudioKit.framework; path = System/Library/Frameworks/CoreAudioKit.framework; sourceTree = SDKROOT; };
-		E0C5814DC975A8B9DE26B529 /* Standalone Plugin */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FRUITYCLIP.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E0C5814DC975A8B9DE26B529 /* Standalone Plugin */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GOREKLIP.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E1D161C6FBFF76F5C19C5B59 /* JuceHeader.h */ /* JuceHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = JuceHeader.h; path = ../../JuceLibraryCode/JuceHeader.h; sourceTree = SOURCE_ROOT; };
 		EB67167A11365C6CB73AFA31 /* AudioUnit.framework */ /* AudioUnit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioUnit.framework; path = System/Library/Frameworks/AudioUnit.framework; sourceTree = SDKROOT; };
 		F8218447A396578F9A453D07 /* Info-VST3.plist */ /* Info-VST3.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "Info-VST3.plist"; path = "Info-VST3.plist"; sourceTree = SOURCE_ROOT; };
@@ -104,12 +104,12 @@
 			name = "JUCE Library Code";
 			sourceTree = "<group>";
 		};
-		54E6805B69F1F14F4A4FC28D /* FRUITYCLIP */ = {
+		54E6805B69F1F14F4A4FC28D /* GOREKLIP */ = {
 			isa = PBXGroup;
 			children = (
 				ED6F7632BD0FA434E4E8DA54,
 			);
-			name = FRUITYCLIP;
+			name = GOREKLIP;
 			sourceTree = "<group>";
 		};
 		6AE3AD419D4757D40FAD6F7C /* Source */ = {
@@ -172,7 +172,7 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		1F8886DD9A3908DBEF486DBE /* FRUITYCLIP - VST3 */ = {
+		1F8886DD9A3908DBEF486DBE /* GOREKLIP - VST3 */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C13699A9AF11160414991DF3;
 			buildPhases = (
@@ -188,12 +188,12 @@
 				F697896E30710CE8ACA3B959,
 				22AEEA07C7590739E2872E96,
 			);
-			name = "FRUITYCLIP - VST3";
-			productName = FRUITYCLIP;
+			name = "GOREKLIP - VST3";
+			productName = GOREKLIP;
 			productReference = 1B684AA71143988318E9FDCC;
 			productType = "com.apple.product-type.bundle";
 		};
-		2C9B143F46620EBD213D8647 /* FRUITYCLIP - Shared Code */ = {
+		2C9B143F46620EBD213D8647 /* GOREKLIP - Shared Code */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AE417FB562B287607230860E;
 			buildPhases = (
@@ -203,12 +203,12 @@
 			);
 			dependencies = (
 			);
-			name = "FRUITYCLIP - Shared Code";
-			productName = FRUITYCLIP;
+			name = "GOREKLIP - Shared Code";
+			productName = GOREKLIP;
 			productReference = CEA40900B8C9F689BDD4E42B;
 			productType = "com.apple.product-type.library.static";
 		};
-		BE626448C88F056B8269A328 /* FRUITYCLIP - VST3 Manifest Helper */ = {
+		BE626448C88F056B8269A328 /* GOREKLIP - VST3 Manifest Helper */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = CD7462E8DD49C2FBA52AAEA7;
 			buildPhases = (
@@ -219,12 +219,12 @@
 			);
 			dependencies = (
 			);
-			name = "FRUITYCLIP - VST3 Manifest Helper";
-			productName = FRUITYCLIP;
+			name = "GOREKLIP - VST3 Manifest Helper";
+			productName = GOREKLIP;
 			productReference = 22065D0FA785CF7AD850C1F8;
 			productType = "com.apple.product-type.tool";
 		};
-		F163CFA72115E81DCF4F46BD /* FRUITYCLIP - AU */ = {
+		F163CFA72115E81DCF4F46BD /* GOREKLIP - AU */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D5CD4394BB64E26561E741E0;
 			buildPhases = (
@@ -238,12 +238,12 @@
 			dependencies = (
 				ACC3A94DAD9CE6B4D18816A5,
 			);
-			name = "FRUITYCLIP - AU";
-			productName = FRUITYCLIP;
+			name = "GOREKLIP - AU";
+			productName = GOREKLIP;
 			productReference = 2DC872BACE421A00F3223842;
 			productType = "com.apple.product-type.bundle";
 		};
-		FA10AB1442FDE15DEF38AB7A /* FRUITYCLIP - Standalone Plugin */ = {
+		FA10AB1442FDE15DEF38AB7A /* GOREKLIP - Standalone Plugin */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = CC59A035134480A9FD0A5FEB;
 			buildPhases = (
@@ -256,8 +256,8 @@
 			dependencies = (
 				0D108415922315A7DDF42282,
 			);
-			name = "FRUITYCLIP - Standalone Plugin";
-			productName = FRUITYCLIP;
+			name = "GOREKLIP - Standalone Plugin";
+			productName = GOREKLIP;
 			productReference = E0C5814DC975A8B9DE26B529;
 			productType = "com.apple.product-type.application";
 		};
@@ -610,7 +610,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				OTHER_CODE_SIGN_FLAGS = --timestamp;
-				PRODUCT_NAME = "FRUITYCLIP";
+				PRODUCT_NAME = "GOREKLIP";
 				SDKROOT = macosx;
 				WARNING_CFLAGS = "-Wreorder";
 				ZERO_LINK = NO;
@@ -644,8 +644,8 @@
 					"JucePlugin_Build_LV2=0",
 					"JucePlugin_Enable_IAA=0",
 					"JucePlugin_Enable_ARA=0",
-					"JucePlugin_Name=\\\"FRUITYCLIP\\\"",
-					"JucePlugin_Desc=\\\"FRUITYCLIP\\\"",
+					"JucePlugin_Name=\\\"GOREKLIP\\\"",
+					"JucePlugin_Desc=\\\"GOREKLIP\\\"",
 					"JucePlugin_Manufacturer=\\\"yourcompany\\\"",
 					"JucePlugin_ManufacturerWebsite=\\\"www.yourcompany.com\\\"",
 					"JucePlugin_ManufacturerEmail=\\\"\\\"",
@@ -664,11 +664,11 @@
 					"JucePlugin_Vst3Category=\\\"Fx\\\"",
 					"JucePlugin_AUMainType=\\'aufx\\'",
 					"JucePlugin_AUSubType=JucePlugin_PluginCode",
-					"JucePlugin_AUExportPrefix=FRUITYCLIPAU",
-					"JucePlugin_AUExportPrefixQuoted=\\\"FRUITYCLIPAU\\\"",
+					"JucePlugin_AUExportPrefix=GOREKLIPAU",
+					"JucePlugin_AUExportPrefixQuoted=\\\"GOREKLIPAU\\\"",
 					"JucePlugin_AUManufacturerCode=JucePlugin_ManufacturerCode",
-					"JucePlugin_CFBundleIdentifier=com.yourcompany.FRUITYCLIP",
-					"JucePlugin_AAXIdentifier=com.yourcompany.FRUITYCLIP",
+					"JucePlugin_CFBundleIdentifier=com.yourcompany.GOREKLIP",
+					"JucePlugin_AAXIdentifier=com.yourcompany.GOREKLIP",
 					"JucePlugin_AAXManufacturerCode=JucePlugin_ManufacturerCode",
 					"JucePlugin_AAXProductId=JucePlugin_PluginCode",
 					"JucePlugin_AAXCategory=0",
@@ -676,13 +676,13 @@
 					"JucePlugin_AAXDisableMultiMono=0",
 					"JucePlugin_IAAType=0x61757278",
 					"JucePlugin_IAASubType=JucePlugin_PluginCode",
-					"JucePlugin_IAAName=\\\"yourcompany:\\ FRUITYCLIP\\\"",
+					"JucePlugin_IAAName=\\\"yourcompany:\\ GOREKLIP\\\"",
 					"JucePlugin_VSTNumMidiInputs=16",
 					"JucePlugin_VSTNumMidiOutputs=16",
 					"JucePlugin_ARAContentTypes=0",
 					"JucePlugin_ARATransformationFlags=0",
-					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.FRUITYCLIP.factory\\\"",
-					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.FRUITYCLIP.aradocumentarchive.1.0.0\\\"",
+					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.GOREKLIP.factory\\\"",
+					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.GOREKLIP.aradocumentarchive.1.0.0\\\"",
 					"JucePlugin_ARACompatibleArchiveIDs=\\\"\\\"",
 					"JUCE_STANDALONE_APPLICATION=JucePlugin_Build_Standalone",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
@@ -700,9 +700,9 @@
 				LLVM_LTO = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				MTL_HEADER_SEARCH_PATHS = "$(HOME)/JUCE/modules/juce_audio_processors_headless/format_types/VST3_SDK $(SRCROOT)/../../JuceLibraryCode";
-				OTHER_LDFLAGS = "-lFRUITYCLIP";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.FRUITYCLIP;
-				PRODUCT_NAME = "FRUITYCLIP";
+				OTHER_LDFLAGS = "-lGOREKLIP";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.GOREKLIP;
+				PRODUCT_NAME = "GOREKLIP";
 				USE_HEADERMAP = NO;
 				VALID_ARCHS = "i386 x86_64 arm64 arm64e";
 			};
@@ -735,8 +735,8 @@
 					"JucePlugin_Build_LV2=0",
 					"JucePlugin_Enable_IAA=0",
 					"JucePlugin_Enable_ARA=0",
-					"JucePlugin_Name=\\\"FRUITYCLIP\\\"",
-					"JucePlugin_Desc=\\\"FRUITYCLIP\\\"",
+					"JucePlugin_Name=\\\"GOREKLIP\\\"",
+					"JucePlugin_Desc=\\\"GOREKLIP\\\"",
 					"JucePlugin_Manufacturer=\\\"yourcompany\\\"",
 					"JucePlugin_ManufacturerWebsite=\\\"www.yourcompany.com\\\"",
 					"JucePlugin_ManufacturerEmail=\\\"\\\"",
@@ -755,11 +755,11 @@
 					"JucePlugin_Vst3Category=\\\"Fx\\\"",
 					"JucePlugin_AUMainType=\\'aufx\\'",
 					"JucePlugin_AUSubType=JucePlugin_PluginCode",
-					"JucePlugin_AUExportPrefix=FRUITYCLIPAU",
-					"JucePlugin_AUExportPrefixQuoted=\\\"FRUITYCLIPAU\\\"",
+					"JucePlugin_AUExportPrefix=GOREKLIPAU",
+					"JucePlugin_AUExportPrefixQuoted=\\\"GOREKLIPAU\\\"",
 					"JucePlugin_AUManufacturerCode=JucePlugin_ManufacturerCode",
-					"JucePlugin_CFBundleIdentifier=com.yourcompany.FRUITYCLIP",
-					"JucePlugin_AAXIdentifier=com.yourcompany.FRUITYCLIP",
+					"JucePlugin_CFBundleIdentifier=com.yourcompany.GOREKLIP",
+					"JucePlugin_AAXIdentifier=com.yourcompany.GOREKLIP",
 					"JucePlugin_AAXManufacturerCode=JucePlugin_ManufacturerCode",
 					"JucePlugin_AAXProductId=JucePlugin_PluginCode",
 					"JucePlugin_AAXCategory=0",
@@ -767,13 +767,13 @@
 					"JucePlugin_AAXDisableMultiMono=0",
 					"JucePlugin_IAAType=0x61757278",
 					"JucePlugin_IAASubType=JucePlugin_PluginCode",
-					"JucePlugin_IAAName=\\\"yourcompany:\\ FRUITYCLIP\\\"",
+					"JucePlugin_IAAName=\\\"yourcompany:\\ GOREKLIP\\\"",
 					"JucePlugin_VSTNumMidiInputs=16",
 					"JucePlugin_VSTNumMidiOutputs=16",
 					"JucePlugin_ARAContentTypes=0",
 					"JucePlugin_ARATransformationFlags=0",
-					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.FRUITYCLIP.factory\\\"",
-					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.FRUITYCLIP.aradocumentarchive.1.0.0\\\"",
+					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.GOREKLIP.factory\\\"",
+					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.GOREKLIP.aradocumentarchive.1.0.0\\\"",
 					"JucePlugin_ARACompatibleArchiveIDs=\\\"\\\"",
 					"JUCE_STANDALONE_APPLICATION=JucePlugin_Build_Standalone",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
@@ -791,7 +791,7 @@
 				LLVM_LTO = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				MTL_HEADER_SEARCH_PATHS = "$(HOME)/JUCE/modules/juce_audio_processors_headless/format_types/VST3_SDK $(SRCROOT)/../../JuceLibraryCode";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.FRUITYCLIP;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.GOREKLIP;
 				PRODUCT_NAME = "juce_vst3_helper";
 				USE_HEADERMAP = NO;
 				VALID_ARCHS = "i386 x86_64 arm64 arm64e";
@@ -856,7 +856,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CODE_SIGN_FLAGS = --timestamp;
-				PRODUCT_NAME = "FRUITYCLIP";
+				PRODUCT_NAME = "GOREKLIP";
 				SDKROOT = macosx;
 				WARNING_CFLAGS = "-Wreorder";
 				ZERO_LINK = NO;
@@ -890,8 +890,8 @@
 					"JucePlugin_Build_LV2=0",
 					"JucePlugin_Enable_IAA=0",
 					"JucePlugin_Enable_ARA=0",
-					"JucePlugin_Name=\\\"FRUITYCLIP\\\"",
-					"JucePlugin_Desc=\\\"FRUITYCLIP\\\"",
+					"JucePlugin_Name=\\\"GOREKLIP\\\"",
+					"JucePlugin_Desc=\\\"GOREKLIP\\\"",
 					"JucePlugin_Manufacturer=\\\"yourcompany\\\"",
 					"JucePlugin_ManufacturerWebsite=\\\"www.yourcompany.com\\\"",
 					"JucePlugin_ManufacturerEmail=\\\"\\\"",
@@ -910,11 +910,11 @@
 					"JucePlugin_Vst3Category=\\\"Fx\\\"",
 					"JucePlugin_AUMainType=\\'aufx\\'",
 					"JucePlugin_AUSubType=JucePlugin_PluginCode",
-					"JucePlugin_AUExportPrefix=FRUITYCLIPAU",
-					"JucePlugin_AUExportPrefixQuoted=\\\"FRUITYCLIPAU\\\"",
+					"JucePlugin_AUExportPrefix=GOREKLIPAU",
+					"JucePlugin_AUExportPrefixQuoted=\\\"GOREKLIPAU\\\"",
 					"JucePlugin_AUManufacturerCode=JucePlugin_ManufacturerCode",
-					"JucePlugin_CFBundleIdentifier=com.yourcompany.FRUITYCLIP",
-					"JucePlugin_AAXIdentifier=com.yourcompany.FRUITYCLIP",
+					"JucePlugin_CFBundleIdentifier=com.yourcompany.GOREKLIP",
+					"JucePlugin_AAXIdentifier=com.yourcompany.GOREKLIP",
 					"JucePlugin_AAXManufacturerCode=JucePlugin_ManufacturerCode",
 					"JucePlugin_AAXProductId=JucePlugin_PluginCode",
 					"JucePlugin_AAXCategory=0",
@@ -922,13 +922,13 @@
 					"JucePlugin_AAXDisableMultiMono=0",
 					"JucePlugin_IAAType=0x61757278",
 					"JucePlugin_IAASubType=JucePlugin_PluginCode",
-					"JucePlugin_IAAName=\\\"yourcompany:\\ FRUITYCLIP\\\"",
+					"JucePlugin_IAAName=\\\"yourcompany:\\ GOREKLIP\\\"",
 					"JucePlugin_VSTNumMidiInputs=16",
 					"JucePlugin_VSTNumMidiOutputs=16",
 					"JucePlugin_ARAContentTypes=0",
 					"JucePlugin_ARATransformationFlags=0",
-					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.FRUITYCLIP.factory\\\"",
-					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.FRUITYCLIP.aradocumentarchive.1.0.0\\\"",
+					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.GOREKLIP.factory\\\"",
+					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.GOREKLIP.aradocumentarchive.1.0.0\\\"",
 					"JucePlugin_ARACompatibleArchiveIDs=\\\"\\\"",
 					"JUCE_STANDALONE_APPLICATION=JucePlugin_Build_Standalone",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
@@ -949,9 +949,9 @@
 				LLVM_LTO = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				MTL_HEADER_SEARCH_PATHS = "$(HOME)/JUCE/modules/juce_audio_processors_headless/format_types/VST3_SDK $(SRCROOT)/../../JuceLibraryCode";
-				OTHER_LDFLAGS = "-bundle -lFRUITYCLIP";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.FRUITYCLIP;
-				PRODUCT_NAME = "FRUITYCLIP";
+				OTHER_LDFLAGS = "-bundle -lGOREKLIP";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.GOREKLIP;
+				PRODUCT_NAME = "GOREKLIP";
 				USE_HEADERMAP = NO;
 				VALID_ARCHS = "i386 x86_64 arm64 arm64e";
 				WRAPPER_EXTENSION = vst3;
@@ -985,8 +985,8 @@
 					"JucePlugin_Build_LV2=0",
 					"JucePlugin_Enable_IAA=0",
 					"JucePlugin_Enable_ARA=0",
-					"JucePlugin_Name=\\\"FRUITYCLIP\\\"",
-					"JucePlugin_Desc=\\\"FRUITYCLIP\\\"",
+					"JucePlugin_Name=\\\"GOREKLIP\\\"",
+					"JucePlugin_Desc=\\\"GOREKLIP\\\"",
 					"JucePlugin_Manufacturer=\\\"yourcompany\\\"",
 					"JucePlugin_ManufacturerWebsite=\\\"www.yourcompany.com\\\"",
 					"JucePlugin_ManufacturerEmail=\\\"\\\"",
@@ -1005,11 +1005,11 @@
 					"JucePlugin_Vst3Category=\\\"Fx\\\"",
 					"JucePlugin_AUMainType=\\'aufx\\'",
 					"JucePlugin_AUSubType=JucePlugin_PluginCode",
-					"JucePlugin_AUExportPrefix=FRUITYCLIPAU",
-					"JucePlugin_AUExportPrefixQuoted=\\\"FRUITYCLIPAU\\\"",
+					"JucePlugin_AUExportPrefix=GOREKLIPAU",
+					"JucePlugin_AUExportPrefixQuoted=\\\"GOREKLIPAU\\\"",
 					"JucePlugin_AUManufacturerCode=JucePlugin_ManufacturerCode",
-					"JucePlugin_CFBundleIdentifier=com.yourcompany.FRUITYCLIP",
-					"JucePlugin_AAXIdentifier=com.yourcompany.FRUITYCLIP",
+					"JucePlugin_CFBundleIdentifier=com.yourcompany.GOREKLIP",
+					"JucePlugin_AAXIdentifier=com.yourcompany.GOREKLIP",
 					"JucePlugin_AAXManufacturerCode=JucePlugin_ManufacturerCode",
 					"JucePlugin_AAXProductId=JucePlugin_PluginCode",
 					"JucePlugin_AAXCategory=0",
@@ -1017,13 +1017,13 @@
 					"JucePlugin_AAXDisableMultiMono=0",
 					"JucePlugin_IAAType=0x61757278",
 					"JucePlugin_IAASubType=JucePlugin_PluginCode",
-					"JucePlugin_IAAName=\\\"yourcompany:\\ FRUITYCLIP\\\"",
+					"JucePlugin_IAAName=\\\"yourcompany:\\ GOREKLIP\\\"",
 					"JucePlugin_VSTNumMidiInputs=16",
 					"JucePlugin_VSTNumMidiOutputs=16",
 					"JucePlugin_ARAContentTypes=0",
 					"JucePlugin_ARATransformationFlags=0",
-					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.FRUITYCLIP.factory\\\"",
-					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.FRUITYCLIP.aradocumentarchive.1.0.0\\\"",
+					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.GOREKLIP.factory\\\"",
+					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.GOREKLIP.aradocumentarchive.1.0.0\\\"",
 					"JucePlugin_ARACompatibleArchiveIDs=\\\"\\\"",
 					"JUCE_STANDALONE_APPLICATION=JucePlugin_Build_Standalone",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
@@ -1043,10 +1043,10 @@
 				LIBRARY_STYLE = Bundle;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				MTL_HEADER_SEARCH_PATHS = "$(HOME)/JUCE/modules/juce_audio_processors_headless/format_types/VST3_SDK $(SRCROOT)/../../JuceLibraryCode";
-				OTHER_LDFLAGS = "-bundle -lFRUITYCLIP";
+				OTHER_LDFLAGS = "-bundle -lGOREKLIP";
 				OTHER_REZFLAGS = "-d ppc_$ppc -d i386_$i386 -d ppc64_$ppc64 -d x86_64_$x86_64 -d arm64_$arm64 -I /System/Library/Frameworks/CoreServices.framework/Frameworks/CarbonCore.framework/Versions/A/Headers -I \"$(DEVELOPER_DIR)/Extras/CoreAudio/AudioUnits/AUPublic/AUBase\" -I \"$(DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/AudioUnit.framework/Headers\"";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.FRUITYCLIP;
-				PRODUCT_NAME = "FRUITYCLIP";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.GOREKLIP;
+				PRODUCT_NAME = "GOREKLIP";
 				USE_HEADERMAP = NO;
 				VALID_ARCHS = "i386 x86_64 arm64 arm64e";
 				WRAPPER_EXTENSION = component;
@@ -1080,8 +1080,8 @@
 					"JucePlugin_Build_LV2=0",
 					"JucePlugin_Enable_IAA=0",
 					"JucePlugin_Enable_ARA=0",
-					"JucePlugin_Name=\\\"FRUITYCLIP\\\"",
-					"JucePlugin_Desc=\\\"FRUITYCLIP\\\"",
+					"JucePlugin_Name=\\\"GOREKLIP\\\"",
+					"JucePlugin_Desc=\\\"GOREKLIP\\\"",
 					"JucePlugin_Manufacturer=\\\"yourcompany\\\"",
 					"JucePlugin_ManufacturerWebsite=\\\"www.yourcompany.com\\\"",
 					"JucePlugin_ManufacturerEmail=\\\"\\\"",
@@ -1100,11 +1100,11 @@
 					"JucePlugin_Vst3Category=\\\"Fx\\\"",
 					"JucePlugin_AUMainType=\\'aufx\\'",
 					"JucePlugin_AUSubType=JucePlugin_PluginCode",
-					"JucePlugin_AUExportPrefix=FRUITYCLIPAU",
-					"JucePlugin_AUExportPrefixQuoted=\\\"FRUITYCLIPAU\\\"",
+					"JucePlugin_AUExportPrefix=GOREKLIPAU",
+					"JucePlugin_AUExportPrefixQuoted=\\\"GOREKLIPAU\\\"",
 					"JucePlugin_AUManufacturerCode=JucePlugin_ManufacturerCode",
-					"JucePlugin_CFBundleIdentifier=com.yourcompany.FRUITYCLIP",
-					"JucePlugin_AAXIdentifier=com.yourcompany.FRUITYCLIP",
+					"JucePlugin_CFBundleIdentifier=com.yourcompany.GOREKLIP",
+					"JucePlugin_AAXIdentifier=com.yourcompany.GOREKLIP",
 					"JucePlugin_AAXManufacturerCode=JucePlugin_ManufacturerCode",
 					"JucePlugin_AAXProductId=JucePlugin_PluginCode",
 					"JucePlugin_AAXCategory=0",
@@ -1112,13 +1112,13 @@
 					"JucePlugin_AAXDisableMultiMono=0",
 					"JucePlugin_IAAType=0x61757278",
 					"JucePlugin_IAASubType=JucePlugin_PluginCode",
-					"JucePlugin_IAAName=\\\"yourcompany:\\ FRUITYCLIP\\\"",
+					"JucePlugin_IAAName=\\\"yourcompany:\\ GOREKLIP\\\"",
 					"JucePlugin_VSTNumMidiInputs=16",
 					"JucePlugin_VSTNumMidiOutputs=16",
 					"JucePlugin_ARAContentTypes=0",
 					"JucePlugin_ARATransformationFlags=0",
-					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.FRUITYCLIP.factory\\\"",
-					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.FRUITYCLIP.aradocumentarchive.1.0.0\\\"",
+					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.GOREKLIP.factory\\\"",
+					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.GOREKLIP.aradocumentarchive.1.0.0\\\"",
 					"JucePlugin_ARACompatibleArchiveIDs=\\\"\\\"",
 					"JUCE_STANDALONE_APPLICATION=JucePlugin_Build_Standalone",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
@@ -1135,8 +1135,8 @@
 				INSTALL_PATH = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				MTL_HEADER_SEARCH_PATHS = "$(HOME)/JUCE/modules/juce_audio_processors_headless/format_types/VST3_SDK $(SRCROOT)/../../JuceLibraryCode";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.FRUITYCLIP;
-				PRODUCT_NAME = "FRUITYCLIP";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.GOREKLIP;
+				PRODUCT_NAME = "GOREKLIP";
 				SKIP_INSTALL = YES;
 				USE_HEADERMAP = NO;
 				VALID_ARCHS = "i386 x86_64 arm64 arm64e";
@@ -1170,8 +1170,8 @@
 					"JucePlugin_Build_LV2=0",
 					"JucePlugin_Enable_IAA=0",
 					"JucePlugin_Enable_ARA=0",
-					"JucePlugin_Name=\\\"FRUITYCLIP\\\"",
-					"JucePlugin_Desc=\\\"FRUITYCLIP\\\"",
+					"JucePlugin_Name=\\\"GOREKLIP\\\"",
+					"JucePlugin_Desc=\\\"GOREKLIP\\\"",
 					"JucePlugin_Manufacturer=\\\"yourcompany\\\"",
 					"JucePlugin_ManufacturerWebsite=\\\"www.yourcompany.com\\\"",
 					"JucePlugin_ManufacturerEmail=\\\"\\\"",
@@ -1190,11 +1190,11 @@
 					"JucePlugin_Vst3Category=\\\"Fx\\\"",
 					"JucePlugin_AUMainType=\\'aufx\\'",
 					"JucePlugin_AUSubType=JucePlugin_PluginCode",
-					"JucePlugin_AUExportPrefix=FRUITYCLIPAU",
-					"JucePlugin_AUExportPrefixQuoted=\\\"FRUITYCLIPAU\\\"",
+					"JucePlugin_AUExportPrefix=GOREKLIPAU",
+					"JucePlugin_AUExportPrefixQuoted=\\\"GOREKLIPAU\\\"",
 					"JucePlugin_AUManufacturerCode=JucePlugin_ManufacturerCode",
-					"JucePlugin_CFBundleIdentifier=com.yourcompany.FRUITYCLIP",
-					"JucePlugin_AAXIdentifier=com.yourcompany.FRUITYCLIP",
+					"JucePlugin_CFBundleIdentifier=com.yourcompany.GOREKLIP",
+					"JucePlugin_AAXIdentifier=com.yourcompany.GOREKLIP",
 					"JucePlugin_AAXManufacturerCode=JucePlugin_ManufacturerCode",
 					"JucePlugin_AAXProductId=JucePlugin_PluginCode",
 					"JucePlugin_AAXCategory=0",
@@ -1202,13 +1202,13 @@
 					"JucePlugin_AAXDisableMultiMono=0",
 					"JucePlugin_IAAType=0x61757278",
 					"JucePlugin_IAASubType=JucePlugin_PluginCode",
-					"JucePlugin_IAAName=\\\"yourcompany:\\ FRUITYCLIP\\\"",
+					"JucePlugin_IAAName=\\\"yourcompany:\\ GOREKLIP\\\"",
 					"JucePlugin_VSTNumMidiInputs=16",
 					"JucePlugin_VSTNumMidiOutputs=16",
 					"JucePlugin_ARAContentTypes=0",
 					"JucePlugin_ARATransformationFlags=0",
-					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.FRUITYCLIP.factory\\\"",
-					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.FRUITYCLIP.aradocumentarchive.1.0.0\\\"",
+					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.GOREKLIP.factory\\\"",
+					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.GOREKLIP.aradocumentarchive.1.0.0\\\"",
 					"JucePlugin_ARACompatibleArchiveIDs=\\\"\\\"",
 					"JUCE_STANDALONE_APPLICATION=JucePlugin_Build_Standalone",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
@@ -1229,10 +1229,10 @@
 				LLVM_LTO = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				MTL_HEADER_SEARCH_PATHS = "$(HOME)/JUCE/modules/juce_audio_processors_headless/format_types/VST3_SDK $(SRCROOT)/../../JuceLibraryCode";
-				OTHER_LDFLAGS = "-bundle -lFRUITYCLIP";
+				OTHER_LDFLAGS = "-bundle -lGOREKLIP";
 				OTHER_REZFLAGS = "-d ppc_$ppc -d i386_$i386 -d ppc64_$ppc64 -d x86_64_$x86_64 -d arm64_$arm64 -I /System/Library/Frameworks/CoreServices.framework/Frameworks/CarbonCore.framework/Versions/A/Headers -I \"$(DEVELOPER_DIR)/Extras/CoreAudio/AudioUnits/AUPublic/AUBase\" -I \"$(DEVELOPER_DIR)/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/AudioUnit.framework/Headers\"";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.FRUITYCLIP;
-				PRODUCT_NAME = "FRUITYCLIP";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.GOREKLIP;
+				PRODUCT_NAME = "GOREKLIP";
 				USE_HEADERMAP = NO;
 				VALID_ARCHS = "i386 x86_64 arm64 arm64e";
 				WRAPPER_EXTENSION = component;
@@ -1266,8 +1266,8 @@
 					"JucePlugin_Build_LV2=0",
 					"JucePlugin_Enable_IAA=0",
 					"JucePlugin_Enable_ARA=0",
-					"JucePlugin_Name=\\\"FRUITYCLIP\\\"",
-					"JucePlugin_Desc=\\\"FRUITYCLIP\\\"",
+					"JucePlugin_Name=\\\"GOREKLIP\\\"",
+					"JucePlugin_Desc=\\\"GOREKLIP\\\"",
 					"JucePlugin_Manufacturer=\\\"yourcompany\\\"",
 					"JucePlugin_ManufacturerWebsite=\\\"www.yourcompany.com\\\"",
 					"JucePlugin_ManufacturerEmail=\\\"\\\"",
@@ -1286,11 +1286,11 @@
 					"JucePlugin_Vst3Category=\\\"Fx\\\"",
 					"JucePlugin_AUMainType=\\'aufx\\'",
 					"JucePlugin_AUSubType=JucePlugin_PluginCode",
-					"JucePlugin_AUExportPrefix=FRUITYCLIPAU",
-					"JucePlugin_AUExportPrefixQuoted=\\\"FRUITYCLIPAU\\\"",
+					"JucePlugin_AUExportPrefix=GOREKLIPAU",
+					"JucePlugin_AUExportPrefixQuoted=\\\"GOREKLIPAU\\\"",
 					"JucePlugin_AUManufacturerCode=JucePlugin_ManufacturerCode",
-					"JucePlugin_CFBundleIdentifier=com.yourcompany.FRUITYCLIP",
-					"JucePlugin_AAXIdentifier=com.yourcompany.FRUITYCLIP",
+					"JucePlugin_CFBundleIdentifier=com.yourcompany.GOREKLIP",
+					"JucePlugin_AAXIdentifier=com.yourcompany.GOREKLIP",
 					"JucePlugin_AAXManufacturerCode=JucePlugin_ManufacturerCode",
 					"JucePlugin_AAXProductId=JucePlugin_PluginCode",
 					"JucePlugin_AAXCategory=0",
@@ -1298,13 +1298,13 @@
 					"JucePlugin_AAXDisableMultiMono=0",
 					"JucePlugin_IAAType=0x61757278",
 					"JucePlugin_IAASubType=JucePlugin_PluginCode",
-					"JucePlugin_IAAName=\\\"yourcompany:\\ FRUITYCLIP\\\"",
+					"JucePlugin_IAAName=\\\"yourcompany:\\ GOREKLIP\\\"",
 					"JucePlugin_VSTNumMidiInputs=16",
 					"JucePlugin_VSTNumMidiOutputs=16",
 					"JucePlugin_ARAContentTypes=0",
 					"JucePlugin_ARATransformationFlags=0",
-					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.FRUITYCLIP.factory\\\"",
-					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.FRUITYCLIP.aradocumentarchive.1.0.0\\\"",
+					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.GOREKLIP.factory\\\"",
+					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.GOREKLIP.aradocumentarchive.1.0.0\\\"",
 					"JucePlugin_ARACompatibleArchiveIDs=\\\"\\\"",
 					"JUCE_STANDALONE_APPLICATION=JucePlugin_Build_Standalone",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
@@ -1321,7 +1321,7 @@
 				INFOPLIST_PREPROCESS = NO;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				MTL_HEADER_SEARCH_PATHS = "$(HOME)/JUCE/modules/juce_audio_processors_headless/format_types/VST3_SDK $(SRCROOT)/../../JuceLibraryCode";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.FRUITYCLIP;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.GOREKLIP;
 				PRODUCT_NAME = "juce_vst3_helper";
 				USE_HEADERMAP = NO;
 				VALID_ARCHS = "i386 x86_64 arm64 arm64e";
@@ -1355,8 +1355,8 @@
 					"JucePlugin_Build_LV2=0",
 					"JucePlugin_Enable_IAA=0",
 					"JucePlugin_Enable_ARA=0",
-					"JucePlugin_Name=\\\"FRUITYCLIP\\\"",
-					"JucePlugin_Desc=\\\"FRUITYCLIP\\\"",
+					"JucePlugin_Name=\\\"GOREKLIP\\\"",
+					"JucePlugin_Desc=\\\"GOREKLIP\\\"",
 					"JucePlugin_Manufacturer=\\\"yourcompany\\\"",
 					"JucePlugin_ManufacturerWebsite=\\\"www.yourcompany.com\\\"",
 					"JucePlugin_ManufacturerEmail=\\\"\\\"",
@@ -1375,11 +1375,11 @@
 					"JucePlugin_Vst3Category=\\\"Fx\\\"",
 					"JucePlugin_AUMainType=\\'aufx\\'",
 					"JucePlugin_AUSubType=JucePlugin_PluginCode",
-					"JucePlugin_AUExportPrefix=FRUITYCLIPAU",
-					"JucePlugin_AUExportPrefixQuoted=\\\"FRUITYCLIPAU\\\"",
+					"JucePlugin_AUExportPrefix=GOREKLIPAU",
+					"JucePlugin_AUExportPrefixQuoted=\\\"GOREKLIPAU\\\"",
 					"JucePlugin_AUManufacturerCode=JucePlugin_ManufacturerCode",
-					"JucePlugin_CFBundleIdentifier=com.yourcompany.FRUITYCLIP",
-					"JucePlugin_AAXIdentifier=com.yourcompany.FRUITYCLIP",
+					"JucePlugin_CFBundleIdentifier=com.yourcompany.GOREKLIP",
+					"JucePlugin_AAXIdentifier=com.yourcompany.GOREKLIP",
 					"JucePlugin_AAXManufacturerCode=JucePlugin_ManufacturerCode",
 					"JucePlugin_AAXProductId=JucePlugin_PluginCode",
 					"JucePlugin_AAXCategory=0",
@@ -1387,13 +1387,13 @@
 					"JucePlugin_AAXDisableMultiMono=0",
 					"JucePlugin_IAAType=0x61757278",
 					"JucePlugin_IAASubType=JucePlugin_PluginCode",
-					"JucePlugin_IAAName=\\\"yourcompany:\\ FRUITYCLIP\\\"",
+					"JucePlugin_IAAName=\\\"yourcompany:\\ GOREKLIP\\\"",
 					"JucePlugin_VSTNumMidiInputs=16",
 					"JucePlugin_VSTNumMidiOutputs=16",
 					"JucePlugin_ARAContentTypes=0",
 					"JucePlugin_ARATransformationFlags=0",
-					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.FRUITYCLIP.factory\\\"",
-					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.FRUITYCLIP.aradocumentarchive.1.0.0\\\"",
+					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.GOREKLIP.factory\\\"",
+					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.GOREKLIP.aradocumentarchive.1.0.0\\\"",
 					"JucePlugin_ARACompatibleArchiveIDs=\\\"\\\"",
 					"JUCE_STANDALONE_APPLICATION=JucePlugin_Build_Standalone",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
@@ -1410,9 +1410,9 @@
 				INFOPLIST_PREPROCESS = NO;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				MTL_HEADER_SEARCH_PATHS = "$(HOME)/JUCE/modules/juce_audio_processors_headless/format_types/VST3_SDK $(SRCROOT)/../../JuceLibraryCode";
-				OTHER_LDFLAGS = "-lFRUITYCLIP";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.FRUITYCLIP;
-				PRODUCT_NAME = "FRUITYCLIP";
+				OTHER_LDFLAGS = "-lGOREKLIP";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.GOREKLIP;
+				PRODUCT_NAME = "GOREKLIP";
 				USE_HEADERMAP = NO;
 				VALID_ARCHS = "i386 x86_64 arm64 arm64e";
 			};
@@ -1445,8 +1445,8 @@
 					"JucePlugin_Build_LV2=0",
 					"JucePlugin_Enable_IAA=0",
 					"JucePlugin_Enable_ARA=0",
-					"JucePlugin_Name=\\\"FRUITYCLIP\\\"",
-					"JucePlugin_Desc=\\\"FRUITYCLIP\\\"",
+					"JucePlugin_Name=\\\"GOREKLIP\\\"",
+					"JucePlugin_Desc=\\\"GOREKLIP\\\"",
 					"JucePlugin_Manufacturer=\\\"yourcompany\\\"",
 					"JucePlugin_ManufacturerWebsite=\\\"www.yourcompany.com\\\"",
 					"JucePlugin_ManufacturerEmail=\\\"\\\"",
@@ -1465,11 +1465,11 @@
 					"JucePlugin_Vst3Category=\\\"Fx\\\"",
 					"JucePlugin_AUMainType=\\'aufx\\'",
 					"JucePlugin_AUSubType=JucePlugin_PluginCode",
-					"JucePlugin_AUExportPrefix=FRUITYCLIPAU",
-					"JucePlugin_AUExportPrefixQuoted=\\\"FRUITYCLIPAU\\\"",
+					"JucePlugin_AUExportPrefix=GOREKLIPAU",
+					"JucePlugin_AUExportPrefixQuoted=\\\"GOREKLIPAU\\\"",
 					"JucePlugin_AUManufacturerCode=JucePlugin_ManufacturerCode",
-					"JucePlugin_CFBundleIdentifier=com.yourcompany.FRUITYCLIP",
-					"JucePlugin_AAXIdentifier=com.yourcompany.FRUITYCLIP",
+					"JucePlugin_CFBundleIdentifier=com.yourcompany.GOREKLIP",
+					"JucePlugin_AAXIdentifier=com.yourcompany.GOREKLIP",
 					"JucePlugin_AAXManufacturerCode=JucePlugin_ManufacturerCode",
 					"JucePlugin_AAXProductId=JucePlugin_PluginCode",
 					"JucePlugin_AAXCategory=0",
@@ -1477,13 +1477,13 @@
 					"JucePlugin_AAXDisableMultiMono=0",
 					"JucePlugin_IAAType=0x61757278",
 					"JucePlugin_IAASubType=JucePlugin_PluginCode",
-					"JucePlugin_IAAName=\\\"yourcompany:\\ FRUITYCLIP\\\"",
+					"JucePlugin_IAAName=\\\"yourcompany:\\ GOREKLIP\\\"",
 					"JucePlugin_VSTNumMidiInputs=16",
 					"JucePlugin_VSTNumMidiOutputs=16",
 					"JucePlugin_ARAContentTypes=0",
 					"JucePlugin_ARATransformationFlags=0",
-					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.FRUITYCLIP.factory\\\"",
-					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.FRUITYCLIP.aradocumentarchive.1.0.0\\\"",
+					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.GOREKLIP.factory\\\"",
+					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.GOREKLIP.aradocumentarchive.1.0.0\\\"",
 					"JucePlugin_ARACompatibleArchiveIDs=\\\"\\\"",
 					"JUCE_STANDALONE_APPLICATION=JucePlugin_Build_Standalone",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
@@ -1503,9 +1503,9 @@
 				LIBRARY_STYLE = Bundle;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				MTL_HEADER_SEARCH_PATHS = "$(HOME)/JUCE/modules/juce_audio_processors_headless/format_types/VST3_SDK $(SRCROOT)/../../JuceLibraryCode";
-				OTHER_LDFLAGS = "-bundle -lFRUITYCLIP";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.FRUITYCLIP;
-				PRODUCT_NAME = "FRUITYCLIP";
+				OTHER_LDFLAGS = "-bundle -lGOREKLIP";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.GOREKLIP;
+				PRODUCT_NAME = "GOREKLIP";
 				USE_HEADERMAP = NO;
 				VALID_ARCHS = "i386 x86_64 arm64 arm64e";
 				WRAPPER_EXTENSION = vst3;
@@ -1539,8 +1539,8 @@
 					"JucePlugin_Build_LV2=0",
 					"JucePlugin_Enable_IAA=0",
 					"JucePlugin_Enable_ARA=0",
-					"JucePlugin_Name=\\\"FRUITYCLIP\\\"",
-					"JucePlugin_Desc=\\\"FRUITYCLIP\\\"",
+					"JucePlugin_Name=\\\"GOREKLIP\\\"",
+					"JucePlugin_Desc=\\\"GOREKLIP\\\"",
 					"JucePlugin_Manufacturer=\\\"yourcompany\\\"",
 					"JucePlugin_ManufacturerWebsite=\\\"www.yourcompany.com\\\"",
 					"JucePlugin_ManufacturerEmail=\\\"\\\"",
@@ -1559,11 +1559,11 @@
 					"JucePlugin_Vst3Category=\\\"Fx\\\"",
 					"JucePlugin_AUMainType=\\'aufx\\'",
 					"JucePlugin_AUSubType=JucePlugin_PluginCode",
-					"JucePlugin_AUExportPrefix=FRUITYCLIPAU",
-					"JucePlugin_AUExportPrefixQuoted=\\\"FRUITYCLIPAU\\\"",
+					"JucePlugin_AUExportPrefix=GOREKLIPAU",
+					"JucePlugin_AUExportPrefixQuoted=\\\"GOREKLIPAU\\\"",
 					"JucePlugin_AUManufacturerCode=JucePlugin_ManufacturerCode",
-					"JucePlugin_CFBundleIdentifier=com.yourcompany.FRUITYCLIP",
-					"JucePlugin_AAXIdentifier=com.yourcompany.FRUITYCLIP",
+					"JucePlugin_CFBundleIdentifier=com.yourcompany.GOREKLIP",
+					"JucePlugin_AAXIdentifier=com.yourcompany.GOREKLIP",
 					"JucePlugin_AAXManufacturerCode=JucePlugin_ManufacturerCode",
 					"JucePlugin_AAXProductId=JucePlugin_PluginCode",
 					"JucePlugin_AAXCategory=0",
@@ -1571,13 +1571,13 @@
 					"JucePlugin_AAXDisableMultiMono=0",
 					"JucePlugin_IAAType=0x61757278",
 					"JucePlugin_IAASubType=JucePlugin_PluginCode",
-					"JucePlugin_IAAName=\\\"yourcompany:\\ FRUITYCLIP\\\"",
+					"JucePlugin_IAAName=\\\"yourcompany:\\ GOREKLIP\\\"",
 					"JucePlugin_VSTNumMidiInputs=16",
 					"JucePlugin_VSTNumMidiOutputs=16",
 					"JucePlugin_ARAContentTypes=0",
 					"JucePlugin_ARATransformationFlags=0",
-					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.FRUITYCLIP.factory\\\"",
-					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.FRUITYCLIP.aradocumentarchive.1.0.0\\\"",
+					"JucePlugin_ARAFactoryID=\\\"com.yourcompany.GOREKLIP.factory\\\"",
+					"JucePlugin_ARADocumentArchiveID=\\\"com.yourcompany.GOREKLIP.aradocumentarchive.1.0.0\\\"",
 					"JucePlugin_ARACompatibleArchiveIDs=\\\"\\\"",
 					"JUCE_STANDALONE_APPLICATION=JucePlugin_Build_Standalone",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
@@ -1595,8 +1595,8 @@
 				LLVM_LTO = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.13;
 				MTL_HEADER_SEARCH_PATHS = "$(HOME)/JUCE/modules/juce_audio_processors_headless/format_types/VST3_SDK $(SRCROOT)/../../JuceLibraryCode";
-				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.FRUITYCLIP;
-				PRODUCT_NAME = "FRUITYCLIP";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yourcompany.GOREKLIP;
+				PRODUCT_NAME = "GOREKLIP";
 				SKIP_INSTALL = YES;
 				USE_HEADERMAP = NO;
 				VALID_ARCHS = "i386 x86_64 arm64 arm64e";
