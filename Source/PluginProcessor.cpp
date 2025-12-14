@@ -1089,7 +1089,7 @@ samples[i] = sample;
             }
         }
 
-        if (isAnalogMode)
+        if (isAnalogMode && headroomDb > 0.0f)
         {
             const float hg = juce::Decibels::decibelsToGain (headroomDb);
 
