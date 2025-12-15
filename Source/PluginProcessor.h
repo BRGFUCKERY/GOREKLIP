@@ -192,16 +192,32 @@ private:
     //==========================================================
     struct AnalogToneState
     {
-        float low = 0.0f;   // lowpassed state for tilt split
+        float low250 = 0.0f; // lowpassed state for ~250 Hz split
+        float low10k = 0.0f; // lowpassed state for ~10 kHz split
     };
 
     void resetAnalogToneState (int numChannels);
 
     std::vector<AnalogToneState> analogToneStates;
-    float analogToneAlpha = 0.0f;    // one-pole LP factor for analog tone tilt
+    float analogToneAlpha250 = 0.0f;    // one-pole LP factor for ~250 Hz split
+    float analogToneAlpha10k = 0.0f;    // one-pole LP factor for ~10 kHz split
     float analogEnvAttackAlpha  = 0.0f; // envelope follower for analog bias
     float analogEnvReleaseAlpha = 0.0f;
     float analogDcAlpha         = 0.0f; // DC blocker coefficient for analog clipper (computed per-block for OS rate)
+
+    struct AnalogTransientState
+    {
+        float fastEnv = 0.0f;
+        float slowEnv = 0.0f;
+        float slew    = 0.0f;
+    };
+
+    void resetAnalogTransientState (int numChannels);
+
+    std::vector<AnalogTransientState> analogTransientStates;
+    float analogFastEnvA = 0.0f;
+    float analogSlowEnvA = 0.0f;
+    float analogSlewA    = 0.0f;
 
 
     //==========================================================
