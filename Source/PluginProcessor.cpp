@@ -596,12 +596,10 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 {
     // 5060-style colour stage (pre-Lavry clip)
     //
-    // Targets from your hardware @ 1k +12:
-    //   silk 0   : H2 ≈ -33 dB rel
-    //   silk 100 : H2 ≈ -30.5 dB rel
-    //
-    // We generate EVEN harmonics primarily here (quadratic term),
-    // and keep the Lavry ceiling mostly symmetric.
+    // Key fix:
+    // On already-clipped / flat-topped material, (pre * pre) becomes mostly DC,
+    // so the even-harmonic term collapses after DC removal. To keep even harmonics
+    // alive on hot material, we square the LOW band from the pre-emphasis split.
 
     const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
@@ -610,32 +608,31 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     auto& st = silkStates[(size_t) channel];
 
-    // Pre-emphasis (existing)
+    // Pre-emphasis (updates st.pre as the low-band state)
     const float pre = applySilkPreEmphasis (x, channel, s);
 
     // Engage more at high level so it doesn't fuzz quiet material
     float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.20f) / 0.80f);
     driveT = driveT * driveT;
 
-    // Quadratic (even) mix coefficient.
-    // For a pure sine, H2 amplitude ≈ coeff/2  ->  -33 dB => coeff ~ 0.045
-    // --- H2 boost to better match hardware (≈ +10 dB H2) ---
-    // +10 dB in harmonic amplitude ≈ x3.162
-    constexpr float h2Boost = 0.98f;
+    // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
+    constexpr float evenScale = 2.7f; // was ~1.0
+    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT;
 
-    const float evenCoeff = h2Boost * (0.035f + 0.0115f * s) * driveT; // tuned from 710: ~-2 dB H2 overall, slightly less SILK delta
+    // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
+    const float evenSrc = st.pre;
+    float e = evenSrc * evenSrc;
 
-    float e = pre * pre;
-
-    // Remove DC from the quadratic term only (preserves even series)
+    // Remove DC from quadratic term only (preserves even series)
     st.evenDc = silkEvenDcAlpha * st.evenDc + (1.0f - silkEvenDcAlpha) * e;
     e -= st.evenDc;
 
-    // Raise cap so the boost can actually take effect at hot levels
-    const float evenCoeffCapped = juce::jlimit (0.0f, 0.20f, evenCoeff);
+    // Raised cap so boost can actually take effect at hot levels
+    const float evenCoeffCapped = juce::jlimit (0.0f, 0.40f, evenCoeff);
+
     float y = pre + evenCoeffCapped * e;
 
-    // De-emphasis (existing)
+    // De-emphasis
     return applySilkDeEmphasis (y, channel, s);
 }
 
@@ -701,7 +698,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     const float absN  = std::abs (xNorm);
     const float gate  = smoothStep01 ((absN - 0.35f) / (0.95f - 0.35f));
     const float silkWeight = 1.0f - silkShape;
-    const float h9Amt = 0.0060f * silkWeight * gate;
+    const float h9Amt = 0.0014f * silkWeight * gate;
     inRaw += h9Amt * sin9Poly (xNorm);
 
     const float absIn = std::abs (inRaw);
@@ -728,8 +725,8 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
         levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
 
     // Baseline even content at SILK 0, more with SILK
-    constexpr float biasBase = 0.020f;
-    constexpr float biasSilk = 0.018f;
+    constexpr float biasBase = 0.018f;
+    constexpr float biasSilk = 0.031f;
 
     float targetBias = (biasBase + biasSilk * silkShape) * levelT;
 
@@ -797,10 +794,9 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // -----------------------------------------------------------------
     // 3) 3-band tilt target derived from measurements
     // -----------------------------------------------------------------
-    const float lowDb  = juce::jmap (s, 0.0f, 1.0f, -2.5f, -2.0f);
-    const float midDb  = juce::jmap (s, 0.0f, 1.0f, +2.6f, +2.2f);
-    const float highDb = juce::jmap (s, 0.0f, 1.0f, -1.5f, -1.2f);
-
+    const float lowDb  = juce::jmap (s, 0.0f, 1.0f, -0.28f, +0.37f);
+    const float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.31f, +0.45f);
+    const float highDb = juce::jmap (s, 0.0f, 1.0f, -4.72f, -2.77f);
     const float gainLow  = juce::Decibels::decibelsToGain (lowDb);
     const float gainMid  = juce::Decibels::decibelsToGain (midDb);
     const float gainHigh = juce::Decibels::decibelsToGain (highDb);
