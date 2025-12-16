@@ -19,6 +19,25 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
+static inline float fruityClipperDigital (float x) noexcept
+{
+    constexpr float T = 127.0f / 128.0f;  // 0.9921875  (~ -0.068 dBFS)
+    constexpr float K = 1.0f - T;         // 0.0078125
+
+    const float ax = std::abs (x);
+
+    if (ax <= T)
+        return x;
+
+    // Exponential soft-limit above threshold, asymptotically approaching 1.0
+    const float over = ax - T;
+    const float ymag = 1.0f - K * std::exp (-over / K);
+
+    // Safety (optional, but keep it)
+    const float y = std::copysign (ymag, x);
+    return juce::jlimit (-1.0f, 1.0f, y);
+}
+
 //==============================================================
 // Parameter layout
 //==============================================================
@@ -1122,11 +1141,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     }
                     else
                     {
-                        // DIGITAL clip
-                        if (sample >  1.0f) sample =  1.0f;
-                        if (sample < -1.0f) sample = -1.0f;
+                        // DIGITAL clip (Fruity Clipper curve)
+                        sample = fruityClipperDigital (sample);
                     }
-samples[i] = sample;
+
+                    samples[i] = sample;
                 }
             }
 
@@ -1153,11 +1172,11 @@ samples[i] = sample;
                         sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
                     else
                     {
-                        // Pure hard clip at base rate
-                        if (sample >  1.0f) sample =  1.0f;
-                        if (sample < -1.0f) sample = -1.0f;
+                        // DIGITAL clip (Fruity Clipper curve)
+                        sample = fruityClipperDigital (sample);
                     }
-samples[i] = sample;
+
+                    samples[i] = sample;
                 }
             }
         }
