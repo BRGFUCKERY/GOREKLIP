@@ -500,9 +500,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     gainSlider.setDragSensitivities (250, 800);
     gainSlider.setRange (-12.0, 12.0, 0.01);
 
-    setupKnob01 (ottSlider);   // FU#K
-    setupKnob01 (silkSlider);  // MARRY
-    setupKnob01 (satSlider);   // K#LL
+    setupKnob01 (ottSlider);
+    setupKnob01 (silkSlider);
+    setupKnob01 (satSlider);
     setupKnob01 (modeSlider);
 
     // MODE is a hard 0/1 switch
@@ -574,14 +574,17 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     setupValueLabel (gainValueLabel);
     setupValueLabel (ottValueLabel);
+    setupValueLabel (silkValueLabel);
     setupValueLabel (satValueLabel);
 
     addAndMakeVisible (gainValueLabel);
     addAndMakeVisible (ottValueLabel);
+    addAndMakeVisible (silkValueLabel);
     addAndMakeVisible (satValueLabel);
 
     gainValueLabel.setVisible (false);
     ottValueLabel.setVisible (false);
+    silkValueLabel.setVisible (false);
     satValueLabel.setVisible (false);
 
     // SETTINGS (left pentagram)
@@ -674,6 +677,13 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     setupValuePopup (ottSlider, ottValueLabel, [this]()
     {
         const double raw = ottSlider.getValue();
+        const int percent = (int) std::round (raw * 100.0);
+        return juce::String (percent) + " %";
+    });
+
+    setupValuePopup (silkSlider, silkValueLabel, [this]()
+    {
+        const double raw = silkSlider.getValue();
         const int percent = (int) std::round (raw * 100.0);
         return juce::String (percent) + " %";
     });
@@ -892,10 +902,10 @@ void FruityClipAudioProcessorEditor::resized()
                         ottSlider.getWidth(),
                         labelH);
 
-silkLabel.setBounds (silkSlider.getX(),
-                     silkSlider.getBottom() + 2,
-                     silkSlider.getWidth(),
-                     labelH);
+    silkLabel.setBounds (silkSlider.getX(),
+                         silkSlider.getBottom() + 2,
+                         silkSlider.getWidth(),
+                         labelH);
 
     satLabel.setBounds (satSlider.getX(),
                         satSlider.getBottom() + 2,
@@ -984,8 +994,7 @@ void FruityClipAudioProcessorEditor::timerCallback()
         lufsLabel.setText (juce::String (lufs, 2) + " LUFS",
                            juce::dontSendNotification);
     }
-
-    modeLabel.setText (getClipperLabelText(), juce::dontSendNotification);
+modeLabel.setText (getClipperLabelText(), juce::dontSendNotification);
 
     // Drive pentagrams / x1 colour from lastBurn (0..1)
     const float burnForIcons = juce::jlimit (0.0f, 1.0f, lastBurn);

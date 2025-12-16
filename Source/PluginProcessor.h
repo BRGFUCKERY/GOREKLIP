@@ -128,7 +128,21 @@ private:
     // Oversampling config helper
     void updateOversampling (int osIndex, int numChannels);
 
+    
     //==========================================================
+    // DSM CAPTURE (fixed curve from your DSM@10% exports)
+    //   - Implemented as a captured linear-phase FIR magnitude curve
+    //   - FU#K knob (ottAmount param) blends between dry and this curve
+    //==========================================================
+    static constexpr int dsmCaptureNumTaps = 1024;
+    static constexpr int dsmCaptureLatency = (dsmCaptureNumTaps - 1) / 2;
+
+    juce::dsp::ProcessorDuplicator<juce::dsp::FIR::Filter<float>,
+                                  juce::dsp::FIR::Coefficients<float>> dsmCaptureFir;
+
+    juce::AudioBuffer<float> dsmTemp; // temp buffer for filtered path
+
+//==========================================================
     // K-weighted LUFS meter state
     //==========================================================
     struct KFilterState
@@ -145,42 +159,7 @@ private:
     float lufsMeanSquare = 1.0e-6f;  // keep > 0 to avoid log(0)
     float lufsAverageLufs = -60.0f;  // slow (~2s) averaged LUFS in dB for LOOK = LUFS burn
 
-    //==========================================================
-    //==========================================================
-// DSM-style spectral dynamics state
-//==========================================================
-static constexpr int dsmFftOrder = 11;                 // 2^11 = 2048
-static constexpr int dsmFftSize  = 1 << dsmFftOrder;
-static constexpr int dsmHopSize  = dsmFftSize / 4;     // 4x overlap
-
-struct DsmChannelState
-{
-    std::vector<float> inRing;      // size dsmFftSize
-    std::vector<float> olaRing;     // size dsmFftSize (overlap-add)
-    std::vector<float> fftData;     // size 2 * dsmFftSize (JUCE real FFT format)
-    std::vector<float> envPower;    // size dsmFftSize/2 + 1
-
-    int inWrite   = 0;              // ring write index
-    int olaRead   = 0;              // ring read index
-    int hopCount  = dsmHopSize;     // countdown to next FFT frame
-};
-
-void resetDsmState (int numChannels, double sampleRate);
-float processDsmSample (int ch, float x, float amount);
-
-std::vector<DsmChannelState> dsmStates;
-juce::dsp::FFT dsmFft { dsmFftOrder };
-std::vector<float> dsmWindow;       // sqrt-Hann window, size dsmFftSize
-
-// Envelope smoothing per STFT frame (computed at prepareToPlay)
-float dsmAttackAlpha  = 0.0f;
-float dsmReleaseAlpha = 0.0f;
-
-// Tuned to match your DSM screenshot / exports (DSM @ ~10% wet)
-float dsmThresholdDb  = -19.9f;
-float dsmRatio        = 100.0f;     // high ratio == "clamp"
-float dsmKneeDb       = 1.0f;
-struct SilkState
+    struct SilkState
     {
         float pre    = 0.0f;
         float de     = 0.0f;
@@ -276,7 +255,7 @@ struct SilkState
     // GUI signal envelope (0..1) for gating the LUFS display
     std::atomic<float> guiSignalEnv { 0.0f };
 
-    // When true, only input gain is applied; FU#K/MARRY/K#LL/limiter/oversampling/metering are bypassed
+    // When true, only input gain is applied; OTT/SAT/limiter/oversampling/metering are bypassed
     std::atomic<bool> gainBypass { false };
 
     // Parameter state (includes oversampleMode)
