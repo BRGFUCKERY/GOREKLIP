@@ -21,8 +21,9 @@ static inline float sin9Poly (float x) noexcept
 
 static inline float fruityClipperDigital (float x) noexcept
 {
-    constexpr float T = 127.0f / 128.0f;  // 0.9921875  (~ -0.068 dBFS)
-    constexpr float K = 1.0f - T;         // 0.0078125
+    // Fitted to Fruity Soft Clipper (digital mode) from reference captures
+    constexpr float T = 0.9924081803f;   // Knee point (~ -0.066 dBFS)
+    constexpr float k = 127.8604481f;    // Exponential slope
 
     const float ax = std::abs (x);
 
@@ -31,7 +32,7 @@ static inline float fruityClipperDigital (float x) noexcept
 
     // Exponential soft-limit above threshold, asymptotically approaching 1.0
     const float over = ax - T;
-    const float ymag = 1.0f - K * std::exp (-over / K);
+    const float ymag = 1.0f - (1.0f - T) * std::exp (-k * over);
 
     // Safety (optional, but keep it)
     const float y = std::copysign (ymag, x);
