@@ -145,22 +145,6 @@ private:
     float lufsMeanSquare = 1.0e-6f;  // keep > 0 to avoid log(0)
     float lufsAverageLufs = -60.0f;  // slow (~2s) averaged LUFS in dB for LOOK = LUFS burn
 
-    //==========================================================
-    // OTT high-pass split state (0–150 Hz dry, >150 Hz OTT)
-    //==========================================================
-    struct OttHPState
-    {
-        float low = 0.0f;  // running lowpass state for low band
-        float env = 0.0f;  // high-band envelope for dynamics
-    };
-
-    void resetOttState (int numChannels);
-
-    std::vector<OttHPState> ottStates;
-    float ottAlpha     = 0.0f;   // one-pole LP factor for 150 Hz split
-    float ottEnvAlpha  = 0.0f;   // envelope smoothing factor
-    float lastOttGain  = 1.0f;   // now stores static trim (for debug/consistency)
-
     struct SilkState
     {
         float pre    = 0.0f;
@@ -218,6 +202,125 @@ private:
     float analogFastEnvA = 0.0f;
     float analogSlowEnvA = 0.0f;
     float analogSlewA    = 0.0f;
+
+    struct DsmCaptureEq
+    {
+        static constexpr int kNumBands = 32;
+
+        void prepare (double sampleRate, int numChannels)
+        {
+            sr = sampleRate;
+            filters.clear();
+            filters.resize ((size_t) numChannels);
+
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                filters[(size_t) ch].clear();
+                filters[(size_t) ch].reserve (kNumBands);
+
+                for (int i = 0; i < kNumBands; ++i)
+                {
+                    juce::dsp::IIR::Filter<float> f;
+                    const float fc = kCentersHz[i];
+                    const float Q  = 1.0f;
+                    const float g  = juce::Decibels::decibelsToGain (kGainDb[i]);
+
+                    auto coeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter ((double) sr, (double) fc, (double) Q, (double) g);
+                    f.coefficients = coeffs;
+                    filters[(size_t) ch].push_back (std::move (f));
+                }
+            }
+        }
+
+        float processSample (int ch, float x) noexcept
+        {
+            float y = x;
+            auto& chain = filters[(size_t) ch];
+            for (auto& f : chain)
+                y = f.processSample (y);
+            return y;
+        }
+
+        double sr = 48000.0;
+
+        // 32 log-spaced centers, 30 Hz..16 kHz
+        static constexpr float kCentersHz[kNumBands] =
+        {
+            33.092579f,
+            40.267004f,
+            48.996835f,
+            59.619282f,
+            72.544660f,
+            88.274275f,
+            107.414574f,
+            130.703420f,
+            159.041830f,
+            193.508035f,
+            235.460310f,
+            286.507782f,
+            348.616731f,
+            424.190115f,
+            516.150857f,
+            628.044838f,
+            764.213258f,
+            929.914611f,
+            1131.559314f,
+            1376.941131f,
+            1675.545405f,
+            2038.935964f,
+            2481.168518f,
+            3019.339094f,
+            3674.254166f,
+            4470.574843f,
+            5439.007361f,
+            6616.045966f,
+            8047.239269f,
+            9788.571933f,
+            11907.160373f,
+            14484.677393f
+        };
+
+        // Static capture curve (dB) extracted from your dry vs DSM@10% exports (Song 1+2 averaged, smoothed)
+        static constexpr float kGainDb[kNumBands] =
+        {
+            0.760310f,
+            0.000000f,
+            0.810142f,
+            0.860032f,
+            0.911617f,
+            0.987374f,
+            1.082699f,
+            1.183147f,
+            1.301452f,
+            1.465170f,
+            1.554878f,
+            1.552840f,
+            1.570643f,
+            1.567540f,
+            1.608158f,
+            1.651806f,
+            1.683060f,
+            1.750147f,
+            1.842836f,
+            1.982185f,
+            2.148078f,
+            2.376799f,
+            2.646037f,
+            2.927008f,
+            3.152581f,
+            3.302534f,
+            3.377938f,
+            3.488114f,
+            3.564036f,
+            4.178587f,
+            4.352958f,
+            4.352958f
+        };
+
+        std::vector<std::vector<juce::dsp::IIR::Filter<float>>> filters;
+    };
+
+    DsmCaptureEq dsmCaptureEq;
 
 
     //==========================================================
