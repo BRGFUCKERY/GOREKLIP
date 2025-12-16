@@ -862,7 +862,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     // Fine alignment scalar to tune RMS/null vs Fruity.
     // Start at 1.0f. Later you can try values like 0.99998f, 1.00002f, etc.
-    constexpr float fruityFineCal = 0.99997f;
+    constexpr float fruityFineCal = 1.0f;
 
     // This is the actual drive into OTT/SAT/clipper for default mode.
     const float inputDrive = inputGain * fruityCal * fruityFineCal;
@@ -919,26 +919,34 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         //==========================================================
-        // PRE-CHAIN: GAIN + SILK + DSM capture EQ (base rate)
-        //==========================================================
-        for (int ch = 0; ch < numChannels; ++ch)
+// PRE-CHAIN: GAIN + SILK + DSM capture EQ (base rate)
+//==========================================================
+const bool silkOn = (marryAmount > 0.0f);
+const bool dsmOn  = (w > 0.0f);
+
+for (int ch = 0; ch < numChannels; ++ch)
+{
+    float* samples = buffer.getWritePointer (ch);
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        float s = samples[i] * inputDrive;
+
+        if (silkOn)
+            s = applySilkAnalogSample (s, ch, marryAmount);
+
+        if (isAnalogMode)
+            s = applyAnalogToneMatch (s, ch, marryAmount);
+
+        if (dsmOn)
         {
-            float* samples = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
-            {
-                float s = samples[i] * inputDrive;
-                s = applySilkAnalogSample (s, ch, marryAmount);
-
-                if (isAnalogMode)
-                    s = applyAnalogToneMatch (s, ch, marryAmount);
-
-                float eq = dsmCaptureEq.processSample (ch, s);
-                s = s + w * (eq - s);
-
-                samples[i] = s;
-            }
+            float eq = dsmCaptureEq.processSample (ch, s);
+            s = s + w * (eq - s);
         }
+
+        samples[i] = s;
+    }
+}
 
         //==========================================================
         // BASE-RATE SATURATION (always before oversampling)
