@@ -128,21 +128,7 @@ private:
     // Oversampling config helper
     void updateOversampling (int osIndex, int numChannels);
 
-    
     //==========================================================
-    // DSM CAPTURE (fixed curve from your DSM@10% exports)
-    //   - Implemented as a captured linear-phase FIR magnitude curve
-    //   - FU#K knob (ottAmount param) blends between dry and this curve
-    //==========================================================
-    static constexpr int dsmCaptureNumTaps = 1024;
-    static constexpr int dsmCaptureLatency = (dsmCaptureNumTaps - 1) / 2;
-
-    juce::dsp::ProcessorDuplicator<juce::dsp::FIR::Filter<float>,
-                                  juce::dsp::FIR::Coefficients<float>> dsmCaptureFir;
-
-    juce::AudioBuffer<float> dsmTemp; // temp buffer for filtered path
-
-//==========================================================
     // K-weighted LUFS meter state
     //==========================================================
     struct KFilterState
@@ -158,6 +144,22 @@ private:
     std::vector<KFilterState> kFilterStates;
     float lufsMeanSquare = 1.0e-6f;  // keep > 0 to avoid log(0)
     float lufsAverageLufs = -60.0f;  // slow (~2s) averaged LUFS in dB for LOOK = LUFS burn
+
+    //==========================================================
+    // OTT high-pass split state (0–150 Hz dry, >150 Hz OTT)
+    //==========================================================
+    struct OttHPState
+    {
+        float low = 0.0f;  // running lowpass state for low band
+        float env = 0.0f;  // high-band envelope for dynamics
+    };
+
+    void resetOttState (int numChannels);
+
+    std::vector<OttHPState> ottStates;
+    float ottAlpha     = 0.0f;   // one-pole LP factor for 150 Hz split
+    float ottEnvAlpha  = 0.0f;   // envelope smoothing factor
+    float lastOttGain  = 1.0f;   // now stores static trim (for debug/consistency)
 
     struct SilkState
     {

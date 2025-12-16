@@ -501,7 +501,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     gainSlider.setRange (-12.0, 12.0, 0.01);
 
     setupKnob01 (ottSlider);
-    setupKnob01 (silkSlider);
     setupKnob01 (satSlider);
     setupKnob01 (modeSlider);
 
@@ -510,13 +509,11 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     gainSlider.setLookAndFeel (&fingerLnf);
     ottSlider .setLookAndFeel (&fingerLnf);
-    silkSlider.setLookAndFeel (&fingerLnf);
     satSlider .setLookAndFeel (&fingerLnf);
     modeSlider.setLookAndFeel (&fingerLnf);
 
     addAndMakeVisible (gainSlider);
     addAndMakeVisible (ottSlider);
-    addAndMakeVisible (silkSlider);
     addAndMakeVisible (satSlider);
     addAndMakeVisible (modeSlider);
 
@@ -535,14 +532,12 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     };
 
     setupLabel (gainLabel, "GAIN");
-    setupLabel (ottLabel,  "FU#K");
-    setupLabel (silkLabel, "MARRY");
-    setupLabel (satLabel,  "K#LL");
+    setupLabel (ottLabel,  getLoveSilkLabelText());
+    setupLabel (satLabel,  "DEATH");
     setupLabel (modeLabel, getClipperLabelText()); // will flip to LIMITER / 50-69 in runtime
 
     addAndMakeVisible (gainLabel);
     addAndMakeVisible (ottLabel);
-    addAndMakeVisible (silkLabel);
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
 
@@ -574,17 +569,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     setupValueLabel (gainValueLabel);
     setupValueLabel (ottValueLabel);
-    setupValueLabel (silkValueLabel);
     setupValueLabel (satValueLabel);
 
     addAndMakeVisible (gainValueLabel);
     addAndMakeVisible (ottValueLabel);
-    addAndMakeVisible (silkValueLabel);
     addAndMakeVisible (satValueLabel);
 
     gainValueLabel.setVisible (false);
     ottValueLabel.setVisible (false);
-    silkValueLabel.setVisible (false);
     satValueLabel.setVisible (false);
 
     // SETTINGS (left pentagram)
@@ -633,9 +625,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     ottAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "ottAmount", ottSlider);
 
-    silkAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                        apvts, "silkAmount", silkSlider);
-
     satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "satAmount", satSlider);
 
@@ -677,13 +666,6 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     setupValuePopup (ottSlider, ottValueLabel, [this]()
     {
         const double raw = ottSlider.getValue();
-        const int percent = (int) std::round (raw * 100.0);
-        return juce::String (percent) + " %";
-    });
-
-    setupValuePopup (silkSlider, silkValueLabel, [this]()
-    {
-        const double raw = silkSlider.getValue();
         const int percent = (int) std::round (raw * 100.0);
         return juce::String (percent) + " %";
     });
@@ -878,7 +860,7 @@ void FruityClipAudioProcessorEditor::resized()
     const int knobSize = juce::jmin (w / 7, h / 3);
     const int spacing  = knobSize / 2;
 
-    const int totalW   = knobSize * 5 + spacing * 4;
+    const int totalW   = knobSize * 4 + spacing * 3;
     const int startX   = (w - totalW) / 2;
 
     const int bottomMargin = (int) (h * 0.05f);
@@ -886,9 +868,8 @@ void FruityClipAudioProcessorEditor::resized()
 
     gainSlider.setBounds (startX + 0 * (knobSize + spacing), knobY, knobSize, knobSize);
     ottSlider .setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
-    silkSlider.setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
-    satSlider .setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
-    modeSlider.setBounds (startX + 4 * (knobSize + spacing), knobY, knobSize, knobSize);
+    satSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
+    modeSlider.setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
 
     const int labelH = 20;
 
@@ -901,11 +882,6 @@ void FruityClipAudioProcessorEditor::resized()
                         ottSlider.getBottom() + 2,
                         ottSlider.getWidth(),
                         labelH);
-
-    silkLabel.setBounds (silkSlider.getX(),
-                         silkSlider.getBottom() + 2,
-                         silkSlider.getWidth(),
-                         labelH);
 
     satLabel.setBounds (satSlider.getX(),
                         satSlider.getBottom() + 2,
@@ -994,7 +970,9 @@ void FruityClipAudioProcessorEditor::timerCallback()
         lufsLabel.setText (juce::String (lufs, 2) + " LUFS",
                            juce::dontSendNotification);
     }
-modeLabel.setText (getClipperLabelText(), juce::dontSendNotification);
+
+    ottLabel.setText (getLoveSilkLabelText(), juce::dontSendNotification);
+    modeLabel.setText (getClipperLabelText(), juce::dontSendNotification);
 
     // Drive pentagrams / x1 colour from lastBurn (0..1)
     const float burnForIcons = juce::jlimit (0.0f, 1.0f, lastBurn);
@@ -1137,6 +1115,15 @@ void FruityClipAudioProcessorEditor::setLookMode (LookMode mode)
 void FruityClipAudioProcessorEditor::openKlipBible()
 {
     showBypassInfoPopup();
+}
+
+juce::String FruityClipAudioProcessorEditor::getLoveSilkLabelText() const
+{
+    const auto mode = processor.getClipMode();
+    if (mode == FruityClipAudioProcessor::ClipMode::Analog)
+        return "SILK";
+
+    return "LOVE";
 }
 
 juce::String FruityClipAudioProcessorEditor::getClipperLabelText() const

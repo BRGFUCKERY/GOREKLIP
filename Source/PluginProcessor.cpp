@@ -19,185 +19,6 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-
-//==============================================================
-// DSM@10% capture curve (derived from provided dry/DSM export pairs)
-// Implemented as a fixed FIR magnitude curve.
-//==============================================================
-static const float kDsmCaptureTaps[1024] = {
-    0.0f, 3.16026039e-10f, -1.97646077e-09f, 2.98121372e-09f, -8.27607671e-09f, 8.10514855e-09f,
-    -1.92976994e-08f, 1.63621419e-08f, -3.3338285e-08f, 2.66917919e-08f, -5.1727941e-08f, 4.20990212e-08f,
-    -7.16291524e-08f, 5.66364342e-08f, -1.0133607e-07f, 7.41279464e-08f, -1.3102445e-07f, 9.55594572e-08f,
-    -1.63433072e-07f, 1.15164021e-07f, -1.98605633e-07f, 1.40358935e-07f, -2.38106878e-07f, 1.65743742e-07f,
-    -2.78863837e-07f, 1.91854568e-07f, -3.22831028e-07f, 2.19156391e-07f, -3.65738828e-07f, 2.4803893e-07f,
-    -4.1639197e-07f, 2.7961957e-07f, -4.70277172e-07f, 3.05060553e-07f, -5.16852879e-07f, 3.43216328e-07f,
-    -5.67610471e-07f, 3.5775679e-07f, -6.11635528e-07f, 3.97077685e-07f, -6.64987226e-07f, 4.18750005e-07f,
-    -7.06433923e-07f, 4.38618258e-07f, -7.57712996e-07f, 4.61355313e-07f, -8.04049023e-07f, 4.78148593e-07f,
-    -8.30129125e-07f, 4.9282221e-07f, -8.80596417e-07f, 5.21156778e-07f, -9.32237356e-07f, 5.34185972e-07f,
-    -9.66323341e-07f, 5.43722194e-07f, -9.9843362e-07f, 5.55526128e-07f, -1.04066817e-06f, 5.69704014e-07f,
-    -1.06633672e-06f, 5.50345476e-07f, -1.08302618e-06f, 5.79886375e-07f, -1.13552755e-06f, 5.93693414e-07f,
-    -1.13167061e-06f, 5.98688075e-07f, -1.19764024e-06f, 6.25875089e-07f, -1.22702863e-06f, 5.73410034e-07f,
-    -1.16568378e-06f, 5.0103489e-07f, -1.39152928e-06f, 5.83076485e-07f, -1.45019351e-06f, 4.49750729e-07f,
-    -1.43215948e-06f, 4.61255325e-07f, -1.48521053e-06f, 6.27582153e-07f, -1.2240572e-06f, 5.36253708e-07f,
-    -1.37925406e-06f, 7.97144764e-07f, -1.62126798e-06f, 2.21650652e-07f, -1.26612008e-06f, 1.14119942e-07f,
-    -1.59891249e-06f, 5.94732683e-07f, -1.6415438e-06f, 2.23179612e-07f, -1.6207423e-06f, 4.8927825e-07f,
-    -1.6774037e-06f, 6.47002764e-07f, -1.76597234e-06f, 6.3515796e-07f, -1.63552954e-06f, 6.70253314e-07f,
-    -2.27346436e-06f, 8.9377221e-07f, -1.75396167e-06f, 6.24030747e-07f, -2.0635789e-06f, 6.24484301e-07f,
-    -2.31260333e-06f, 8.15881094e-07f, -2.50745256e-06f, 7.1313309e-07f, -2.30563819e-06f, 7.85275347e-07f,
-    -2.7925737e-06f, 9.3495197e-07f, -2.95073437e-06f, 9.52411767e-07f, -2.96088615e-06f, 1.0740581e-06f,
-    -3.30673902e-06f, 1.28711781e-06f, -3.55622637e-06f, 1.41793703e-06f, -3.73468151e-06f, 1.70049054e-06f,
-    -4.25535245e-06f, 1.7947151e-06f, -4.21554296e-06f, 1.6490535e-06f, -4.37744575e-06f, 1.87872308e-06f,
-    -5.27767543e-06f, 2.95501104e-06f, -5.49451079e-06f, 1.96135466e-06f, -5.46053752e-06f, 2.00266345e-06f,
-    -6.97934593e-06f, 3.10500172e-06f, -7.59063505e-06f, 3.65873188e-06f, -6.98240547e-06f, 2.04236267e-06f,
-    -7.2521575e-06f, 3.48668482e-06f, -8.66744085e-06f, 6.22260268e-06f, -1.05699828e-05f, 6.66468486e-06f,
-    -8.40465873e-06f, 5.72946874e-06f, -8.42858753e-06f, 4.72406691e-06f, -1.07343485e-05f, 7.85806787e-06f,
-    -1.26541272e-05f, 6.53336883e-06f, -1.26172235e-05f, 9.33489446e-06f, -8.64957565e-06f, 7.90796821e-06f,
-    -1.10769943e-05f, 4.20821971e-06f, -1.17247237e-05f, 8.92539447e-06f, -1.74347661e-05f, 1.10990468e-05f,
-    -1.86334673e-05f, 6.71916723e-06f, -1.79234557e-05f, 8.76524064e-06f, -1.78526898e-05f, 8.10384608e-06f,
-    -1.5506912e-05f, 6.60608521e-06f, -2.03665895e-05f, 1.41520377e-05f, -2.58626897e-05f, 1.42620129e-05f,
-    -2.52777554e-05f, 1.05879753e-05f, -2.27357068e-05f, 9.28274949e-06f, -2.12446084e-05f, 1.33030371e-05f,
-    -2.48388023e-05f, 1.66285245e-05f, -2.83591107e-05f, 2.08496713e-05f, -2.81686425e-05f, 1.81952382e-05f,
-    -3.37253441e-05f, 1.92408424e-05f, -3.33065254e-05f, 2.42225597e-05f, -3.49054571e-05f, 2.13771309e-05f,
-    -3.6433823e-05f, 2.33731171e-05f, -3.71067472e-05f, 2.35299776e-05f, -3.81949903e-05f, 2.30479054e-05f,
-    -4.23352685e-05f, 2.67938212e-05f, -4.54591318e-05f, 2.90148564e-05f, -4.54737565e-05f, 2.9117291e-05f,
-    -4.58162649e-05f, 3.31926058e-05f, -4.87545476e-05f, 3.12206794e-05f, -4.89907943e-05f, 3.1261352e-05f,
-    -4.89720769e-05f, 3.12954871e-05f, -5.09721722e-05f, 3.23684326e-05f, -5.28434211e-05f, 3.35656041e-05f,
-    -5.61687957e-05f, 3.59276892e-05f, -5.83776236e-05f, 3.71123533e-05f, -6.05094065e-05f, 3.95796997e-05f,
-    -6.23562591e-05f, 4.28350213e-05f, -6.64087202e-05f, 4.58502618e-05f, -6.44503816e-05f, 4.12170339e-05f,
-    -6.338807e-05f, 3.94519593e-05f, -6.38487909e-05f, 4.20948199e-05f, -6.31753283e-05f, 3.81585669e-05f,
-    -6.7951587e-05f, 3.97896001e-05f, -7.05202328e-05f, 4.40003932e-05f, -7.18350129e-05f, 4.68164544e-05f,
-    -7.55042784e-05f, 4.52026143e-05f, -7.71212362e-05f, 4.40675612e-05f, -7.05033162e-05f, 4.35800175e-05f,
-    -7.68336977e-05f, 4.64104196e-05f, -7.51068437e-05f, 4.80214076e-05f, -7.56689769e-05f, 4.46487393e-05f,
-    -7.64296274e-05f, 5.01521026e-05f, -7.31833861e-05f, 4.07460902e-05f, -7.23950361e-05f, 4.51366359e-05f,
-    -7.65387667e-05f, 4.82273208e-05f, -7.95992746e-05f, 5.07843979e-05f, -7.79693801e-05f, 4.6644047e-05f,
-    -7.5882228e-05f, 4.2977339e-05f, -7.38895105e-05f, 4.48495048e-05f, -7.21020333e-05f, 4.0316645e-05f,
-    -6.87781139e-05f, 4.09947243e-05f, -6.92434915e-05f, 4.08535452e-05f, -7.03022088e-05f, 3.79170851e-05f,
-    -6.74794646e-05f, 3.57449535e-05f, -6.52502349e-05f, 3.35547738e-05f, -6.29645147e-05f, 3.08095914e-05f,
-    -6.03031112e-05f, 2.96191793e-05f, -5.87316717e-05f, 2.6110547e-05f, -5.58745051e-05f, 2.60039669e-05f,
-    -5.01441646e-05f, 2.36575343e-05f, -5.0342318e-05f, 2.18383702e-05f, -4.81464049e-05f, 1.46880438e-05f,
-    -4.45628721e-05f, 1.07305477e-05f, -4.02870573e-05f, 9.59439603e-06f, -3.73221155e-05f, 8.94787627e-06f,
-    -3.67711218e-05f, 3.18525281e-06f, -3.08087547e-05f, -1.01005537e-06f, -2.79430442e-05f, -3.16081446e-06f,
-    -2.63644288e-05f, -8.84315523e-06f, -2.26406955e-05f, -9.85982479e-06f, -2.05979723e-05f, -1.28839592e-05f,
-    -1.87058977e-05f, -1.76496123e-05f, -1.43717998e-05f, -2.1035492e-05f, -9.3424951e-06f, -2.11065999e-05f,
-    -7.04857439e-06f, -2.3476332e-05f, -2.60357325e-07f, -2.87768289e-05f, -9.01599742e-06f, -3.40818879e-05f,
-    -1.46027714e-05f, -4.34651847e-05f, -1.78013886e-06f, -3.71943679e-05f, -1.2178316e-05f, -3.584144e-05f,
-    -2.37533295e-05f, -3.01554355e-05f, -5.10482096e-05f, -1.1822015e-05f, -4.95932327e-05f, -1.32343021e-05f,
-    -3.20509935e-05f, -2.30014302e-05f, -3.32484233e-05f, -1.44017231e-05f, -4.90635939e-05f, 3.95542975e-06f,
-    -6.66823471e-05f, -2.66858951e-05f, -1.24639146e-05f, -2.70950732e-05f, -5.60981562e-06f, 1.01867327e-05f,
-    -4.36095179e-05f, 2.99004005e-05f, -3.63626823e-05f, -1.35437849e-05f, -6.92111062e-05f, 3.11356998e-05f,
-    -7.04633494e-05f, 7.41104168e-06f, -0.00010194871f, 4.21538498e-05f, -7.04845224e-05f, -3.59172918e-05f,
-    -0.000331265066f, -3.86890752e-05f, -0.000280760753f, 0.000144222577f, -0.000264539849f, 0.000143631449f,
-    -0.00013568849f, 0.00017060648f, -0.000286644499f, 0.000180742616f, -0.000256281259f, 0.000308420305f,
-    -0.000291557371f, 0.000215345062f, -0.000350949151f, 0.000254912215f, -0.000417381147f, 0.000257708423f,
-    -0.000434150745f, 0.000363723084f, -0.000505370088f, 0.00034972094f, -0.000536420208f, 0.000456305279f,
-    -0.0005460424f, 0.00053259515f, -0.000620232953f, 0.000493684609f, -0.000693528447f, 0.000550805591f,
-    -0.000806911732f, 0.00059380976f, -0.000813818246f, 0.000663468381f, -0.000924330903f, 0.000607784314f,
-    -0.000906971283f, 0.00061688904f, -0.00102794683f, 0.000702404301f, -0.00110928202f, 0.000742820033f,
-    -0.00112264766f, 0.000795864209f, -0.0012029832f, 0.000873977318f, -0.00129742408f, 0.000893985445f,
-    -0.00139966724f, 0.000955703144f, -0.00147094647f, 0.00100054953f, -0.00155565643f, 0.00103795866f,
-    -0.00166757265f, 0.00107671181f, -0.00173930009f, 0.00113431388f, -0.00180881447f, 0.00108144968f,
-    -0.00183319743f, 0.00141972688f, -0.00209205737f, 0.0014564821f, -0.00220345217f, 0.00140591781f,
-    -0.00214915816f, 0.00133905828f, -0.00221257727f, 0.00156070571f, -0.00255856523f, 0.00164108025f,
-    -0.00243414775f, 0.00176605734f, -0.00207453943f, 0.0018181866f, -0.00289782579f, 0.00183197984f,
-    -0.00322170067f, 0.00150824641f, -0.00302754249f, 0.00183922739f, -0.00318150385f, 0.00193632091f,
-    -0.00341269514f, 0.00157684262f, -0.00311430427f, 0.00176659191f, -0.00299573387f, 0.00212388812f,
-    -0.00415478507f, 0.00240727374f, -0.0041272114f, 0.00161221321f, -0.00381850963f, 0.00125872937f,
-    -0.0038007542f, 0.00171522528f, -0.0036207044f, 0.00266198022f, -0.00448019896f, 0.00257580285f,
-    -0.00452005258f, 0.00225020759f, -0.00443998771f, 0.00248411763f, -0.00395993004f, 0.00216680393f,
-    -0.00483015226f, 0.00292008347f, -0.00476999301f, 0.00365568209f, -0.00548314396f, 0.00309902127f,
-    -0.00495011266f, 0.00282873958f, -0.00440413598f, 0.00255269022f, -0.00412010355f, 0.00370278396f,
-    -0.00390578806f, 0.0028460063f, -0.0060935854f, 0.00299632619f, -0.00488904817f, 0.00418931479f,
-    -0.00430911779f, 0.00378662185f, -0.00513107236f, 0.00364897167f, -0.00342690223f, 0.00532755256f,
-    -0.00427678414f, 0.00847097673f, -0.00178567355f, 0.00723784557f, -0.000754562439f, -0.00199625106f,
-    -0.0041760793f, 0.00362715218f, -0.00919874012f, -0.00552224508f, -0.0156900734f, 0.0032464473f,
-    -0.0074251811f, -0.209691197f, 1.71998942f, -0.209687233f, -0.00742490124f, 0.0032462636f,
-    -0.0156888887f, -0.00552172447f, -0.00919769891f, 0.00362667325f, -0.00417544879f, -0.00199591205f,
-    -0.000754420122f, 0.00723634334f, -0.00178526924f, 0.00846889894f, -0.00427565398f, 0.00532604428f,
-    -0.00342586753f, 0.00364780077f, -0.00512932893f, 0.00378526351f, -0.00430749031f, 0.00418765331f,
-    -0.00488701696f, 0.00299502444f, -0.00609082263f, 0.00284466194f, -0.00390386907f, 0.0037008943f,
-    -0.00411792286f, 0.00255129044f, -0.00440163724f, 0.00282708113f, -0.00494711613f, 0.00309708621f,
-    -0.00547961565f, 0.00365326018f, -0.00476674177f, 0.00291803759f, -0.0048266761f, 0.00216520298f,
-    -0.00395692838f, 0.002482187f, -0.00443645194f, 0.00224837265f, -0.00451627979f, 0.0025736033f,
-    -0.00447628787f, 0.00265960488f, -0.0036174038f, 0.00171362865f, -0.00379714323f, 0.00125750911f,
-    -0.00381473429f, 0.00161058793f, -0.00412297063f, 0.00240475358f, -0.00415035477f, 0.00212158239f,
-    -0.00299242348f, 0.00176460529f, -0.0031107415f, 0.00157500792f, -0.00340865762f, 0.00193399226f,
-    -0.00317761558f, 0.00183694356f, -0.00302372361f, 0.00150631426f, -0.00321751018f, 0.00182956096f,
-    -0.00289394241f, 0.00181571406f, -0.00207167724f, 0.00176358572f, -0.00243069301f, 0.00163871853f,
-    -0.00255483226f, 0.00155839755f, -0.00220926083f, 0.00133702438f, -0.0021458508f, 0.00140372617f,
-    -0.00219997298f, 0.0014541531f, -0.00208867015f, 0.0014173995f, -0.00183015515f, 0.00107963313f,
-    -0.00180573948f, 0.00113236252f, -0.00173627271f, 0.00107481575f, -0.00166460208f, 0.00103608845f,
-    -0.0015528216f, 0.000998705742f, -0.00146820559f, 0.000953902665f, -0.00139700156f, 0.000892264361f,
-    -0.0012948995f, 0.000872258504f, -0.00120059238f, 0.000794265943f, -0.00112036976f, 0.000741297263f,
-    -0.0011069848f, 0.000700934906f, -0.00102577487f, 0.000615572615f, -0.000905016612f, 0.000606461603f,
-    -0.000922299689f, 0.00066199631f, -0.000811995182f, 0.000592466909f, -0.000805069692f, 0.000549536373f,
-    -0.000691915455f, 0.000492525811f, -0.000618763675f, 0.000531321915f, -0.000544725161f, 0.000455194619f,
-    -0.000535102852f, 0.000348854432f, -0.000504106865f, 0.000362805935f, -0.000433046429f, 0.000257047213f,
-    -0.000416301045f, 0.000254246901f, -0.000350025395f, 0.000214773419f, -0.000290776894f, 0.000307587761f,
-    -0.000255583727f, 0.000180246599f, -0.000285851362f, 0.000170130545f, -0.000135306895f, 0.000143224228f,
-    -0.00026378379f, 0.000143807076f, -0.000279945438f, -3.85758321e-05f, -0.000330287789f, -3.5810499e-05f,
-    -7.02733087e-05f, 4.20265496e-05f, -0.000101638449f, 7.38831386e-06f, -7.02455945e-05f, 3.10387441e-05f,
-    -6.89939479e-05f, -1.35009677e-05f, -3.624686e-05f, 2.98044451e-05f, -4.34685244e-05f, 1.01535525e-05f,
-    -5.5914079e-06f, -2.70055098e-05f, -1.24224116e-05f, -2.65963845e-05f, -6.64570471e-05f, 3.94196832e-06f,
-    -4.88954101e-05f, -1.43520001e-05f, -3.31328047e-05f, -2.29208745e-05f, -3.19379433e-05f, -1.31872903e-05f,
-    -4.94158157e-05f, -1.17794234e-05f, -5.08630073e-05f, -3.00452648e-05f, -2.36659416e-05f, -3.57086647e-05f,
-    -1.21328885e-05f, -3.70546622e-05f, -1.77340644e-06f, -4.32996712e-05f, -1.45467839e-05f, -3.3950324e-05f,
-    -8.98095641e-06f, -2.8664228e-05f, -2.59331671e-07f, -2.33832252e-05f, -7.02043144e-06f, -2.10217622e-05f,
-    -9.30469196e-06f, -2.09498048e-05f, -1.43128673e-05f, -1.75767582e-05f, -1.86281704e-05f, -1.28300699e-05f,
-    -2.05112483e-05f, -9.81803987e-06f, -2.25441163e-05f, -8.80518473e-06f, -2.62504873e-05f, -3.14706494e-06f,
-    -2.78207026e-05f, -1.00560442e-06f, -3.06721086e-05f, 3.17103422e-06f, -3.66059212e-05f, 8.9074174e-06f,
-    -3.71522729e-05f, 9.55045471e-06f, -4.0101364e-05f, 1.0680772e-05f, -4.43548415e-05f, 1.46190387e-05f,
-    -4.79187729e-05f, 2.17344641e-05f, -5.01012728e-05f, 2.35435418e-05f, -4.99010202e-05f, 2.58770815e-05f,
-    -5.56001469e-05f, 2.59815315e-05f, -5.84396475e-05f, 2.94709844e-05f, -5.99995001e-05f, 3.06535039e-05f,
-    -6.26435285e-05f, 3.33826429e-05f, -6.49134236e-05f, 3.55592965e-05f, -6.71267917e-05f, 3.77176875e-05f,
-    -6.99302109e-05f, 4.06360268e-05f, -6.88725268e-05f, 4.07737389e-05f, -6.8405061e-05f, 4.00966164e-05f,
-    -7.17061048e-05f, 4.46017038e-05f, -7.34787391e-05f, 4.27369414e-05f, -7.54551584e-05f, 4.63799151e-05f,
-    -7.75251392e-05f, 5.0493265e-05f, -7.91401471e-05f, 4.79474329e-05f, -7.6091841e-05f, 4.48714527e-05f,
-    -7.19670934e-05f, 4.05037499e-05f, -7.27454462e-05f, 4.98501431e-05f, -7.59666291e-05f, 4.43766039e-05f,
-    -7.52049382e-05f, 4.77251087e-05f, -7.46405785e-05f, 4.61205309e-05f, -7.63508287e-05f, 4.33044552e-05f,
-    -7.0054768e-05f, 4.3785476e-05f, -7.66245357e-05f, 4.49096988e-05f, -7.50119943e-05f, 4.65093326e-05f,
-    -7.13608679e-05f, 4.37081835e-05f, -7.00490127e-05f, 3.9522085e-05f, -6.74919138e-05f, 3.78988443e-05f,
-    -6.27426707e-05f, 4.18047493e-05f, -6.34060925e-05f, 3.9176728e-05f, -6.29431088e-05f, 4.09259155e-05f,
-    -6.3992331e-05f, 4.55223817e-05f, -6.59308716e-05f, 4.252488e-05f, -6.19019629e-05f, 3.9289549e-05f,
-    -6.00630519e-05f, 3.68368783e-05f, -5.79415937e-05f, 3.56576602e-05f, -5.57439889e-05f, 3.33101525e-05f,
-    -5.24387251e-05f, 3.211898e-05f, -5.05768694e-05f, 3.10512478e-05f, -4.85874698e-05f, 3.10142823e-05f,
-    -4.86011486e-05f, 3.09707902e-05f, -4.83618314e-05f, 3.29235372e-05f, -4.54424917e-05f, 2.88782303e-05f,
-    -4.50980115e-05f, 2.87735711e-05f, -4.50786611e-05f, 2.65681247e-05f, -4.19763564e-05f, 2.28512454e-05f,
-    -3.7866972e-05f, 2.33265873e-05f, -3.67839093e-05f, 2.31684389e-05f, -3.61126877e-05f, 2.11874722e-05f,
-    -3.45937406e-05f, 2.40048194e-05f, -3.30051516e-05f, 1.90655883e-05f, -3.34161195e-05f, 1.80272982e-05f,
-    -2.79069136e-05f, 2.0654652e-05f, -2.80920722e-05f, 1.64708927e-05f, -2.46017516e-05f, 1.31752204e-05f,
-    -2.10391045e-05f, 9.19234481e-06f, -2.25127733e-05f, 1.04834453e-05f, -2.50264875e-05f, 1.41192686e-05f,
-    -2.56020503e-05f, 1.40084285e-05f, -2.01584826e-05f, 6.53811276e-06f, -1.53462406e-05f, 8.01929036e-06f,
-    -1.7665101e-05f, 8.67248855e-06f, -1.77324491e-05f, 6.64705249e-06f, -1.84320525e-05f, 1.09782131e-05f,
-    -1.72435921e-05f, 8.82681888e-06f, -1.15942921e-05f, 4.16106468e-06f, -1.09519642e-05f, 7.81805375e-06f,
-    -8.55050439e-06f, 9.227183e-06f, -1.24705566e-05f, 6.45685623e-06f, -1.25048246e-05f, 7.76465458e-06f,
-    -1.06057796e-05f, 4.66705569e-06f, -8.32609385e-06f, 5.65926302e-06f, -8.30088084e-06f, 6.58175531e-06f,
-    -1.04374376e-05f, 6.14396322e-06f, -8.55704548e-06f, 3.44192586e-06f, -7.15832311e-06f, 2.01572652e-06f,
-    -6.8906138e-06f, 3.61024695e-06f, -7.48923185e-06f, 3.06318498e-06f, -6.8845834e-06f, 1.97524878e-06f,
-    -5.38517043e-06f, 1.9340589e-06f, -5.4174061e-06f, 2.91319498e-06f, -5.20236063e-06f, 1.85168483e-06f,
-    -4.31390799e-06f, 1.62491199e-06f, -4.15329487e-06f, 1.76798312e-06f, -4.19141406e-06f, 1.67471489e-06f,
-    -3.67756957e-06f, 1.39605993e-06f, -3.50086475e-06f, 1.2668994e-06f, -3.25432279e-06f, 1.05687673e-06f,
-    -2.91308447e-06f, 9.36892718e-07f, -2.90220373e-06f, 9.19429795e-07f, -2.74577064e-06f, 7.71988368e-07f,
-    -2.26625048e-06f, 7.00832231e-07f, -2.4637784e-06f, 8.0153012e-07f, -2.27152168e-06f, 6.13279724e-07f,
-    -2.02618003e-06f, 6.12606186e-07f, -1.72152124e-06f, 8.77070477e-07f, -2.23053735e-06f, 6.57464682e-07f,
-    -1.6039919e-06f, 6.22779226e-07f, -1.73118326e-06f, 6.3411818e-07f, -1.64363212e-06f, 4.79318203e-07f,
-    -1.58737987e-06f, 2.185336e-07f, -1.60698119e-06f, 5.82066264e-07f, -1.56446299e-06f, 1.11632261e-07f,
-    -1.23819245e-06f, 2.16702887e-07f, -1.58463877e-06f, 7.78914341e-07f, -1.34732045e-06f, 5.23682502e-07f,
-    -1.19499884e-06f, 6.12493125e-07f, -1.44903936e-06f, 4.49874705e-07f, -1.39635563e-06f, 4.38356324e-07f,
-    -1.41295459e-06f, 5.67898326e-07f, -1.35480252e-06f, 4.87624902e-07f, -1.13403985e-06f, 5.57619273e-07f,
-    -1.19274375e-06f, 6.08127834e-07f, -1.16316949e-06f, 5.81193774e-07f, -1.09809071e-06f, 5.75800527e-07f,
-    -1.10076007e-06f, 5.61844672e-07f, -1.04877802e-06f, 5.32652336e-07f, -1.03147511e-06f, 5.50758614e-07f,
-    -1.00545662e-06f, 5.36395817e-07f, -9.63430352e-07f, 5.24310167e-07f, -9.31178704e-07f, 5.14388262e-07f,
-    -8.97017742e-07f, 5.01078944e-07f, -8.45988438e-07f, 4.73056701e-07f, -7.9613875e-07f, 4.58152385e-07f,
-    -7.69690757e-07f, 4.41202047e-07f, -7.23861035e-07f, 4.18566572e-07f, -6.7337055e-07f, 3.98673876e-07f,
-    -6.32310673e-07f, 3.77067124e-07f, -5.8000461e-07f, 3.38757701e-07f, -5.36634388e-07f, 3.23954481e-07f,
-    -4.86999511e-07f, 2.86910819e-07f, -4.41431581e-07f, 2.61920832e-07f, -3.89167383e-07f, 2.31269198e-07f,
-    -3.40139962e-07f, 2.03257088e-07f, -2.98523304e-07f, 1.76840416e-07f, -2.56147189e-07f, 1.51666015e-07f,
-    -2.16982102e-07f, 1.27326103e-07f, -1.79263566e-07f, 1.03372535e-07f, -1.45794303e-07f, 8.46566053e-08f,
-    -1.15169435e-07f, 6.45795666e-08f, -8.73839312e-08f, 4.82620557e-08f, -6.01927397e-08f, 3.47948763e-08f,
-    -4.19021369e-08f, 2.1090937e-08f, -2.55258286e-08f, 1.20216566e-08f, -1.34016434e-08f, 5.18744203e-09f,
-    -4.65539562e-09f, 1.32500466e-09f, -4.94119856e-10f, 0f
-};
-
 //==============================================================
 // Parameter layout
 //==============================================================
@@ -211,18 +32,14 @@ FruityClipAudioProcessor::createParameterLayout()
         "inputGain", "Input Gain",
         juce::NormalisableRange<float> (-12.0f, 12.0f, 0.01f), 0.0f));
 
-    // FU#K (DSM capture) – 0..1
+    // OTT – 0..1 (150 Hz+ only, parallel)
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "ottAmount", "FU#K",
+        "ottAmount", "OTT Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
-    // MARRY (Silk) – 0..1
+    // SAT – 0..1
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "silkAmount", "MARRY",
-        juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
-// SAT – 0..1
-    params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "satAmount", "K#LL",
+        "satAmount", "Saturation Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
     // MODE – 0 = clipper, 1 = limiter
@@ -475,32 +292,16 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     resetKFilterState (getTotalNumOutputChannels());
     lufsMeanSquare = 1.0e-6f;
     lufsAverageLufs = -60.0f;
+
+    // Reset OTT split state
+    resetOttState (getTotalNumOutputChannels());
+
     // Reset SAT bass-tilt state
     resetSatState (getTotalNumOutputChannels());
 
     resetSilkState (getTotalNumOutputChannels());
     resetAnalogClipState (getTotalNumOutputChannels());
     resetAnalogTransientState (getTotalNumOutputChannels());
-
-    //==========================================================
-    // DSM capture FIR init (FU#K)
-    //==========================================================
-    {
-        juce::dsp::ProcessSpec spec;
-        spec.sampleRate = sampleRate;
-        spec.maximumBlockSize = (juce::uint32) juce::jmax (1, samplesPerBlock);
-        spec.numChannels = (juce::uint32) juce::jmax (1, getTotalNumOutputChannels());
-
-        dsmCaptureFir.reset();
-        dsmCaptureFir.state = juce::dsp::FIR::Coefficients<float>::make (kDsmCaptureTaps, dsmCaptureNumTaps);
-        dsmCaptureFir.prepare (spec);
-
-        // temp buffer used for the "wet" path of the captured curve
-        dsmTemp.setSize ((int) spec.numChannels, (int) spec.maximumBlockSize, false, false, true);
-
-        setLatencySamples (dsmCaptureLatency);
-    }
-
 
     const float sr = (float) sampleRate;
 
@@ -519,6 +320,22 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         const float rTau = releaseMs * 0.001f;
         analogEnvAttackAlpha  = std::exp (-1.0f / (aTau * sr));
         analogEnvReleaseAlpha = std::exp (-1.0f / (rTau * sr));
+    }
+
+
+    // One-pole lowpass factor for 150 Hz split (0–150 = low band)
+    {
+        const float fc = 150.0f;
+        const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / sr);
+        ottAlpha = juce::jlimit (0.0f, 1.0f, alpha);
+    }
+
+    // Envelope smoothing for high-band dynamics – slower now (~30 ms)
+    // This gives more "tails" and less choking after transients.
+    {
+        const float envTauSec = 0.030f; // was 0.010f
+        const float envA = std::exp (-1.0f / (envTauSec * sr));
+        ottEnvAlpha = juce::jlimit (0.0f, 1.0f, envA);
     }
 
     // One-pole lowpass for SAT bass tilt (around 300 Hz at base rate)
@@ -552,6 +369,9 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         const float alphaSlew = std::exp (-2.0f * juce::MathConstants<float>::pi * 8000.0f / sr);
         analogSlewA = juce::jlimit (0.0f, 0.9999999f, alphaSlew);
     }
+
+    lastOttGain = 1.0f;
+
     // Initial oversampling setup from parameter
     if (auto* osModeParam = parameters.getRawParameterValue ("oversampleMode"))
     {
@@ -596,6 +416,23 @@ void FruityClipAudioProcessor::resetKFilterState (int numChannels)
     {
         st.z1a = st.z2a = 0.0f;
         st.z1b = st.z2b = 0.0f;
+    }
+}
+
+//==============================================================
+// OTT HP split reset
+//==============================================================
+void FruityClipAudioProcessor::resetOttState (int numChannels)
+{
+    ottStates.clear();
+    if (numChannels <= 0)
+        return;
+
+    ottStates.resize ((size_t) numChannels);
+    for (auto& st : ottStates)
+    {
+        st.low = 0.0f;
+        st.env = 0.0f;
     }
 }
 
@@ -987,7 +824,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     if ((int) kFilterStates.size() < numChannels)
         resetKFilterState (numChannels);
-if ((int) satStates.size() < numChannels)
+    if ((int) ottStates.size() < numChannels)
+        resetOttState (numChannels);
+    if ((int) satStates.size() < numChannels)
         resetSatState (numChannels);
     if ((int) silkStates.size() < numChannels)
         resetSilkState (numChannels);
@@ -1001,26 +840,25 @@ if ((int) satStates.size() < numChannels)
     const bool isOffline = isNonRealtime();
 
     auto* gainParam     = parameters.getRawParameterValue ("inputGain");
-    auto* fuckParam     = parameters.getRawParameterValue ("ottAmount"); // FU#K knob (DSM capture)
-    auto* silkParam     = parameters.getRawParameterValue ("silkAmount"); // MARRY knob (Silk)
+    auto* loveParam     = parameters.getRawParameterValue ("ottAmount"); // LOVE knob
     auto* satParam      = parameters.getRawParameterValue ("satAmount");
     auto* limiterParam  = parameters.getRawParameterValue ("useLimiter");
     auto* clipModeParam = parameters.getRawParameterValue ("clipMode");
 
     const float inputGainDb  = gainParam    ? gainParam->load()    : 0.0f;
-    const float fuckRaw      = fuckParam    ? fuckParam->load()    : 0.0f;
-    const float silkRaw      = silkParam    ? silkParam->load()    : 0.0f;
+    const float loveRaw      = loveParam    ? loveParam->load()    : 0.0f;
     const float satAmountRaw = satParam     ? satParam->load()     : 0.0f;
     const bool  useLimiter   = limiterParam ? (limiterParam->load() >= 0.5f) : false;
 
     const int clipModeIndex  = clipModeParam ? juce::jlimit (0, 1, (int) clipModeParam->load()) : 0;
     const ClipMode clipMode  = (clipModeIndex == 0 ? ClipMode::Digital : ClipMode::Analog);
 
-    const float fuckAmount = juce::jlimit (0.0f, 1.0f, fuckRaw);
-    const float silkAmount = juce::jlimit (0.0f, 1.0f, silkRaw);
+    const float loveKnob   = juce::jlimit (0.0f, 1.0f, loveRaw);
     const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
 
     const bool  isAnalogMode      = (clipMode == ClipMode::Analog);
+    const float ottAmountDigital  = isAnalogMode ? 0.0f : loveKnob;  // only used in DIGITAL mode
+    const float silkAmountAnalog  = isAnalogMode ? loveKnob : 0.0f;  // only used in ANALOG mode
 
     // Global scalars for this block
     // inputGain comes from the finger (in dB).
@@ -1088,66 +926,227 @@ if ((int) satStates.size() < numChannels)
         }
 
         //==========================================================
-        //==========================================================
-        // PRE-CHAIN: GAIN + FU#K (DSM capture) + MARRY (Silk)
-        //   - always at base rate
+        // PRE-CHAIN: GAIN + LOVE/SILK (always at base rate)
         //==========================================================
 
-        // 1) Apply input drive
-        for (int ch = 0; ch < numChannels; ++ch)
+        if (isAnalogMode)
         {
-            float* samples = buffer.getWritePointer (ch);
-            for (int i = 0; i < numSamples; ++i)
-                samples[i] *= inputDrive;
-        }
-
-        // 2) FU#K: captured DSM curve (blend between dry and captured curve)
-        if (fuckAmount > 0.0f && sampleRate > 0.0)
-        {
-            // Ensure temp buffer is large enough
-            if (dsmTemp.getNumChannels() != numChannels || dsmTemp.getNumSamples() < numSamples)
-                dsmTemp.setSize (numChannels, numSamples, false, false, true);
-
-            dsmTemp.makeCopyOf (buffer, true);
-
-            juce::dsp::AudioBlock<float> wetBlock (dsmTemp);
-            juce::dsp::ProcessContextReplacing<float> wetCtx (wetBlock);
-            dsmCaptureFir.process (wetCtx);
-
-            // Blend: y = dry + a * (wet - dry)
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* dry = buffer.getWritePointer (ch);
-                const float* wet = dsmTemp.getReadPointer (ch);
-
-                for (int i = 0; i < numSamples; ++i)
-                    dry[i] = dry[i] + fuckAmount * (wet[i] - dry[i]);
-            }
-        }
-
-        // 3) MARRY: Silk in both modes; Analog tone-match only in Analog mode
-        if (silkAmount > 0.0f || isAnalogMode)
-        {
+            // ANALOG: LOVE acts as SILK, no OTT.
             for (int ch = 0; ch < numChannels; ++ch)
             {
                 float* samples = buffer.getWritePointer (ch);
 
                 for (int i = 0; i < numSamples; ++i)
                 {
-                    float s = samples[i];
-
-                    if (silkAmount > 0.0f)
-                        s = applySilkAnalogSample (s, ch, silkAmount);
-
-                    if (isAnalogMode)
-                        s = applyAnalogToneMatch (s, ch, silkAmount);
-
+                    float s = samples[i] * inputDrive;
+                    s = applySilkAnalogSample (s, ch, silkAmountAnalog);
+                    s = applyAnalogToneMatch (s, ch, silkAmountAnalog);
                     samples[i] = s;
+                }
+            }
+
+            lastOttGain = 1.0f; // keep whatever semantics you had
+        }
+        else
+        {
+            // DIGITAL mode pre-chain: GAIN + optional OTT
+            if (ottAmountDigital <= 0.0f)
+            {
+                // LOVE = 0 -> just drive
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* samples = buffer.getWritePointer (ch);
+                    for (int i = 0; i < numSamples; ++i)
+                        samples[i] *= inputDrive;
+                }
+
+                lastOttGain = 1.0f;
+            }
+            else
+            {
+                // DIGITAL: run OTT using ottAmountDigital.
+                juce::AudioBuffer<float> preChain;
+                preChain.makeCopyOf (buffer);
+
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* x = preChain.getWritePointer (ch);
+                    auto&  ott = ottStates[(size_t) ch];
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        float y = x[i] * inputDrive;
+
+                        // 150 Hz split
+                        ott.low = ottAlpha * ott.low + (1.0f - ottAlpha) * y;
+                        const float lowDry = ott.low;
+                        const float hiDry  = y - lowDry;
+
+                        const float absHi = std::abs (hiDry);
+                        ott.env = ottEnvAlpha * ott.env + (1.0f - ottEnvAlpha) * absHi;
+                        const float env = ott.env;
+
+                        constexpr float refLevel = 0.10f;
+                        float lev = env / (refLevel + 1.0e-6f);
+
+                        float dynGain = 1.0f;
+
+                        if (lev < 1.0f)
+                        {
+                            float t = juce::jlimit (0.0f, 1.0f, 1.0f - lev);
+                            dynGain = 1.0f + 0.9f * t;
+                        }
+                        else
+                        {
+                            float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
+                            dynGain = 1.0f - 0.35f * t;
+                        }
+
+                        float hiProcessed = hiDry * dynGain;
+
+                        float mix = std::pow (ottAmountDigital, 1.2f);
+                        float hiOut = hiDry + mix * (hiProcessed - hiDry);
+
+                        x[i] = lowDry + hiOut;
+                    }
+                }
+
+                // Copy OTT result back into main buffer
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    const float* src = preChain.getReadPointer (ch);
+                    float*       dst = buffer.getWritePointer (ch);
+
+                    for (int i = 0; i < numSamples; ++i)
+                        dst[i] = src[i];
+                }
+
+                lastOttGain = 1.0f; // or whatever scaling you had
+            }
+        }
+
+        //==========================================================
+        // BASE-RATE SATURATION (always before oversampling)
+        //==========================================================
+        const bool limiterOn = useLimiter;
+
+        if (! limiterOn && satAmount > 0.0f)
+        {
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                float* samples = buffer.getWritePointer (ch);
+                auto&  sat     = satStates[(size_t) ch];
+
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float samplePre = samples[i];
+
+                    // --- STATIC INPUT TRIM ---
+                    // At SAT = 0  -> 0 dB
+                    // At SAT = 1  -> ~-0.5 dB
+                    const float inputTrimDb = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, -0.5f);
+                    const float inputTrim   = juce::Decibels::decibelsToGain (inputTrimDb);
+
+                    samplePre *= inputTrim;
+
+                    // --- BASS TILT ---
+                    sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * samplePre;
+                    const float low = sat.low;
+
+                    const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
+                    const float tilted     = samplePre + tiltAmount * (low - samplePre);
+
+                    // --- DRIVE ---
+                    const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
+
+                    float driven = std::tanh (tilted * drive);
+
+                    // --- STATIC NORMALISATION (UNITY) ---
+                    const float norm = 1.0f / std::tanh (drive);
+                    driven *= norm;
+
+                    // --- DRY/WET ---
+                    const float mix = std::pow (satAmount, 1.0f);
+                    float sample    = samplePre + mix * (driven - samplePre);
+
+                    samples[i] = sample;
                 }
             }
         }
 
-// SAT already applied previously if needed.
+        //==========================================================
+        // DISTORTION CHAIN (CLIP or LIMITER)
+        //   - In oversampled mode, this runs at higher rate
+        //   - No metering here; meters are computed later at base rate
+        //==========================================================
+
+        // Compute DC-block coefficient for the analog clipper at the *current processing rate*.
+        // When oversampling is on, applyClipperAnalogSample runs at the oversampled rate.
+        // We want a ~sub-5 Hz corner no matter what.
+        {
+            float effectiveSr = (float) sampleRate;
+            if (oversampler && currentOversampleIndex > 0)
+                effectiveSr *= (float) oversampler->getOversamplingFactor();
+
+            // Ultra-low DC cutoff (Hz)
+            constexpr float dcFc = 3.0f;
+            analogDcAlpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / juce::jmax (1.0f, effectiveSr));
+            analogDcAlpha = juce::jlimit (0.0f, 0.9999999f, analogDcAlpha);
+        }
+
+        const bool useOversampling = (oversampler != nullptr && currentOversampleIndex > 0);
+
+        if (useOversampling)
+        {
+            juce::dsp::AudioBlock<float> block (buffer);
+
+            auto osBlock      = oversampler->processSamplesUp (block);
+            const int osNumSamples  = (int) osBlock.getNumSamples();
+            const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
+
+            for (int ch = 0; ch < osNumChannels; ++ch)
+            {
+                float* samples = osBlock.getChannelPointer (ch);
+
+                for (int i = 0; i < osNumSamples; ++i)
+                {
+                    float sample = samples[i];
+
+                    if (limiterOn)
+                    {
+                        sample = processLimiterSample (sample);
+                    }
+                    else if (isAnalogMode)
+                    {
+                        sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
+                    }
+                    else
+                    {
+                        // DIGITAL clip
+                        if (sample >  1.0f) sample =  1.0f;
+                        if (sample < -1.0f) sample = -1.0f;
+                    }
+samples[i] = sample;
+                }
+            }
+
+            // Downsample once for the whole block.
+            oversampler->processSamplesDown (block);
+        }
+        else
+        {
+            //======================================================
+            // NO OVERSAMPLING – process at base rate only
+            //======================================================
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                float* samples = buffer.getWritePointer (ch);
+
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float sample = samples[i];
+
+                    // SAT already applied previously if needed.
                     if (limiterOn)
                         sample = processLimiterSample (sample);
                     else if (isAnalogMode)

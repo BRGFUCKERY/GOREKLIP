@@ -188,17 +188,15 @@ private:
     CustomLookAndFeel customLookAndFeel;
     DownwardComboBoxLookAndFeel comboLnf;
 
-    // 5 knobs: GAIN, FU#K, MARRY, K#LL, MODE
+    // 4 knobs: GAIN, OTT, SAT, MODE
     FineControlSlider gainSlider;
-    FineControlSlider ottSlider;  // FU#K
-    FineControlSlider silkSlider; // MARRY
-    FineControlSlider satSlider;  // K#LL
+    FineControlSlider ottSlider;
+    FineControlSlider satSlider;
     FineControlSlider modeSlider;
 
     juce::Label  gainLabel;
-    juce::Label  ottLabel;   // FU#K
-    juce::Label  silkLabel; // MARRY
-    juce::Label  satLabel;   // K#LL
+    juce::Label  ottLabel;
+    juce::Label  satLabel;
     juce::Label  modeLabel;
 
     // LUFS text above CLIPPER/LIMITER finger
@@ -207,7 +205,6 @@ private:
     // Value popups while dragging knobs
     juce::Label gainValueLabel;
     juce::Label ottValueLabel;
-    juce::Label silkValueLabel;
     juce::Label satValueLabel;
 
     // Left SETTINGS dropdown (pentagram)
@@ -218,7 +215,6 @@ private:
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   silkAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
