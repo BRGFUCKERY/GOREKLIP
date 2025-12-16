@@ -861,8 +861,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     constexpr float fruityCal = 1.0f;
 
     // Fine alignment scalar to tune RMS/null vs Fruity.
-    // Start at 1.0f. Later you can try values like 0.99998f, 1.00002f, etc.
-    constexpr float fruityFineCal = 0.99997f;
+    // DIGITAL should match Fruity exactly; ANALOG keeps prior trim.
+    constexpr float fruityFineCalDigital = 1.0f;
+    constexpr float fruityFineCalAnalog  = 0.99997f;
+
+    const float fruityFineCal = isAnalogMode ? fruityFineCalAnalog : fruityFineCalDigital;
 
     // This is the actual drive into OTT/SAT/clipper for default mode.
     const float inputDrive = inputGain * fruityCal * fruityFineCal;
@@ -921,6 +924,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         //==========================================================
         // PRE-CHAIN: GAIN + SILK + DSM capture EQ (base rate)
         //==========================================================
+        const bool silkBypassDigital = (! isAnalogMode) && (marryAmount <= 0.0f);
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* samples = buffer.getWritePointer (ch);
@@ -928,13 +932,17 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (int i = 0; i < numSamples; ++i)
             {
                 float s = samples[i] * inputDrive;
-                s = applySilkAnalogSample (s, ch, marryAmount);
+                if (! silkBypassDigital)
+                    s = applySilkAnalogSample (s, ch, marryAmount);
 
                 if (isAnalogMode)
                     s = applyAnalogToneMatch (s, ch, marryAmount);
 
-                float eq = dsmCaptureEq.processSample (ch, s);
-                s = s + w * (eq - s);
+                if (w > 0.0f)
+                {
+                    float eq = dsmCaptureEq.processSample (ch, s);
+                    s = s + w * (eq - s);
+                }
 
                 samples[i] = s;
             }
@@ -1096,48 +1104,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
         }
 
-        // Do not quantize/dither in Fruity DIGITAL mode (must stay float to null).
-        if (useLimiter || isAnalogMode)
-        {
-            const int numChannels = buffer.getNumChannels();
-            const int numSamples  = buffer.getNumSamples();
-
-            // We quantize to 24-bit domain: ±2^23 discrete steps.
-            constexpr float quantSteps = 8388608.0f;       // 2^23
-            constexpr float ditherAmp  = 1.0f / quantSteps; // ~ -138 dBFS
-
-            // Simple random generator (LCG) per block.
-            static uint32_t ditherState = 0x12345678u;
-            auto randFloat = [&]() noexcept
-            {
-                ditherState = ditherState * 1664525u + 1013904223u;
-                return (ditherState & 0x00FFFFFFu) / 16777216.0f;
-            };
-
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* samples = buffer.getWritePointer (ch);
-
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    float s = samples[i];
-
-                    // inaudible Fruity-style TPDF dither
-                    const float r1 = randFloat();
-                    const float r2 = randFloat();
-                    const float tpdf = (r1 - r2) * ditherAmp;
-                    s += tpdf;
-
-                    // 24-bit style quantization
-                    const float q = std::round (s * quantSteps) / quantSteps;
-
-                    float y = q;
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
-                    samples[i] = y;
-                }
-            }
-        }
     }
 
     //==========================================================
