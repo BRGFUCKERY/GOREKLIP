@@ -1078,22 +1078,26 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         // FINAL SAFETY CEILING AT BASE RATE
-        // We ALWAYS end the chain with a strict Lavry-style 0 dBFS hard ceiling.
-        // (Analog/Digital/OS/no-OS – doesn’t matter. Final output is guaranteed in [-1, +1].)
-        for (int ch = 0; ch < numChannels; ++ch)
+        // IMPORTANT: Fruity-style DIGITAL clipper should NOT be followed by an extra hard clamp.
+        // Keep clamp only for limiter or analog paths.
+        if (useLimiter || isAnalogMode)
         {
-            float* s = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
+            for (int ch = 0; ch < numChannels; ++ch)
             {
-                float y = s[i];
-                if (y >  1.0f) y =  1.0f;
-                if (y < -1.0f) y = -1.0f;
-                s[i] = y;
+                float* s = buffer.getWritePointer (ch);
+
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float y = s[i];
+                    if (y >  1.0f) y =  1.0f;
+                    if (y < -1.0f) y = -1.0f;
+                    s[i] = y;
+                }
             }
         }
 
-
+        // Do not quantize/dither in Fruity DIGITAL mode (must stay float to null).
+        if (useLimiter || isAnalogMode)
         {
             const int numChannels = buffer.getNumChannels();
             const int numSamples  = buffer.getNumSamples();
