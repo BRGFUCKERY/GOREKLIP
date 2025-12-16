@@ -225,7 +225,8 @@ private:
                     const float Q  = 1.0f;
                     const float g  = juce::Decibels::decibelsToGain (kGainDb[i]);
 
-                    *f.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter ((double) sr, (double) fc, (double) Q, (double) g);
+                    auto coeffs = juce::dsp::IIR::Coefficients<float>::makePeakFilter ((double) sr, (double) fc, (double) Q, (double) g);
+                    f.coefficients = coeffs;
                     filters[(size_t) ch].push_back (std::move (f));
                 }
             }
