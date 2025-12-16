@@ -500,8 +500,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     gainSlider.setDragSensitivities (250, 800);
     gainSlider.setRange (-12.0, 12.0, 0.01);
 
-    setupKnob01 (ottSlider);
-    setupKnob01 (satSlider);
+    setupKnob01 (ottSlider);   // FU#K
+    setupKnob01 (silkSlider);  // MARRY
+    setupKnob01 (satSlider);   // K#LL
     setupKnob01 (modeSlider);
 
     // MODE is a hard 0/1 switch
@@ -509,11 +510,13 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     gainSlider.setLookAndFeel (&fingerLnf);
     ottSlider .setLookAndFeel (&fingerLnf);
+    silkSlider.setLookAndFeel (&fingerLnf);
     satSlider .setLookAndFeel (&fingerLnf);
     modeSlider.setLookAndFeel (&fingerLnf);
 
     addAndMakeVisible (gainSlider);
     addAndMakeVisible (ottSlider);
+    addAndMakeVisible (silkSlider);
     addAndMakeVisible (satSlider);
     addAndMakeVisible (modeSlider);
 
@@ -532,12 +535,14 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     };
 
     setupLabel (gainLabel, "GAIN");
-    setupLabel (ottLabel,  getLoveSilkLabelText());
-    setupLabel (satLabel,  "DEATH");
+    setupLabel (ottLabel,  "FU#K");
+    setupLabel (silkLabel, "MARRY");
+    setupLabel (satLabel,  "K#LL");
     setupLabel (modeLabel, getClipperLabelText()); // will flip to LIMITER / 50-69 in runtime
 
     addAndMakeVisible (gainLabel);
     addAndMakeVisible (ottLabel);
+    addAndMakeVisible (silkLabel);
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
 
@@ -624,6 +629,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
 
     ottAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "ottAmount", ottSlider);
+
+    silkAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "silkAmount", silkSlider);
 
     satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "satAmount", satSlider);
@@ -860,7 +868,7 @@ void FruityClipAudioProcessorEditor::resized()
     const int knobSize = juce::jmin (w / 7, h / 3);
     const int spacing  = knobSize / 2;
 
-    const int totalW   = knobSize * 4 + spacing * 3;
+    const int totalW   = knobSize * 5 + spacing * 4;
     const int startX   = (w - totalW) / 2;
 
     const int bottomMargin = (int) (h * 0.05f);
@@ -868,8 +876,9 @@ void FruityClipAudioProcessorEditor::resized()
 
     gainSlider.setBounds (startX + 0 * (knobSize + spacing), knobY, knobSize, knobSize);
     ottSlider .setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
-    satSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
-    modeSlider.setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
+    silkSlider.setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
+    satSlider .setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
+    modeSlider.setBounds (startX + 4 * (knobSize + spacing), knobY, knobSize, knobSize);
 
     const int labelH = 20;
 
@@ -882,6 +891,11 @@ void FruityClipAudioProcessorEditor::resized()
                         ottSlider.getBottom() + 2,
                         ottSlider.getWidth(),
                         labelH);
+
+silkLabel.setBounds (silkSlider.getX(),
+                     silkSlider.getBottom() + 2,
+                     silkSlider.getWidth(),
+                     labelH);
 
     satLabel.setBounds (satSlider.getX(),
                         satSlider.getBottom() + 2,
@@ -971,7 +985,6 @@ void FruityClipAudioProcessorEditor::timerCallback()
                            juce::dontSendNotification);
     }
 
-    ottLabel.setText (getLoveSilkLabelText(), juce::dontSendNotification);
     modeLabel.setText (getClipperLabelText(), juce::dontSendNotification);
 
     // Drive pentagrams / x1 colour from lastBurn (0..1)
@@ -1115,15 +1128,6 @@ void FruityClipAudioProcessorEditor::setLookMode (LookMode mode)
 void FruityClipAudioProcessorEditor::openKlipBible()
 {
     showBypassInfoPopup();
-}
-
-juce::String FruityClipAudioProcessorEditor::getLoveSilkLabelText() const
-{
-    const auto mode = processor.getClipMode();
-    if (mode == FruityClipAudioProcessor::ClipMode::Analog)
-        return "SILK";
-
-    return "LOVE";
 }
 
 juce::String FruityClipAudioProcessorEditor::getClipperLabelText() const

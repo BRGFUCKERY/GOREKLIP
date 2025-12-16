@@ -170,7 +170,6 @@ public:
     void setLookMode (LookMode mode); // updates processor + UI
     LookMode getLookMode() const;     // reads current mode from processor
     void openKlipBible();             // opens the Bible/help resource
-    juce::String getLoveSilkLabelText() const;
     juce::String getClipperLabelText() const;
 
 private:
@@ -188,15 +187,17 @@ private:
     CustomLookAndFeel customLookAndFeel;
     DownwardComboBoxLookAndFeel comboLnf;
 
-    // 4 knobs: GAIN, OTT, SAT, MODE
+    // 5 knobs: GAIN, FU#K, MARRY, K#LL, MODE
     FineControlSlider gainSlider;
-    FineControlSlider ottSlider;
-    FineControlSlider satSlider;
+    FineControlSlider ottSlider;   // FU#K
+    FineControlSlider silkSlider;  // MARRY
+    FineControlSlider satSlider;   // K#LL
     FineControlSlider modeSlider;
 
     juce::Label  gainLabel;
-    juce::Label  ottLabel;
-    juce::Label  satLabel;
+    juce::Label  ottLabel;   // FU#K
+    juce::Label  silkLabel;  // MARRY
+    juce::Label  satLabel;   // K#LL
     juce::Label  modeLabel;
 
     // LUFS text above CLIPPER/LIMITER finger
@@ -214,8 +215,9 @@ private:
     juce::ComboBox oversampleLiveBox;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   gainAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   ottAttachment;   // FU#K
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   silkAttachment;  // MARRY
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   satAttachment;   // K#LL
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>   modeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversampleAttachment;
 

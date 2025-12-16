@@ -32,14 +32,19 @@ FruityClipAudioProcessor::createParameterLayout()
         "inputGain", "Input Gain",
         juce::NormalisableRange<float> (-12.0f, 12.0f, 0.01f), 0.0f));
 
-    // OTT – 0..1 (150 Hz+ only, parallel)
+    // FU#K – 0..1 (DSM intensity control, scaled so 1.0 ~= DSM preset @ 10% wet)
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "ottAmount", "OTT Amount",
+        "ottAmount", "FU#K Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
+// MARRY (Silk) – 0..1 (runs in both modes; tone-match only in Analog mode)
+params.push_back (std::make_unique<juce::AudioParameterFloat>(
+    "silkAmount", "MARRY Amount",
+    juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
+
 
     // SAT – 0..1
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "satAmount", "Saturation Amount",
+        "satAmount", "K#LL Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
     // MODE – 0 = clipper, 1 = limiter
@@ -293,8 +298,8 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     lufsMeanSquare = 1.0e-6f;
     lufsAverageLufs = -60.0f;
 
-    // Reset OTT split state
-    resetOttState (getTotalNumOutputChannels());
+    // Reset DSM spectral dynamics state
+    resetDsmState (getTotalNumOutputChannels(), sampleRate);
 
     // Reset SAT bass-tilt state
     resetSatState (getTotalNumOutputChannels());
@@ -323,22 +328,24 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     }
 
 
-    // One-pole lowpass factor for 150 Hz split (0–150 = low band)
-    {
-        const float fc = 150.0f;
-        const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / sr);
-        ottAlpha = juce::jlimit (0.0f, 1.0f, alpha);
-    }
+    // One-pole lowpass factor for 150 //==========================================================
+// DSM spectral compressor frame-time smoothing (per STFT hop)
+//==========================================================
+{
+    const double sr = sampleRate;
+    const double dt = (double) dsmHopSize / sr;
 
-    // Envelope smoothing for high-band dynamics – slower now (~30 ms)
-    // This gives more "tails" and less choking after transients.
-    {
-        const float envTauSec = 0.030f; // was 0.010f
-        const float envA = std::exp (-1.0f / (envTauSec * sr));
-        ottEnvAlpha = juce::jlimit (0.0f, 1.0f, envA);
-    }
+    // Taken from your DSM screenshot / exports
+    const double attackSec  = 0.00289;
+    const double releaseSec = 0.200;
 
-    // One-pole lowpass for SAT bass tilt (around 300 Hz at base rate)
+    dsmAttackAlpha  = (float) std::exp (-dt / juce::jmax (1.0e-6, attackSec));
+    dsmReleaseAlpha = (float) std::exp (-dt / juce::jmax (1.0e-6, releaseSec));
+    dsmAttackAlpha  = juce::jlimit (0.0f, 1.0f, dsmAttackAlpha);
+    dsmReleaseAlpha = juce::jlimit (0.0f, 1.0f, dsmReleaseAlpha);
+}
+
+// One-pole lowpass for SAT bass tilt (around 300 Hz at base rate)
     {
         const float fcSat = 300.0f;
         const float alphaSat = std::exp (-2.0f * juce::MathConstants<float>::pi * fcSat / sr);
@@ -370,7 +377,6 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         analogSlewA = juce::jlimit (0.0f, 0.9999999f, alphaSlew);
     }
 
-    lastOttGain = 1.0f;
 
     // Initial oversampling setup from parameter
     if (auto* osModeParam = parameters.getRawParameterValue ("oversampleMode"))
@@ -422,18 +428,203 @@ void FruityClipAudioProcessor::resetKFilterState (int numChannels)
 //==============================================================
 // OTT HP split reset
 //==============================================================
-void FruityClipAudioProcessor::resetOttState (int numChannels)
+void FruityClipAudioProcessor::resetDsmState (int numChannels, double sr)
 {
-    ottStates.clear();
+    dsmStates.clear();
+
     if (numChannels <= 0)
         return;
 
-    ottStates.resize ((size_t) numChannels);
-    for (auto& st : ottStates)
+    // Precompute sqrt-Hann window once
+    if ((int) dsmWindow.size() != dsmFftSize)
     {
-        st.low = 0.0f;
-        st.env = 0.0f;
+        dsmWindow.assign ((size_t) dsmFftSize, 0.0f);
+
+        for (int n = 0; n < dsmFftSize; ++n)
+        {
+            const float hann = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi * (float) n / (float) (dsmFftSize - 1)));
+            dsmWindow[(size_t) n] = std::sqrt (hann);
+        }
     }
+
+    // Fixed latency: 2048 samples @ 44.1k = ~46ms (similar class of spectral processors)
+    setLatencySamples (dsmFftSize);
+
+    // Allocate channel states
+    dsmStates.resize ((size_t) numChannels);
+    for (auto& st : dsmStates)
+    {
+        st.inRing.assign  ((size_t) dsmFftSize, 0.0f);
+        st.olaRing.assign ((size_t) dsmFftSize, 0.0f);
+        st.fftData.assign ((size_t) (2 * dsmFftSize), 0.0f);
+        st.envPower.assign((size_t) (dsmFftSize / 2 + 1), 1.0e-12f);
+
+        st.inWrite  = 0;
+        st.olaRead  = 0;
+        st.hopCount = dsmHopSize;
+    }
+
+    // Recompute smoothing (in case sr changed)
+    {
+        const double dt = (double) dsmHopSize / juce::jmax (1.0, sr);
+
+        const double attackSec  = 0.00289;
+        const double releaseSec = 0.200;
+
+        dsmAttackAlpha  = (float) std::exp (-dt / juce::jmax (1.0e-6, attackSec));
+        dsmReleaseAlpha = (float) std::exp (-dt / juce::jmax (1.0e-6, releaseSec));
+        dsmAttackAlpha  = juce::jlimit (0.0f, 1.0f, dsmAttackAlpha);
+        dsmReleaseAlpha = juce::jlimit (0.0f, 1.0f, dsmReleaseAlpha);
+    }
+}
+
+float FruityClipAudioProcessor::processDsmSample (int ch, float x, float amount)
+{
+    if (ch < 0 || ch >= (int) dsmStates.size())
+        return x;
+
+    auto& st = dsmStates[(size_t) ch];
+
+    // Stream in
+    st.inRing[(size_t) st.inWrite] = x;
+    st.inWrite = (st.inWrite + 1) % dsmFftSize;
+
+    // Stream out (overlap-add ring)
+    const float y = st.olaRing[(size_t) st.olaRead];
+    st.olaRing[(size_t) st.olaRead] = 0.0f;
+    st.olaRead = (st.olaRead + 1) % dsmFftSize;
+
+    // Hop countdown
+    if (--st.hopCount > 0)
+        return y;
+
+    st.hopCount = dsmHopSize;
+
+    // Build analysis frame: last dsmFftSize samples ending at current inWrite
+    // Start index is st.inWrite (this points to the oldest sample in the ring).
+    const int start = st.inWrite;
+
+    // Clear FFT buffer
+    std::fill (st.fftData.begin(), st.fftData.end(), 0.0f);
+
+    for (int n = 0; n < dsmFftSize; ++n)
+    {
+        const int idx = (start + n) % dsmFftSize;
+        st.fftData[(size_t) n] = st.inRing[(size_t) idx] * dsmWindow[(size_t) n];
+    }
+
+    // Forward FFT
+    dsmFft.performRealOnlyForwardTransform (st.fftData.data());
+
+    // Amount mapping: Love=100% should equal DSM preset @ 10% wet
+    const float wMax   = 0.10f;
+    const float a      = std::pow (juce::jlimit (0.0f, 1.0f, amount), 2.0f); // nicer taper
+    const float w      = wMax * a;
+
+    // Apply per-bin compression -> gain
+    const int numBins = dsmFftSize / 2 + 1;
+    const float eps   = 1.0e-12f;
+
+    for (int k = 0; k < numBins; ++k)
+    {
+        float re = 0.0f, im = 0.0f;
+
+        if (k == 0)
+        {
+            re = st.fftData[0];
+            im = 0.0f;
+        }
+        else if (k == dsmFftSize / 2)
+        {
+            re = st.fftData[1];
+            im = 0.0f;
+        }
+        else
+        {
+            re = st.fftData[(size_t) (2 * k)];
+            im = st.fftData[(size_t) (2 * k + 1)];
+        }
+
+        const float power = re * re + im * im;
+
+        // Detector smoothing in power domain
+        float env = st.envPower[(size_t) k];
+        const float alpha = (power > env) ? dsmAttackAlpha : dsmReleaseAlpha;
+        env = alpha * env + (1.0f - alpha) * power;
+        st.envPower[(size_t) k] = env;
+
+        // Level in dBFS (relative; threshold is also in dB)
+        const float levelDb = 10.0f * std::log10 (env + eps);
+        const float overDb  = levelDb - dsmThresholdDb;
+
+        // Soft-knee compressor gain reduction (dB)
+        float grDb = 0.0f;
+
+        if (dsmKneeDb > 0.0f)
+        {
+            const float halfK = 0.5f * dsmKneeDb;
+
+            if (overDb <= -halfK)
+            {
+                grDb = 0.0f;
+            }
+            else if (overDb >= halfK)
+            {
+                grDb = (1.0f - 1.0f / dsmRatio) * overDb;
+            }
+            else
+            {
+                // within knee
+                const float xk = overDb + halfK;
+                grDb = (1.0f - 1.0f / dsmRatio) * (xk * xk) / (2.0f * dsmKneeDb);
+            }
+        }
+        else if (overDb > 0.0f)
+        {
+            grDb = (1.0f - 1.0f / dsmRatio) * overDb;
+        }
+
+        const float gFull = std::pow (10.0f, -grDb / 20.0f);
+
+        // Intensity as gain-domain blend (not audio dry/wet)
+        const float gEff = (1.0f - w) + w * gFull;
+
+        re *= gEff;
+        im *= gEff;
+
+        if (k == 0)
+        {
+            st.fftData[0] = re;
+        }
+        else if (k == dsmFftSize / 2)
+        {
+            st.fftData[1] = re;
+        }
+        else
+        {
+            st.fftData[(size_t) (2 * k)]     = re;
+            st.fftData[(size_t) (2 * k + 1)] = im;
+        }
+    }
+
+    // Inverse FFT
+    dsmFft.performRealOnlyInverseTransform (st.fftData.data());
+
+    // Overlap-add into olaRing.
+    // JUCE inverse is unscaled; scale by 1/N.
+    // With sqrt-Hann (analysis+synthesis) and 4x overlap, sum(window^2) ~ 2 -> extra 0.5 gain compensation.
+    const float invN    = 1.0f / (float) dsmFftSize;
+    const float olaComp = 0.5f;
+
+    const int writeStart = st.olaRead; // current output time position
+    for (int n = 0; n < dsmFftSize; ++n)
+    {
+        const float s = st.fftData[(size_t) n] * dsmWindow[(size_t) n] * invN * olaComp;
+        const int widx = (writeStart + n) % dsmFftSize;
+        st.olaRing[(size_t) widx] += s;
+    }
+
+    return y;
 }
 
 void FruityClipAudioProcessor::resetSilkState (int numChannels)
@@ -785,7 +976,7 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // -----------------------------------------------------------------
     // 2) Read SILK amount and shape it
     //
-    // rawSilk comes from the LOVE/SILK knob (0..1). We reuse the same
+    // rawSilk comes from the FU#K/SILK knob (0..1). We reuse the same
     // shaped control curve as the other silk code so the ear feels
     // consistent: most of the "movement" is towards the top of the knob.
     // -----------------------------------------------------------------
@@ -824,8 +1015,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     if ((int) kFilterStates.size() < numChannels)
         resetKFilterState (numChannels);
-    if ((int) ottStates.size() < numChannels)
-        resetOttState (numChannels);
+    if ((int) dsmStates.size() < numChannels)
+        resetDsmState (numChannels, sampleRate);
     if ((int) satStates.size() < numChannels)
         resetSatState (numChannels);
     if ((int) silkStates.size() < numChannels)
@@ -840,25 +1031,27 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const bool isOffline = isNonRealtime();
 
     auto* gainParam     = parameters.getRawParameterValue ("inputGain");
-    auto* loveParam     = parameters.getRawParameterValue ("ottAmount"); // LOVE knob
+    auto* fuckParam     = parameters.getRawParameterValue ("ottAmount"); // FU#K knob (DSM intensity)
+    auto* marryParam    = parameters.getRawParameterValue ("silkAmount");
     auto* satParam      = parameters.getRawParameterValue ("satAmount");
     auto* limiterParam  = parameters.getRawParameterValue ("useLimiter");
     auto* clipModeParam = parameters.getRawParameterValue ("clipMode");
 
     const float inputGainDb  = gainParam    ? gainParam->load()    : 0.0f;
-    const float loveRaw      = loveParam    ? loveParam->load()    : 0.0f;
+    const float fuckRaw      = fuckParam    ? fuckParam->load()    : 0.0f;
     const float satAmountRaw = satParam     ? satParam->load()     : 0.0f;
     const bool  useLimiter   = limiterParam ? (limiterParam->load() >= 0.5f) : false;
 
     const int clipModeIndex  = clipModeParam ? juce::jlimit (0, 1, (int) clipModeParam->load()) : 0;
     const ClipMode clipMode  = (clipModeIndex == 0 ? ClipMode::Digital : ClipMode::Analog);
 
-    const float loveKnob   = juce::jlimit (0.0f, 1.0f, loveRaw);
+    const float fuckKnob   = juce::jlimit (0.0f, 1.0f, fuckRaw);
+    const float marryKnob  = juce::jlimit (0.0f, 1.0f, marryRaw);
     const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
 
     const bool  isAnalogMode      = (clipMode == ClipMode::Analog);
-    const float ottAmountDigital  = isAnalogMode ? 0.0f : loveKnob;  // only used in DIGITAL mode
-    const float silkAmountAnalog  = isAnalogMode ? loveKnob : 0.0f;  // only used in ANALOG mode
+    const float fuckAmount        = fuckKnob;
+    const float silkAmount        = marryKnob;
 
     // Global scalars for this block
     // inputGain comes from the finger (in dB).
@@ -926,153 +1119,72 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         //==========================================================
-        // PRE-CHAIN: GAIN + LOVE/SILK (always at base rate)
+        // PRE-CHAIN: GAIN + FU#K/SILK (always at base rate)
         //==========================================================
 
-        if (isAnalogMode)
+//==========================================================
+// PRE-CHAIN
+//   1) Input drive (GAIN finger)
+//   2) FU#K: DSM-style spectral dynamics (runs in both modes)
+//   3) MARRY: Silk colour (runs in both modes)
+//      - Analog mode also runs the Analog Tone-Match stage (tone change you said you love)
+//==========================================================
+
+// 1) Apply input drive
+for (int ch = 0; ch < numChannels; ++ch)
+{
+    float* samples = buffer.getWritePointer (ch);
+    for (int i = 0; i < numSamples; ++i)
+        samples[i] *= inputDrive;
+}
+
+// 2) FU#K (DSM spectral dynamics)
+if (fuckAmount > 0.0f)
+{
+    // NOTE: This is an STFT-based processor and introduces fixed latency (dsmFftSize samples).
+    // It is always-on once enabled in the project to keep latency stable.
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        float* samples = buffer.getWritePointer (ch);
+        for (int i = 0; i < numSamples; ++i)
+            samples[i] = processDsmSample (ch, samples[i], fuckAmount);
+    }
+}
+else
+{
+    // Keep the DSM engine "warm" even when knob is at 0 (stable latency / no state pops)
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        float* samples = buffer.getWritePointer (ch);
+        for (int i = 0; i < numSamples; ++i)
+            (void) processDsmSample (ch, samples[i], 0.0f);
+    }
+}
+
+// 3) MARRY (Silk)
+if (silkAmount > 0.0f)
+{
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        float* samples = buffer.getWritePointer (ch);
+
+        for (int i = 0; i < numSamples; ++i)
         {
-            // ANALOG: LOVE acts as SILK, no OTT.
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* samples = buffer.getWritePointer (ch);
+            float s = samples[i];
+            s = applySilkAnalogSample (s, ch, silkAmount);
 
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    float s = samples[i] * inputDrive;
-                    s = applySilkAnalogSample (s, ch, silkAmountAnalog);
-                    s = applyAnalogToneMatch (s, ch, silkAmountAnalog);
-                    samples[i] = s;
-                }
-            }
+            if (isAnalogMode)
+                s = applyAnalogToneMatch (s, ch, silkAmount);
 
-            lastOttGain = 1.0f; // keep whatever semantics you had
+            samples[i] = s;
         }
-        else
-        {
-            // DIGITAL mode pre-chain: GAIN + optional OTT
-            if (ottAmountDigital <= 0.0f)
-            {
-                // LOVE = 0 -> just drive
-                for (int ch = 0; ch < numChannels; ++ch)
-                {
-                    float* samples = buffer.getWritePointer (ch);
-                    for (int i = 0; i < numSamples; ++i)
-                        samples[i] *= inputDrive;
-                }
-
-                lastOttGain = 1.0f;
-            }
-            else
-            {
-                // DIGITAL: run OTT using ottAmountDigital.
-                juce::AudioBuffer<float> preChain;
-                preChain.makeCopyOf (buffer);
-
-                for (int ch = 0; ch < numChannels; ++ch)
-                {
-                    float* x = preChain.getWritePointer (ch);
-                    auto&  ott = ottStates[(size_t) ch];
-
-                    for (int i = 0; i < numSamples; ++i)
-                    {
-                        float y = x[i] * inputDrive;
-
-                        // 150 Hz split
-                        ott.low = ottAlpha * ott.low + (1.0f - ottAlpha) * y;
-                        const float lowDry = ott.low;
-                        const float hiDry  = y - lowDry;
-
-                        const float absHi = std::abs (hiDry);
-                        ott.env = ottEnvAlpha * ott.env + (1.0f - ottEnvAlpha) * absHi;
-                        const float env = ott.env;
-
-                        constexpr float refLevel = 0.10f;
-                        float lev = env / (refLevel + 1.0e-6f);
-
-                        float dynGain = 1.0f;
-
-                        if (lev < 1.0f)
-                        {
-                            float t = juce::jlimit (0.0f, 1.0f, 1.0f - lev);
-                            dynGain = 1.0f + 0.9f * t;
-                        }
-                        else
-                        {
-                            float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
-                            dynGain = 1.0f - 0.35f * t;
-                        }
-
-                        float hiProcessed = hiDry * dynGain;
-
-                        float mix = std::pow (ottAmountDigital, 1.2f);
-                        float hiOut = hiDry + mix * (hiProcessed - hiDry);
-
-                        x[i] = lowDry + hiOut;
-                    }
-                }
-
-                // Copy OTT result back into main buffer
-                for (int ch = 0; ch < numChannels; ++ch)
-                {
-                    const float* src = preChain.getReadPointer (ch);
-                    float*       dst = buffer.getWritePointer (ch);
-
-                    for (int i = 0; i < numSamples; ++i)
-                        dst[i] = src[i];
-                }
-
-                lastOttGain = 1.0f; // or whatever scaling you had
-            }
-        }
-
-        //==========================================================
-        // BASE-RATE SATURATION (always before oversampling)
-        //==========================================================
-        const bool limiterOn = useLimiter;
-
-        if (! limiterOn && satAmount > 0.0f)
-        {
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* samples = buffer.getWritePointer (ch);
-                auto&  sat     = satStates[(size_t) ch];
-
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    float samplePre = samples[i];
-
-                    // --- STATIC INPUT TRIM ---
-                    // At SAT = 0  -> 0 dB
-                    // At SAT = 1  -> ~-0.5 dB
-                    const float inputTrimDb = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, -0.5f);
-                    const float inputTrim   = juce::Decibels::decibelsToGain (inputTrimDb);
-
-                    samplePre *= inputTrim;
-
-                    // --- BASS TILT ---
-                    sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * samplePre;
-                    const float low = sat.low;
-
-                    const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
-                    const float tilted     = samplePre + tiltAmount * (low - samplePre);
-
-                    // --- DRIVE ---
-                    const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
-
-                    float driven = std::tanh (tilted * drive);
-
-                    // --- STATIC NORMALISATION (UNITY) ---
-                    const float norm = 1.0f / std::tanh (drive);
-                    driven *= norm;
-
-                    // --- DRY/WET ---
-                    const float mix = std::pow (satAmount, 1.0f);
-                    float sample    = samplePre + mix * (driven - samplePre);
-
-                    samples[i] = sample;
-                }
-            }
-        }
+    }
+}
+else if (isAnalogMode)
+{
+    // Silk at 0, but keep Analog ToneMatch out of the signal path (purely knob-driven).
+    // (No-op by design)
+}
 
         //==========================================================
         // DISTORTION CHAIN (CLIP or LIMITER)
@@ -1118,7 +1230,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     }
                     else if (isAnalogMode)
                     {
-                        sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
+                        sample = applyClipperAnalogSample (sample, ch, silkAmount);
                     }
                     else
                     {
@@ -1150,7 +1262,7 @@ samples[i] = sample;
                     if (limiterOn)
                         sample = processLimiterSample (sample);
                     else if (isAnalogMode)
-                        sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
+                        sample = applyClipperAnalogSample (sample, ch, silkAmount);
                     else
                     {
                         // Pure hard clip at base rate
