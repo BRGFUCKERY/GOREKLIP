@@ -1078,9 +1078,14 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         // FINAL SAFETY CEILING AT BASE RATE
-        // IMPORTANT: Fruity-style DIGITAL clipper should NOT be followed by an extra hard clamp.
-        // Keep clamp only for limiter or analog paths.
-        if (useLimiter || isAnalogMode)
+        // We clamp for:
+        //  - Limiter mode (safety)
+        //  - Analog mode (model can exceed 1.0 internally)
+        //  - Digital mode ONLY when oversampling is enabled (to tame OS/downsample overs)
+        const bool shouldFinalClamp =
+            useLimiter || isAnalogMode || (useOversampling && !useLimiter && !isAnalogMode);
+
+        if (shouldFinalClamp)
         {
             for (int ch = 0; ch < numChannels; ++ch)
             {
@@ -1092,49 +1097,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     if (y >  1.0f) y =  1.0f;
                     if (y < -1.0f) y = -1.0f;
                     s[i] = y;
-                }
-            }
-        }
-
-        // Do not quantize/dither in Fruity DIGITAL mode (must stay float to null).
-        if (useLimiter || isAnalogMode)
-        {
-            const int numChannels = buffer.getNumChannels();
-            const int numSamples  = buffer.getNumSamples();
-
-            // We quantize to 24-bit domain: ±2^23 discrete steps.
-            constexpr float quantSteps = 8388608.0f;       // 2^23
-            constexpr float ditherAmp  = 1.0f / quantSteps; // ~ -138 dBFS
-
-            // Simple random generator (LCG) per block.
-            static uint32_t ditherState = 0x12345678u;
-            auto randFloat = [&]() noexcept
-            {
-                ditherState = ditherState * 1664525u + 1013904223u;
-                return (ditherState & 0x00FFFFFFu) / 16777216.0f;
-            };
-
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* samples = buffer.getWritePointer (ch);
-
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    float s = samples[i];
-
-                    // inaudible Fruity-style TPDF dither
-                    const float r1 = randFloat();
-                    const float r2 = randFloat();
-                    const float tpdf = (r1 - r2) * ditherAmp;
-                    s += tpdf;
-
-                    // 24-bit style quantization
-                    const float q = std::round (s * quantSteps) / quantSteps;
-
-                    float y = q;
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
-                    samples[i] = y;
                 }
             }
         }
