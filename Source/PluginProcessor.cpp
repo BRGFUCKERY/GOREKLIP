@@ -1075,9 +1075,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         // FINAL SAFETY CEILING AT BASE RATE
-        // IMPORTANT: Fruity-style DIGITAL clipper should NOT be followed by an extra hard clamp.
-        // Keep clamp only for limiter or analog paths.
-        if (useLimiter || isAnalogMode)
+        // Keep clamp for limiter/analog, and also protect digital when oversampling to catch any
+        // tiny post-OS overshoot.
+        const bool applyFinalCeiling = useLimiter || isAnalogMode || (useOversampling && ! isAnalogMode);
+
+        if (applyFinalCeiling)
         {
             for (int ch = 0; ch < numChannels; ++ch)
             {
