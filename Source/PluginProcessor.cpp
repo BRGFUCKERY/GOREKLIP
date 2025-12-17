@@ -19,11 +19,11 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float fruityClipperDigital (float sample, float inputGain) noexcept
+static inline float fruityClipperDigital (float sample) noexcept
 {
     constexpr float fruityInternalScale = 3.7406f;
 
-    float s = sample * inputGain * fruityInternalScale;
+    float s = sample * fruityInternalScale;
     s = juce::jlimit (-1.0f, 1.0f, s);
 
     return s;
@@ -313,7 +313,6 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
 
     resetSilkState (getTotalNumOutputChannels());
     resetAnalogClipState (getTotalNumOutputChannels());
-    resetDigitalDcState (getTotalNumOutputChannels());
     resetAnalogTransientState (getTotalNumOutputChannels());
 
     const float sr = (float) sampleRate;
@@ -496,16 +495,6 @@ void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
         st.dcBlock    = 0.0f;
     }
 }
-
-void FruityClipAudioProcessor::resetDigitalDcState (int numChannels)
-{
-    digitalDc.clear();
-    if (numChannels <= 0)
-        return;
-
-    digitalDc.resize ((size_t) numChannels, 0.0f);
-}
-
 
 //==============================================================
 // Limiter sample processor (0 lookahead, zero latency)
@@ -829,8 +818,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         resetAnalogToneState (numChannels);
     if ((int) analogClipStates.size() < numChannels)
         resetAnalogClipState (numChannels);
-    if ((int) digitalDc.size() != numChannels)
-        resetDigitalDcState (numChannels);
     if ((int) analogTransientStates.size() < numChannels)
         resetAnalogTransientState (numChannels);
 
@@ -1049,7 +1036,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     else
                     {
                         // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample, inputGain);
+                        sample = fruityClipperDigital (sample);
                     }
 
                     samples[i] = sample;
@@ -1080,31 +1067,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     else
                     {
                         // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample, inputGain);
+                        sample = fruityClipperDigital (sample);
                     }
 
                     samples[i] = sample;
                 }
-            }
-        }
-
-        if (! useLimiter && ! isAnalogMode)
-        {
-            constexpr float dcFc = 3.0f;
-            const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / (float) sampleRate);
-
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* s = buffer.getWritePointer (ch);
-                float dc = digitalDc[(size_t) ch];
-
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    dc = alpha * dc + (1.0f - alpha) * s[i];
-                    s[i] -= dc;
-                }
-
-                digitalDc[(size_t) ch] = dc;
             }
         }
 
