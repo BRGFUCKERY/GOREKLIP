@@ -19,23 +19,13 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float fruityClipperDigital (float x) noexcept
+static inline float fruityClipperDigital (float sample) noexcept
 {
-    constexpr float T = 127.0f / 128.0f;  // 0.9921875  (~ -0.068 dBFS)
-    constexpr float K = 1.0f - T;         // 0.0078125
-
-    const float ax = std::abs (x);
-
-    if (ax <= T)
-        return x;
-
-    // Exponential soft-limit above threshold, asymptotically approaching 1.0
-    const float over = ax - T;
-    const float ymag = 1.0f - K * std::exp (-over / K);
-
-    // Safety (optional, but keep it)
-    const float y = std::copysign (ymag, x);
-    return juce::jlimit (-1.0f, 1.0f, y);
+    if (sample > 1.0f)
+        return 1.0f;
+    if (sample < -1.0f)
+        return -1.0f;
+    return sample;
 }
 
 //==============================================================
@@ -505,7 +495,6 @@ void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
     }
 }
 
-
 //==============================================================
 // Limiter sample processor (0 lookahead, zero latency)
 //==============================================================
@@ -597,6 +586,13 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     auto& st = silkStates[(size_t) channel];
 
+    if (s <= 1.0e-6f)
+    {
+        const float pre = applySilkPreEmphasis (x, channel, 0.0f);
+        const float de  = applySilkDeEmphasis (pre, channel, 0.0f);
+        return de;
+    }
+
     // Pre-emphasis (updates st.pre as the low-band state)
     const float pre = applySilkPreEmphasis (x, channel, s);
 
@@ -606,7 +602,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
     constexpr float evenScale = 2.7f; // was ~1.0
-    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT;
+    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT * s;
 
     // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
@@ -928,7 +924,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (int i = 0; i < numSamples; ++i)
             {
                 float s = samples[i] * inputDrive;
-                s = applySilkAnalogSample (s, ch, marryAmount);
+                if (marryAmount > 0.0f)
+                    s = applySilkAnalogSample (s, ch, marryAmount);
 
                 if (isAnalogMode)
                     s = applyAnalogToneMatch (s, ch, marryAmount);
@@ -1078,9 +1075,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         // FINAL SAFETY CEILING AT BASE RATE
-        // IMPORTANT: Fruity-style DIGITAL clipper should NOT be followed by an extra hard clamp.
-        // Keep clamp only for limiter or analog paths.
-        if (useLimiter || isAnalogMode)
+        // Keep clamp for limiter/analog, and also protect digital when oversampling to catch any
+        // tiny post-OS overshoot.
+        const bool applyFinalCeiling = useLimiter || isAnalogMode || (useOversampling && ! isAnalogMode);
+
+        if (applyFinalCeiling)
         {
             for (int ch = 0; ch < numChannels; ++ch)
             {
