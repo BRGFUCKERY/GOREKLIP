@@ -1,4 +1,6 @@
 #pragma once
+#pragma message("COMPILING WITH LUT3")
+
 // Auto-generated from measurement (multi-signal fit) at 2025-12-17 22:20:51Z
 // API-compatible with existing code expecting namespace FruityMatch and FruityMatch::processSample(float).
 //
