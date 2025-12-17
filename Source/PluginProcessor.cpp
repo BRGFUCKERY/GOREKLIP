@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 
 #include <cmath>
+#include <array>
 
 static inline float smoothStep01 (float x) noexcept
 {
@@ -19,23 +20,52 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float fruityClipperDigital (float x) noexcept
+static inline float fruityClipperDigital (float sample) noexcept
 {
-    constexpr float T = 127.0f / 128.0f;  // 0.9921875  (~ -0.068 dBFS)
-    constexpr float K = 1.0f - T;         // 0.0078125
+    // Calibrated soft knee matched to Fruity exports:
+    // - Linear up to kneeStart
+    // - Short soft knee up to kneeEnd
+    // - Hard limit beyond kneeEnd
+    constexpr float kneeStart = 0.99f;
+    constexpr float kneeEnd   = 1.20f;
+    constexpr float kneeWidth = (kneeEnd - kneeStart);
 
-    const float ax = std::abs (x);
+    static constexpr int kFruityDigitalLUTSize = 2048;
+    static const std::array<float, kFruityDigitalLUTSize> kFruityDigitalLUT = [] {
+        std::array<float, kFruityDigitalLUTSize> lut{};
 
-    if (ax <= T)
-        return x;
+        for (int i = 0; i < kFruityDigitalLUTSize; ++i)
+        {
+            const float t   = (float) i / (float) (kFruityDigitalLUTSize - 1);
+            const float x   = kneeStart + t * kneeWidth;
+            const float shp = smoothStep01 (juce::jlimit (0.0f, 1.0f, (x - kneeStart) / kneeWidth));
+            lut[(size_t) i] = juce::jlimit (kneeStart, 1.0f, kneeStart + shp * (1.0f - kneeStart));
+        }
 
-    // Exponential soft-limit above threshold, asymptotically approaching 1.0
-    const float over = ax - T;
-    const float ymag = 1.0f - K * std::exp (-over / K);
+        return lut;
+    }();
 
-    // Safety (optional, but keep it)
-    const float y = std::copysign (ymag, x);
-    return juce::jlimit (-1.0f, 1.0f, y);
+    const float ax = std::abs (sample);
+    if (ax <= kneeStart)
+        return sample;
+
+    const float sgn = (sample >= 0.0f ? 1.0f : -1.0f);
+    if (ax >= kneeEnd)
+        return sgn;
+
+    const float u = ax - kneeStart;
+    const float t = (u / kneeWidth) * (float) (kFruityDigitalLUTSize - 1);
+
+    int idx = (int) t;
+    if (idx < 0)
+        idx = 0;
+    if (idx >= kFruityDigitalLUTSize - 1)
+        return sgn * kFruityDigitalLUT[kFruityDigitalLUTSize - 1];
+
+    const float frac = t - (float) idx;
+    const float y0   = kFruityDigitalLUT[(size_t) idx];
+    const float y1   = kFruityDigitalLUT[(size_t) idx + 1];
+    return sgn * (y0 + frac * (y1 - y0));
 }
 
 //==============================================================
@@ -505,7 +535,6 @@ void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
     }
 }
 
-
 //==============================================================
 // Limiter sample processor (0 lookahead, zero latency)
 //==============================================================
@@ -597,6 +626,13 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     auto& st = silkStates[(size_t) channel];
 
+    if (s <= 1.0e-6f)
+    {
+        const float pre = applySilkPreEmphasis (x, channel, 0.0f);
+        const float de  = applySilkDeEmphasis (pre, channel, 0.0f);
+        return de;
+    }
+
     // Pre-emphasis (updates st.pre as the low-band state)
     const float pre = applySilkPreEmphasis (x, channel, s);
 
@@ -606,7 +642,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
     constexpr float evenScale = 2.7f; // was ~1.0
-    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT;
+    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT * s;
 
     // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
@@ -928,7 +964,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (int i = 0; i < numSamples; ++i)
             {
                 float s = samples[i] * inputDrive;
-                s = applySilkAnalogSample (s, ch, marryAmount);
+                if (marryAmount > 0.0f)
+                    s = applySilkAnalogSample (s, ch, marryAmount);
 
                 if (isAnalogMode)
                     s = applyAnalogToneMatch (s, ch, marryAmount);
