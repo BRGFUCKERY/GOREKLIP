@@ -21,17 +21,9 @@ static inline float sin9Poly (float x) noexcept
 
 static inline float fruityClipperDigital (float x) noexcept
 {
-    constexpr float T = 127.0f / 128.0f;   // 0.9921875
-    constexpr float K = 1.0f - T;          // 0.0078125
-
-    const float ax = fabsf (x);
-    if (ax <= T)
-        return x;
-
-    const float over = ax - T;
-    const float ymag = 1.0f - K * expf (-over / K);
-
-    return copysignf (ymag, x);
+    if (x >  1.0f) return  1.0f;
+    if (x < -1.0f) return -1.0f;
+    return x;
 }
 
 //==============================================================
