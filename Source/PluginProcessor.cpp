@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 
 #include <cmath>
+#include <array>
 
 static inline float smoothStep01 (float x) noexcept
 {
@@ -30,7 +31,7 @@ static inline float fruityClipperDigital (float sample) noexcept
     constexpr float kneeWidth = (kneeEnd - kneeStart);
 
     static constexpr int kFruityDigitalLUTSize = 2048;
-    static constexpr std::array<float, kFruityDigitalLUTSize> kFruityDigitalLUT = [] {
+    static const std::array<float, kFruityDigitalLUTSize> kFruityDigitalLUT = [] {
         std::array<float, kFruityDigitalLUTSize> lut{};
 
         for (int i = 0; i < kFruityDigitalLUTSize; ++i)
