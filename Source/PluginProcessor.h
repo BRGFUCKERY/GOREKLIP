@@ -336,6 +336,12 @@ private:
     void resetAnalogClipState (int numChannels);
 
     std::vector<AnalogClipState> analogClipStates;
+    //==========================================================
+    // Digital-mode DC blocker (post-clip, base-rate)
+    //==========================================================
+    void resetDigitalDcState (int numChannels);
+
+    std::vector<float> digitalDc;
 
     //==========================================================
     // Internal state

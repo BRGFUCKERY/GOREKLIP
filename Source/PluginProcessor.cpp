@@ -21,7 +21,7 @@ static inline float sin9Poly (float x) noexcept
 
 static inline float fruityClipperDigital (float sample, float inputGain) noexcept
 {
-    constexpr float fruityInternalScale = 3.7f;
+    constexpr float fruityInternalScale = 3.7406f;
 
     float s = sample * inputGain * fruityInternalScale;
     s = juce::jlimit (-1.0f, 1.0f, s);
@@ -313,6 +313,7 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
 
     resetSilkState (getTotalNumOutputChannels());
     resetAnalogClipState (getTotalNumOutputChannels());
+    resetDigitalDcState (getTotalNumOutputChannels());
     resetAnalogTransientState (getTotalNumOutputChannels());
 
     const float sr = (float) sampleRate;
@@ -496,6 +497,15 @@ void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
     }
 }
 
+void FruityClipAudioProcessor::resetDigitalDcState (int numChannels)
+{
+    digitalDc.clear();
+    if (numChannels <= 0)
+        return;
+
+    digitalDc.resize ((size_t) numChannels, 0.0f);
+}
+
 
 //==============================================================
 // Limiter sample processor (0 lookahead, zero latency)
@@ -588,6 +598,13 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     auto& st = silkStates[(size_t) channel];
 
+    if (s <= 1.0e-6f)
+    {
+        const float pre = applySilkPreEmphasis (x, channel, 0.0f);
+        const float de  = applySilkDeEmphasis (pre, channel, 0.0f);
+        return de;
+    }
+
     // Pre-emphasis (updates st.pre as the low-band state)
     const float pre = applySilkPreEmphasis (x, channel, s);
 
@@ -597,7 +614,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
     constexpr float evenScale = 2.7f; // was ~1.0
-    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT;
+    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT * s;
 
     // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
@@ -812,6 +829,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         resetAnalogToneState (numChannels);
     if ((int) analogClipStates.size() < numChannels)
         resetAnalogClipState (numChannels);
+    if ((int) digitalDc.size() != numChannels)
+        resetDigitalDcState (numChannels);
     if ((int) analogTransientStates.size() < numChannels)
         resetAnalogTransientState (numChannels);
 
@@ -919,7 +938,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (int i = 0; i < numSamples; ++i)
             {
                 float s = samples[i] * inputDrive;
-                s = applySilkAnalogSample (s, ch, marryAmount);
+                if (marryAmount > 0.0f)
+                    s = applySilkAnalogSample (s, ch, marryAmount);
 
                 if (isAnalogMode)
                     s = applyAnalogToneMatch (s, ch, marryAmount);
@@ -1065,6 +1085,26 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                     samples[i] = sample;
                 }
+            }
+        }
+
+        if (! useLimiter && ! isAnalogMode)
+        {
+            constexpr float dcFc = 3.0f;
+            const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / (float) sampleRate);
+
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                float* s = buffer.getWritePointer (ch);
+                float dc = digitalDc[(size_t) ch];
+
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    dc = alpha * dc + (1.0f - alpha) * s[i];
+                    s[i] -= dc;
+                }
+
+                digitalDc[(size_t) ch] = dc;
             }
         }
 
