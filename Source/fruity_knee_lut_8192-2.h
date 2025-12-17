@@ -1,19 +1,23 @@
 #pragma once
-// Auto-generated from measurement (multi-signal fit) at 2025-12-17 22:14:15Z
-// Sources used: raw 32 1k 12.wav, raw 32 burst +12.wav, raw 32 SWEEP.wav, raw 32 whitenoise.wav -> Fruity outputs
-// Knee LUT maps |x| in [kKneeStart, kKneeEnd] to |y|. Outside: identity (<start) and saturate (>=end).
-// Fit method: median-per-bin over all signals + monotone (PAV isotonic) + edge-preserving smoothing + monotone pass.
+// Auto-generated from measurement (multi-signal fit) at 2025-12-17 22:20:51Z
+// API-compatible with existing code expecting namespace FruityMatch and FruityMatch::processSample(float).
+//
+// Knee LUT maps |x| in [kKneeStart, kKneeEnd] to |y|.
+// Outside: identity (<start) and saturate (>=end) to LUT end.
+//
+// Fit method: median-per-bin over all signals + monotone isotonic (PAV) + edge-preserving smoothing + monotone pass.
 
 #include <array>
 #include <cmath>
+#include <algorithm>
 
-namespace FruityMatchMulti {
+namespace FruityMatch {
 static constexpr float kKneeStart = 0.98000000f;
 static constexpr float kKneeEnd   = 1.08000000f;
 static constexpr int   kLutSize   = 8192;
 
 static constexpr std::array<float, kLutSize> kKneeLut = {
-    0.980000019f, 0.98005867f, 0.980065465f, 0.980072737f, 0.980080366f, 0.980088413f, 0.980096936f, 0.980105639f,
+0.980000019f, 0.98005867f, 0.980065465f, 0.980072737f, 0.980080366f, 0.980088413f, 0.980096936f, 0.980105639f,
     0.980114639f, 0.980123997f, 0.980133712f, 0.980143785f, 0.980154216f, 0.980165064f, 0.98017621f, 0.980187774f,
     0.980199635f, 0.980211914f, 0.980224192f, 0.980236411f, 0.98024869f, 0.980260909f, 0.98027283f, 0.98028481f,
     0.980296791f, 0.98030889f, 0.98032105f, 0.980333209f, 0.980345488f, 0.980357766f, 0.980370104f, 0.980382502f,
@@ -1038,4 +1042,29 @@ static constexpr std::array<float, kLutSize> kKneeLut = {
     0.999999881f, 0.999999881f, 0.999999881f, 0.999999881f, 0.999999881f, 0.999999881f, 0.999999881f, 0.999999881f,
     0.999999881f, 0.999999881f, 0.999999881f, 0.999999881f, 0.999999881f, 0.999999881f, 0.999999881f, 0.999999881f
 };
-} // namespace FruityMatchMulti
+
+static inline float processSample (float x) noexcept
+{
+    const float sign = (x >= 0.0f ? 1.0f : -1.0f);
+    const float ax   = std::fabs (x);
+
+    if (ax <= kKneeStart)
+        return x;
+
+    if (ax >= kKneeEnd)
+        return sign * kKneeLut[(size_t) (kLutSize - 1)];
+
+    // Map ax from [kKneeStart, kKneeEnd] -> [0, kLutSize - 1]
+    const float t = (ax - kKneeStart) * ((float) (kLutSize - 1) / (kKneeEnd - kKneeStart));
+
+    const int i0 = (int) std::floor (t);
+    const int i1 = std::min (i0 + 1, kLutSize - 1);
+    const float frac = t - (float) i0;
+
+    const float y0 = kKneeLut[(size_t) std::max (0, std::min (i0, kLutSize - 1))];
+    const float y1 = kKneeLut[(size_t) i1];
+
+    const float y = y0 + (y1 - y0) * frac;
+    return sign * y;
+}
+} // namespace FruityMatch
