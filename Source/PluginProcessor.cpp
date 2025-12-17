@@ -3,41 +3,6 @@
 
 #include <cmath>
 
-static inline float smoothStep01 (float x) noexcept
-{
-    x = juce::jlimit (0.0f, 1.0f, x);
-    return x * x * (3.0f - 2.0f * x);
-}
-
-static inline float sin9Poly (float x) noexcept
-{
-    const float x2 = x * x;
-    const float x3 = x2 * x;
-    const float x5 = x3 * x2;
-    const float x7 = x5 * x2;
-    const float x9 = x7 * x2;
-    return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
-}
-
-static inline float fruityClipperDigital (float x) noexcept
-{
-    constexpr float T = 127.0f / 128.0f;  // 0.9921875  (~ -0.068 dBFS)
-    constexpr float K = 1.0f - T;         // 0.0078125
-
-    const float ax = std::abs (x);
-
-    if (ax <= T)
-        return x;
-
-    // Exponential soft-limit above threshold, asymptotically approaching 1.0
-    const float over = ax - T;
-    const float ymag = 1.0f - K * std::exp (-over / K);
-
-    // Safety (optional, but keep it)
-    const float y = std::copysign (ymag, x);
-    return juce::jlimit (-1.0f, 1.0f, y);
-}
-
 //==============================================================
 // Parameter layout
 //==============================================================
@@ -51,19 +16,14 @@ FruityClipAudioProcessor::createParameterLayout()
         "inputGain", "Input Gain",
         juce::NormalisableRange<float> (-12.0f, 12.0f, 0.01f), 0.0f));
 
-    // FU#K – DSM capture EQ intensity (repurposed from OTT)
+    // OTT – 0..1 (150 Hz+ only, parallel)
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "ottAmount", "FU#K",
+        "ottAmount", "OTT Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
-    // MARRY – SILK amount (0..1)
+    // SAT – 0..1
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "silkAmount", "MARRY",
-        juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
-
-    // K#LL – SAT amount (0..1)
-    params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        "satAmount", "K#LL",
+        "satAmount", "Saturation Amount",
         juce::NormalisableRange<float> (0.0f, 1.0f), 0.0f));
 
     // MODE – 0 = clipper, 1 = limiter
@@ -121,7 +81,7 @@ FruityClipAudioProcessor::FruityClipAudioProcessor()
     // We keep it as a member in case we want special modes later.
     postGain        = 1.0f;
 
-    // Soft clip threshold (~ -6 dB at K#LL = 1)
+    // Soft clip threshold (~ -6 dB at satAmount = 1)
     // (kept for future use; currently we are in pure hard-clip mode)
     thresholdLinear = juce::Decibels::decibelsToGain (-6.0f);
 
@@ -317,12 +277,14 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     lufsMeanSquare = 1.0e-6f;
     lufsAverageLufs = -60.0f;
 
+    // Reset OTT split state
+    resetOttState (getTotalNumOutputChannels());
+
     // Reset SAT bass-tilt state
     resetSatState (getTotalNumOutputChannels());
 
     resetSilkState (getTotalNumOutputChannels());
     resetAnalogClipState (getTotalNumOutputChannels());
-    resetAnalogTransientState (getTotalNumOutputChannels());
 
     const float sr = (float) sampleRate;
 
@@ -344,6 +306,21 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     }
 
 
+    // One-pole lowpass factor for 150 Hz split (0–150 = low band)
+    {
+        const float fc = 150.0f;
+        const float alpha = std::exp (-2.0f * juce::MathConstants<float>::pi * fc / sr);
+        ottAlpha = juce::jlimit (0.0f, 1.0f, alpha);
+    }
+
+    // Envelope smoothing for high-band dynamics – slower now (~30 ms)
+    // This gives more "tails" and less choking after transients.
+    {
+        const float envTauSec = 0.030f; // was 0.010f
+        const float envA = std::exp (-1.0f / (envTauSec * sr));
+        ottEnvAlpha = juce::jlimit (0.0f, 1.0f, envA);
+    }
+
     // One-pole lowpass for SAT bass tilt (around 300 Hz at base rate)
     {
         const float fcSat = 300.0f;
@@ -351,32 +328,15 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         satLowAlpha = juce::jlimit (0.0f, 1.0f, alphaSat);
     }
 
-    // One-pole lowpasses for analog tone tilt splits (~250 Hz and ~10 kHz)
+    // One-pole lowpass for analog tone tilt (~900 Hz split at base rate)
     {
-        const float fcLow  = 250.0f;
-        const float alphaL = std::exp (-2.0f * juce::MathConstants<float>::pi * fcLow / sr);
-        analogToneAlpha250 = juce::jlimit (0.0f, 1.0f, alphaL);
-
-        const float fcHigh = 10000.0f;
-        const float alphaH = std::exp (-2.0f * juce::MathConstants<float>::pi * fcHigh / sr);
-        analogToneAlpha10k = juce::jlimit (0.0f, 1.0f, alphaH);
+        const float fcAnalog = 900.0f;
+        const float alphaAnalog =
+            std::exp (-2.0f * juce::MathConstants<float>::pi * fcAnalog / sr);
+        analogToneAlpha = juce::jlimit (0.0f, 1.0f, alphaAnalog);
     }
 
-    // Transient envelope smoothing (fast/slow) for analog memory
-    {
-        const float fastTau = 0.0015f; // ~1.5 ms
-        const float slowTau = 0.035f;  // ~35 ms
-        analogFastEnvA = juce::jlimit (0.0f, 0.9999999f, std::exp (-1.0f / (fastTau * sr)));
-        analogSlowEnvA = juce::jlimit (0.0f, 0.9999999f, std::exp (-1.0f / (slowTau * sr)));
-    }
-
-    // Slew limiter coefficient (~8 kHz corner)
-    {
-        const float alphaSlew = std::exp (-2.0f * juce::MathConstants<float>::pi * 8000.0f / sr);
-        analogSlewA = juce::jlimit (0.0f, 0.9999999f, alphaSlew);
-    }
-
-    dsmCaptureEq.prepare (sampleRate, getTotalNumInputChannels());
+    lastOttGain = 1.0f;
 
     // Initial oversampling setup from parameter
     if (auto* osModeParam = parameters.getRawParameterValue ("oversampleMode"))
@@ -425,6 +385,23 @@ void FruityClipAudioProcessor::resetKFilterState (int numChannels)
     }
 }
 
+//==============================================================
+// OTT HP split reset
+//==============================================================
+void FruityClipAudioProcessor::resetOttState (int numChannels)
+{
+    ottStates.clear();
+    if (numChannels <= 0)
+        return;
+
+    ottStates.resize ((size_t) numChannels);
+    for (auto& st : ottStates)
+    {
+        st.low = 0.0f;
+        st.env = 0.0f;
+    }
+}
+
 void FruityClipAudioProcessor::resetSilkState (int numChannels)
 {
     silkStates.clear();
@@ -468,26 +445,7 @@ void FruityClipAudioProcessor::resetAnalogToneState (int numChannels)
 
     analogToneStates.resize ((size_t) numChannels);
     for (auto& st : analogToneStates)
-    {
-        st.low250 = 0.0f;
-        st.low10k = 0.0f;
-    }
-}
-
-void FruityClipAudioProcessor::resetAnalogTransientState (int numChannels)
-{
-    analogTransientStates.clear();
-
-    if (numChannels <= 0)
-        return;
-
-    analogTransientStates.resize ((size_t) numChannels);
-    for (auto& st : analogTransientStates)
-    {
-        st.fastEnv = 0.0f;
-        st.slowEnv = 0.0f;
-        st.slew    = 0.0f;
-    }
+        st.low = 0.0f;
 }
 
 void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
@@ -585,10 +543,12 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 {
     // 5060-style colour stage (pre-Lavry clip)
     //
-    // Key fix:
-    // On already-clipped / flat-topped material, (pre * pre) becomes mostly DC,
-    // so the even-harmonic term collapses after DC removal. To keep even harmonics
-    // alive on hot material, we square the LOW band from the pre-emphasis split.
+    // Targets from your hardware @ 1k +12:
+    //   silk 0   : H2 ≈ -33 dB rel
+    //   silk 100 : H2 ≈ -30.5 dB rel
+    //
+    // We generate EVEN harmonics primarily here (quadratic term),
+    // and keep the Lavry ceiling mostly symmetric.
 
     const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
@@ -597,31 +557,32 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     auto& st = silkStates[(size_t) channel];
 
-    // Pre-emphasis (updates st.pre as the low-band state)
+    // Pre-emphasis (existing)
     const float pre = applySilkPreEmphasis (x, channel, s);
 
     // Engage more at high level so it doesn't fuzz quiet material
     float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.20f) / 0.80f);
     driveT = driveT * driveT;
 
-    // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
-    constexpr float evenScale = 2.7f; // was ~1.0
-    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT;
+    // Quadratic (even) mix coefficient.
+    // For a pure sine, H2 amplitude ≈ coeff/2  ->  -33 dB => coeff ~ 0.045
+    // --- H2 boost to better match hardware (≈ +10 dB H2) ---
+    // +10 dB in harmonic amplitude ≈ x3.162
+    constexpr float h2Boost = 0.98f;
 
-    // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
-    const float evenSrc = st.pre;
-    float e = evenSrc * evenSrc;
+    const float evenCoeff = h2Boost * (0.035f + 0.0115f * s) * driveT; // tuned from 710: ~-2 dB H2 overall, slightly less SILK delta
 
-    // Remove DC from quadratic term only (preserves even series)
+    float e = pre * pre;
+
+    // Remove DC from the quadratic term only (preserves even series)
     st.evenDc = silkEvenDcAlpha * st.evenDc + (1.0f - silkEvenDcAlpha) * e;
     e -= st.evenDc;
 
-    // Raised cap so boost can actually take effect at hot levels
-    const float evenCoeffCapped = juce::jlimit (0.0f, 0.40f, evenCoeff);
-
+    // Raise cap so the boost can actually take effect at hot levels
+    const float evenCoeffCapped = juce::jlimit (0.0f, 0.20f, evenCoeff);
     float y = pre + evenCoeffCapped * e;
 
-    // De-emphasis
+    // De-emphasis (existing)
     return applySilkDeEmphasis (y, channel, s);
 }
 
@@ -629,11 +590,12 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, float silkAmount)
 {
     constexpr float threshold = 1.0f;
-    constexpr float baseKneeWidth = 0.38f;
+    constexpr float kneeWidth = 0.38f;
 
-    auto softClip = [] (float v, float kneeWidth) noexcept
+    auto softClip = [] (float v) noexcept
     {
         constexpr float threshold = 1.0f;
+        constexpr float kneeWidth = 0.38f;
 
         const float a = std::abs (v);
         if (a <= threshold)
@@ -647,50 +609,17 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // Shaped SILK control
     const float silkShape = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
+    // Very gentle drive — we rely on bias & shape, not brute force
+    const float drive = 1.0f + 0.04f * silkShape;
+
+    const float inRaw = x * drive;
+    const float absIn = std::abs (inRaw);
+
     // Per-channel state
-    if (channel < 0 || channel >= (int) analogClipStates.size() || channel >= (int) analogTransientStates.size())
+    if (channel < 0 || channel >= (int) analogClipStates.size())
         return x;
 
-    auto& st  = analogClipStates[(size_t) channel];
-    auto& ts  = analogTransientStates[(size_t) channel];
-
-    // Very gentle drive — we rely on bias & shape, not brute force
-    const float baseDrive = 1.0f + 0.04f * silkShape;
-    const float preEnv    = x * baseDrive;
-    const float absPre    = std::abs (preEnv);
-
-    // -------------------------------------------------------------
-    // Fast/slow transient detector
-    // -------------------------------------------------------------
-    ts.fastEnv = analogFastEnvA * ts.fastEnv + (1.0f - analogFastEnvA) * absPre;
-    ts.slowEnv = analogSlowEnvA * ts.slowEnv + (1.0f - analogSlowEnvA) * absPre;
-
-    const float transient    = juce::jmax (0.0f, ts.fastEnv - ts.slowEnv);
-    const float transientNorm = smoothStep01 (transient / 0.25f);
-
-    const float dynamicKnee  = baseKneeWidth * (1.0f + 0.35f * transientNorm);
-    const float dynamicDrive = baseDrive * (1.0f - 0.06f * transientNorm);
-
-    float inRaw = x * dynamicDrive;
-
-    // Optional slew blend during transients
-    const float pre = inRaw;
-    const float slewed = analogSlewA * ts.slew + (1.0f - analogSlewA) * pre;
-    ts.slew = slewed;
-    if (transientNorm > 0.0f)
-        inRaw = slewed * (0.35f * transientNorm) + pre * (1.0f - 0.35f * transientNorm);
-
-    // -------------------------------------------------------------
-    // H9 harmonic fill (gated, strongest at SILK 0)
-    // -------------------------------------------------------------
-    const float xNorm = juce::jlimit (-1.0f, 1.0f, inRaw * 0.85f);
-    const float absN  = std::abs (xNorm);
-    const float gate  = smoothStep01 ((absN - 0.35f) / (0.95f - 0.35f));
-    const float silkWeight = 1.0f - silkShape;
-    const float h9Amt = 0.0014f * silkWeight * gate;
-    inRaw += h9Amt * sin9Poly (xNorm);
-
-    const float absIn = std::abs (inRaw);
+    auto& st = analogClipStates[(size_t) channel];
 
     // -------------------------------------------------------------
     // Slow envelope follower of |in| (so bias doesn't "follow" the sine)
@@ -714,8 +643,8 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
         levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
 
     // Baseline even content at SILK 0, more with SILK
-    constexpr float biasBase = 0.018f;
-    constexpr float biasSilk = 0.031f;
+    constexpr float biasBase = 0.020f;
+    constexpr float biasSilk = 0.018f;
 
     float targetBias = (biasBase + biasSilk * silkShape) * levelT;
 
@@ -736,7 +665,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // Instead, we allow the asymmetry to exist, then remove *only DC*
     // with an ultra-low cutoff one-pole HP (preserves H2/H4/H6).
     // -------------------------------------------------------------
-    float y = softClip (inRaw + bias, dynamicKnee);
+    float y = softClip (inRaw + bias);
 
     // DC blocker (very low corner) – keeps the expensive even series, removes DC drift
     st.dcBlock = analogDcAlpha * st.dcBlock + (1.0f - analogDcAlpha) * y;
@@ -757,19 +686,16 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     auto& st = analogToneStates[(size_t) channel];
 
     // -----------------------------------------------------------------
-    // 1) Split into three regions using two one-pole lowpasses:
-    //    low  : below ~250 Hz
-    //    mid  : 250 Hz – ~10 kHz
-    //    high : above ~10 kHz
+    // 1) Split into "low" and "high" around ~1 kHz
+    //
+    // analogToneAlpha is configured in prepareToPlay() to give us
+    // a one-pole lowpass at ~1 kHz. That becomes our "low" band and
+    // (x - low) becomes the complementary "high" band.
     // -----------------------------------------------------------------
-    st.low250 = analogToneAlpha250 * st.low250 + (1.0f - analogToneAlpha250) * x;
-    const float low = st.low250;
+    st.low = analogToneAlpha * st.low + (1.0f - analogToneAlpha) * x;
 
-    st.low10k = analogToneAlpha10k * st.low10k + (1.0f - analogToneAlpha10k) * x;
-    const float midPlusLow = st.low10k;
-
-    const float mid  = midPlusLow - low;
-    const float high = x - midPlusLow;
+    const float low  = st.low;
+    const float high = x - low;
 
     // -----------------------------------------------------------------
     // 2) Read SILK amount and shape it
@@ -781,19 +707,41 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f); // shaped SILK control
 
     // -----------------------------------------------------------------
-    // 3) 3-band tilt target derived from measurements
+    // 3) 5060-style tone tilt from white-noise measurements
+    //
+    // The hardware captures show:
+    //   • At SILK 0  : lows / low-mids slightly up, top end significantly down.
+    //   • At SILK 100: still darker than Ableton on top, but less extreme
+    //                  and with a touch more low/mid weight.
+    //
+    // We map SILK 0..1 onto two target tilt states:
+    //
+    //   SILK 0:
+    //       low band  ≈ +0.4 dB
+    //       high band ≈ -7.5 dB
+    //
+    //   SILK 1:
+    //       low band  ≈ +0.7 dB
+    //       high band ≈ -4.5 dB
+    //
+    // Then we interpolate in dB space based on the shaped SILK amount "s".
     // -----------------------------------------------------------------
-    const float lowDb  = juce::jmap (s, 0.0f, 1.0f, -0.28f, +0.37f);
-    const float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.31f, +0.45f);
-    const float highDb = juce::jmap (s, 0.0f, 1.0f, -4.72f, -2.77f);
-    const float gainLow  = juce::Decibels::decibelsToGain (lowDb);
-    const float gainMid  = juce::Decibels::decibelsToGain (midDb);
-    const float gainHigh = juce::Decibels::decibelsToGain (highDb);
+    const float lowDbAt0  =  0.4f;  // dB at SILK 0
+    const float highDbAt0 = -7.5f;  // dB at SILK 0
+
+    const float lowDbAt1  =  0.7f;  // dB at SILK 100
+    const float highDbAt1 = -4.5f;  // dB at SILK 100
+
+    const float lowDb  = juce::jmap (s, 0.0f, 1.0f, lowDbAt0,  lowDbAt1);
+    const float highDb = juce::jmap (s, 0.0f, 1.0f, highDbAt0, highDbAt1);
+
+    const float lowGain  = juce::Decibels::decibelsToGain (lowDb);
+    const float highGain = juce::Decibels::decibelsToGain (highDb);
 
     // -----------------------------------------------------------------
     // 4) Apply tilt and clamp
     // -----------------------------------------------------------------
-    float y = gainLow * low + gainMid * mid + gainHigh * high;
+    float y = lowGain * low + highGain * high;
 
     // Safety clamp – we should never normally hit this,
     // but it keeps the stage well-behaved in edge cases.
@@ -813,6 +761,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     if ((int) kFilterStates.size() < numChannels)
         resetKFilterState (numChannels);
+    if ((int) ottStates.size() < numChannels)
+        resetOttState (numChannels);
     if ((int) satStates.size() < numChannels)
         resetSatState (numChannels);
     if ((int) silkStates.size() < numChannels)
@@ -821,37 +771,29 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         resetAnalogToneState (numChannels);
     if ((int) analogClipStates.size() < numChannels)
         resetAnalogClipState (numChannels);
-    if ((int) analogTransientStates.size() < numChannels)
-        resetAnalogTransientState (numChannels);
-
-    if ((int) dsmCaptureEq.filters.size() < numChannels)
-        dsmCaptureEq.prepare (sampleRate, numChannels);
 
     const bool isOffline = isNonRealtime();
 
     auto* gainParam     = parameters.getRawParameterValue ("inputGain");
-    auto* fuckParam     = parameters.getRawParameterValue ("ottAmount");
-    auto* marryParam    = parameters.getRawParameterValue ("silkAmount");
+    auto* loveParam     = parameters.getRawParameterValue ("ottAmount"); // LOVE knob
     auto* satParam      = parameters.getRawParameterValue ("satAmount");
     auto* limiterParam  = parameters.getRawParameterValue ("useLimiter");
     auto* clipModeParam = parameters.getRawParameterValue ("clipMode");
 
     const float inputGainDb  = gainParam    ? gainParam->load()    : 0.0f;
-    const float fuckRaw      = fuckParam    ? fuckParam->load()    : 0.0f;
-    const float marryRaw     = marryParam   ? marryParam->load()   : 0.0f;
+    const float loveRaw      = loveParam    ? loveParam->load()    : 0.0f;
     const float satAmountRaw = satParam     ? satParam->load()     : 0.0f;
     const bool  useLimiter   = limiterParam ? (limiterParam->load() >= 0.5f) : false;
 
     const int clipModeIndex  = clipModeParam ? juce::jlimit (0, 1, (int) clipModeParam->load()) : 0;
     const ClipMode clipMode  = (clipModeIndex == 0 ? ClipMode::Digital : ClipMode::Analog);
 
-    const float fuckAmount = juce::jlimit (0.0f, 1.0f, fuckRaw);
-    const float marryAmount = juce::jlimit (0.0f, 1.0f, marryRaw);
-    const float killAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
+    const float loveKnob   = juce::jlimit (0.0f, 1.0f, loveRaw);
+    const float satAmount  = juce::jlimit (0.0f, 1.0f, satAmountRaw);
 
-    const bool  isAnalogMode     = (clipMode == ClipMode::Analog);
-    const float silkAmountAnalog = marryAmount;
-    const float w = 0.10f * std::pow (juce::jlimit (0.0f, 1.0f, fuckAmount), 2.0f);
+    const bool  isAnalogMode      = (clipMode == ClipMode::Analog);
+    const float ottAmountDigital  = isAnalogMode ? 0.0f : loveKnob;  // only used in DIGITAL mode
+    const float silkAmountAnalog  = isAnalogMode ? loveKnob : 0.0f;  // only used in ANALOG mode
 
     // Global scalars for this block
     // inputGain comes from the finger (in dB).
@@ -919,24 +861,102 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
 
         //==========================================================
-        // PRE-CHAIN: GAIN + SILK + DSM capture EQ (base rate)
+        // PRE-CHAIN: GAIN + LOVE/SILK (always at base rate)
         //==========================================================
-        for (int ch = 0; ch < numChannels; ++ch)
+
+        if (isAnalogMode)
         {
-            float* samples = buffer.getWritePointer (ch);
-
-            for (int i = 0; i < numSamples; ++i)
+            // ANALOG: LOVE acts as SILK, no OTT.
+            for (int ch = 0; ch < numChannels; ++ch)
             {
-                float s = samples[i] * inputDrive;
-                s = applySilkAnalogSample (s, ch, marryAmount);
+                float* samples = buffer.getWritePointer (ch);
 
-                if (isAnalogMode)
-                    s = applyAnalogToneMatch (s, ch, marryAmount);
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    float s = samples[i] * inputDrive;
+                    s = applySilkAnalogSample (s, ch, silkAmountAnalog);
+                    s = applyAnalogToneMatch (s, ch, silkAmountAnalog);
+                    samples[i] = s;
+                }
+            }
 
-                float eq = dsmCaptureEq.processSample (ch, s);
-                s = s + w * (eq - s);
+            lastOttGain = 1.0f; // keep whatever semantics you had
+        }
+        else
+        {
+            // DIGITAL mode pre-chain: GAIN + optional OTT
+            if (ottAmountDigital <= 0.0f)
+            {
+                // LOVE = 0 -> just drive
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* samples = buffer.getWritePointer (ch);
+                    for (int i = 0; i < numSamples; ++i)
+                        samples[i] *= inputDrive;
+                }
 
-                samples[i] = s;
+                lastOttGain = 1.0f;
+            }
+            else
+            {
+                // DIGITAL: run OTT using ottAmountDigital.
+                juce::AudioBuffer<float> preChain;
+                preChain.makeCopyOf (buffer);
+
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* x = preChain.getWritePointer (ch);
+                    auto&  ott = ottStates[(size_t) ch];
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        float y = x[i] * inputDrive;
+
+                        // 150 Hz split
+                        ott.low = ottAlpha * ott.low + (1.0f - ottAlpha) * y;
+                        const float lowDry = ott.low;
+                        const float hiDry  = y - lowDry;
+
+                        const float absHi = std::abs (hiDry);
+                        ott.env = ottEnvAlpha * ott.env + (1.0f - ottEnvAlpha) * absHi;
+                        const float env = ott.env;
+
+                        constexpr float refLevel = 0.10f;
+                        float lev = env / (refLevel + 1.0e-6f);
+
+                        float dynGain = 1.0f;
+
+                        if (lev < 1.0f)
+                        {
+                            float t = juce::jlimit (0.0f, 1.0f, 1.0f - lev);
+                            dynGain = 1.0f + 0.9f * t;
+                        }
+                        else
+                        {
+                            float t = juce::jlimit (0.0f, 1.0f, lev - 1.0f);
+                            dynGain = 1.0f - 0.35f * t;
+                        }
+
+                        float hiProcessed = hiDry * dynGain;
+
+                        float mix = std::pow (ottAmountDigital, 1.2f);
+                        float hiOut = hiDry + mix * (hiProcessed - hiDry);
+
+                        x[i] = lowDry + hiOut;
+                    }
+                }
+
+                // Copy OTT result back into main buffer
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    const float* src = preChain.getReadPointer (ch);
+                    float*       dst = buffer.getWritePointer (ch);
+
+                    for (int i = 0; i < numSamples; ++i)
+                        dst[i] = src[i];
+                }
+
+                lastOttGain = 1.0f; // or whatever scaling you had
             }
         }
 
@@ -945,7 +965,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         //==========================================================
         const bool limiterOn = useLimiter;
 
-        if (! limiterOn && killAmount > 0.0f)
+        if (! limiterOn && satAmount > 0.0f)
         {
             for (int ch = 0; ch < numChannels; ++ch)
             {
@@ -959,7 +979,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // --- STATIC INPUT TRIM ---
                     // At SAT = 0  -> 0 dB
                     // At SAT = 1  -> ~-0.5 dB
-                    const float inputTrimDb = juce::jmap (killAmount, 0.0f, 1.0f, 0.0f, -0.5f);
+                    const float inputTrimDb = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, -0.5f);
                     const float inputTrim   = juce::Decibels::decibelsToGain (inputTrimDb);
 
                     samplePre *= inputTrim;
@@ -968,11 +988,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     sat.low = satLowAlpha * sat.low + (1.0f - satLowAlpha) * samplePre;
                     const float low = sat.low;
 
-                    const float tiltAmount = juce::jmap (killAmount, 0.0f, 1.0f, 0.0f, 0.85f);
+                    const float tiltAmount = juce::jmap (satAmount, 0.0f, 1.0f, 0.0f, 0.85f);
                     const float tilted     = samplePre + tiltAmount * (low - samplePre);
 
                     // --- DRIVE ---
-                    const float drive = 1.0f + 5.0f * std::pow (killAmount, 1.3f);
+                    const float drive = 1.0f + 5.0f * std::pow (satAmount, 1.3f);
 
                     float driven = std::tanh (tilted * drive);
 
@@ -981,7 +1001,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     driven *= norm;
 
                     // --- DRY/WET ---
-                    const float mix = std::pow (killAmount, 1.0f);
+                    const float mix = std::pow (satAmount, 1.0f);
                     float sample    = samplePre + mix * (driven - samplePre);
 
                     samples[i] = sample;
@@ -1037,11 +1057,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     }
                     else
                     {
-                        // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample);
+                        // DIGITAL clip
+                        if (sample >  1.0f) sample =  1.0f;
+                        if (sample < -1.0f) sample = -1.0f;
                     }
-
-                    samples[i] = sample;
+samples[i] = sample;
                 }
             }
 
@@ -1068,36 +1088,32 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
                     else
                     {
-                        // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample);
+                        // Pure hard clip at base rate
+                        if (sample >  1.0f) sample =  1.0f;
+                        if (sample < -1.0f) sample = -1.0f;
                     }
-
-                    samples[i] = sample;
+samples[i] = sample;
                 }
             }
         }
 
         // FINAL SAFETY CEILING AT BASE RATE
-        // IMPORTANT: Fruity-style DIGITAL clipper should NOT be followed by an extra hard clamp.
-        // Keep clamp only for limiter or analog paths.
-        if (useLimiter || isAnalogMode)
+        // We ALWAYS end the chain with a strict Lavry-style 0 dBFS hard ceiling.
+        // (Analog/Digital/OS/no-OS – doesn’t matter. Final output is guaranteed in [-1, +1].)
+        for (int ch = 0; ch < numChannels; ++ch)
         {
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* s = buffer.getWritePointer (ch);
+            float* s = buffer.getWritePointer (ch);
 
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    float y = s[i];
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
-                    s[i] = y;
-                }
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float y = s[i];
+                if (y >  1.0f) y =  1.0f;
+                if (y < -1.0f) y = -1.0f;
+                s[i] = y;
             }
         }
 
-        // Do not quantize/dither in Fruity DIGITAL mode (must stay float to null).
-        if (useLimiter || isAnalogMode)
+
         {
             const int numChannels = buffer.getNumChannels();
             const int numSamples  = buffer.getNumSamples();

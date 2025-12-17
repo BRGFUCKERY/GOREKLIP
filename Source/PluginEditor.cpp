@@ -500,8 +500,7 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     gainSlider.setDragSensitivities (250, 800);
     gainSlider.setRange (-12.0, 12.0, 0.01);
 
-    setupKnob01 (fuckSlider);
-    setupKnob01 (silkSlider);
+    setupKnob01 (ottSlider);
     setupKnob01 (satSlider);
     setupKnob01 (modeSlider);
 
@@ -509,14 +508,12 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     modeSlider.setRange (0.0, 1.0, 1.0); // ONLY 0 or 1
 
     gainSlider.setLookAndFeel (&fingerLnf);
-    fuckSlider.setLookAndFeel (&fingerLnf);
-    silkSlider.setLookAndFeel (&fingerLnf);
+    ottSlider .setLookAndFeel (&fingerLnf);
     satSlider .setLookAndFeel (&fingerLnf);
     modeSlider.setLookAndFeel (&fingerLnf);
 
     addAndMakeVisible (gainSlider);
-    addAndMakeVisible (fuckSlider);
-    addAndMakeVisible (silkSlider);
+    addAndMakeVisible (ottSlider);
     addAndMakeVisible (satSlider);
     addAndMakeVisible (modeSlider);
 
@@ -535,14 +532,12 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     };
 
     setupLabel (gainLabel, "GAIN");
-    setupLabel (fuckLabel, "FU#K");
-    setupLabel (silkLabel, "MARRY");
-    setupLabel (satLabel,  "K#LL");
+    setupLabel (ottLabel,  getLoveSilkLabelText());
+    setupLabel (satLabel,  "DEATH");
     setupLabel (modeLabel, getClipperLabelText()); // will flip to LIMITER / 50-69 in runtime
 
     addAndMakeVisible (gainLabel);
-    addAndMakeVisible (fuckLabel);
-    addAndMakeVisible (silkLabel);
+    addAndMakeVisible (ottLabel);
     addAndMakeVisible (satLabel);
     addAndMakeVisible (modeLabel);
 
@@ -573,18 +568,15 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     };
 
     setupValueLabel (gainValueLabel);
-    setupValueLabel (fuckValueLabel);
-    setupValueLabel (silkValueLabel);
+    setupValueLabel (ottValueLabel);
     setupValueLabel (satValueLabel);
 
     addAndMakeVisible (gainValueLabel);
-    addAndMakeVisible (fuckValueLabel);
-    addAndMakeVisible (silkValueLabel);
+    addAndMakeVisible (ottValueLabel);
     addAndMakeVisible (satValueLabel);
 
     gainValueLabel.setVisible (false);
-    fuckValueLabel.setVisible (false);
-    silkValueLabel.setVisible (false);
+    ottValueLabel.setVisible (false);
     satValueLabel.setVisible (false);
 
     // SETTINGS (left pentagram)
@@ -630,11 +622,8 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     gainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "inputGain", gainSlider);
 
-    fuckAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                        apvts, "ottAmount", fuckSlider);
-
-    silkAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                        apvts, "silkAmount", silkSlider);
+    ottAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                        apvts, "ottAmount", ottSlider);
 
     satAttachment  = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                         apvts, "satAmount", satSlider);
@@ -674,16 +663,9 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
         return s;
     });
 
-    setupValuePopup (fuckSlider, fuckValueLabel, [this]()
+    setupValuePopup (ottSlider, ottValueLabel, [this]()
     {
-        const double raw = fuckSlider.getValue();
-        const int percent = (int) std::round (raw * 100.0);
-        return juce::String (percent) + " %";
-    });
-
-    setupValuePopup (silkSlider, silkValueLabel, [this]()
-    {
-        const double raw = silkSlider.getValue();
+        const double raw = ottSlider.getValue();
         const int percent = (int) std::round (raw * 100.0);
         return juce::String (percent) + " %";
     });
@@ -762,8 +744,7 @@ FruityClipAudioProcessorEditor::~FruityClipAudioProcessorEditor()
 {
     stopTimer();
     gainSlider.setLookAndFeel (nullptr);
-    fuckSlider.setLookAndFeel (nullptr);
-    silkSlider.setLookAndFeel (nullptr);
+    ottSlider .setLookAndFeel (nullptr);
     satSlider .setLookAndFeel (nullptr);
     modeSlider.setLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
@@ -879,17 +860,16 @@ void FruityClipAudioProcessorEditor::resized()
     const int knobSize = juce::jmin (w / 7, h / 3);
     const int spacing  = knobSize / 2;
 
-    const int totalW   = knobSize * 5 + spacing * 4;
+    const int totalW   = knobSize * 4 + spacing * 3;
     const int startX   = (w - totalW) / 2;
 
     const int bottomMargin = (int) (h * 0.05f);
     const int knobY        = h - knobSize - bottomMargin;
 
     gainSlider.setBounds (startX + 0 * (knobSize + spacing), knobY, knobSize, knobSize);
-    fuckSlider.setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
-    silkSlider.setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
-    satSlider .setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
-    modeSlider.setBounds (startX + 4 * (knobSize + spacing), knobY, knobSize, knobSize);
+    ottSlider .setBounds (startX + 1 * (knobSize + spacing), knobY, knobSize, knobSize);
+    satSlider .setBounds (startX + 2 * (knobSize + spacing), knobY, knobSize, knobSize);
+    modeSlider.setBounds (startX + 3 * (knobSize + spacing), knobY, knobSize, knobSize);
 
     const int labelH = 20;
 
@@ -898,15 +878,10 @@ void FruityClipAudioProcessorEditor::resized()
                          gainSlider.getWidth(),
                          labelH);
 
-    fuckLabel.setBounds (fuckSlider.getX(),
-                        fuckSlider.getBottom() + 2,
-                        fuckSlider.getWidth(),
+    ottLabel.setBounds (ottSlider.getX(),
+                        ottSlider.getBottom() + 2,
+                        ottSlider.getWidth(),
                         labelH);
-
-    silkLabel.setBounds (silkSlider.getX(),
-                         silkSlider.getBottom() + 2,
-                         silkSlider.getWidth(),
-                         labelH);
 
     satLabel.setBounds (satSlider.getX(),
                         satSlider.getBottom() + 2,
@@ -931,8 +906,7 @@ void FruityClipAudioProcessorEditor::resized()
     };
 
     gainValueLabel.setBounds (makeValueBounds (gainSlider.getBounds()));
-    fuckValueLabel.setBounds (makeValueBounds (fuckSlider.getBounds()));
-    silkValueLabel.setBounds (makeValueBounds (silkSlider.getBounds()));
+    ottValueLabel .setBounds (makeValueBounds (ottSlider.getBounds()));
     satValueLabel .setBounds (makeValueBounds (satSlider.getBounds()));
 
     // LUFS label sits above the MODE/clipper finger
@@ -997,6 +971,7 @@ void FruityClipAudioProcessorEditor::timerCallback()
                            juce::dontSendNotification);
     }
 
+    ottLabel.setText (getLoveSilkLabelText(), juce::dontSendNotification);
     modeLabel.setText (getClipperLabelText(), juce::dontSendNotification);
 
     // Drive pentagrams / x1 colour from lastBurn (0..1)
@@ -1140,6 +1115,15 @@ void FruityClipAudioProcessorEditor::setLookMode (LookMode mode)
 void FruityClipAudioProcessorEditor::openKlipBible()
 {
     showBypassInfoPopup();
+}
+
+juce::String FruityClipAudioProcessorEditor::getLoveSilkLabelText() const
+{
+    const auto mode = processor.getClipMode();
+    if (mode == FruityClipAudioProcessor::ClipMode::Analog)
+        return "SILK";
+
+    return "LOVE";
 }
 
 juce::String FruityClipAudioProcessorEditor::getClipperLabelText() const
