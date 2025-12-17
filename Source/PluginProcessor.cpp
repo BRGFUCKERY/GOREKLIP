@@ -19,14 +19,14 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float fruityClipperDigital (float x) noexcept
+static inline float fruityClipperDigital (float sample, float inputGain) noexcept
 {
-    if (x > 1.0f)
-        x = 1.0f;
-    else if (x < -1.0f)
-        x = -1.0f;
+    constexpr float fruityInternalScale = 3.7f;
 
-    return x;
+    float s = sample * inputGain * fruityInternalScale;
+    s = juce::jlimit (-1.0f, 1.0f, s);
+
+    return s;
 }
 
 //==============================================================
@@ -1029,7 +1029,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     else
                     {
                         // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample);
+                        sample = fruityClipperDigital (sample, inputGain);
                     }
 
                     samples[i] = sample;
@@ -1060,7 +1060,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     else
                     {
                         // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample);
+                        sample = fruityClipperDigital (sample, inputGain);
                     }
 
                     samples[i] = sample;
