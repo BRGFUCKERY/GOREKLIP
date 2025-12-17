@@ -21,12 +21,50 @@ static inline float sin9Poly (float x) noexcept
 
 static inline float fruityClipperDigital (float sample) noexcept
 {
-    constexpr float fruityInternalScale = 3.7406f;
+    // Calibrated soft knee matched to Fruity exports:
+    // - Linear up to kneeStart
+    // - Short soft knee up to kneeEnd
+    // - Hard limit beyond kneeEnd
+    constexpr float kneeStart = 0.99f;
+    constexpr float kneeEnd   = 1.20f;
+    constexpr float kneeWidth = (kneeEnd - kneeStart);
 
-    float s = sample * fruityInternalScale;
-    s = juce::jlimit (-1.0f, 1.0f, s);
+    static constexpr int kFruityDigitalLUTSize = 2048;
+    static constexpr std::array<float, kFruityDigitalLUTSize> kFruityDigitalLUT = [] {
+        std::array<float, kFruityDigitalLUTSize> lut{};
 
-    return s;
+        for (int i = 0; i < kFruityDigitalLUTSize; ++i)
+        {
+            const float t   = (float) i / (float) (kFruityDigitalLUTSize - 1);
+            const float x   = kneeStart + t * kneeWidth;
+            const float shp = smoothStep01 (juce::jlimit (0.0f, 1.0f, (x - kneeStart) / kneeWidth));
+            lut[(size_t) i] = juce::jlimit (kneeStart, 1.0f, kneeStart + shp * (1.0f - kneeStart));
+        }
+
+        return lut;
+    }();
+
+    const float ax = std::abs (sample);
+    if (ax <= kneeStart)
+        return sample;
+
+    const float sgn = (sample >= 0.0f ? 1.0f : -1.0f);
+    if (ax >= kneeEnd)
+        return sgn;
+
+    const float u = ax - kneeStart;
+    const float t = (u / kneeWidth) * (float) (kFruityDigitalLUTSize - 1);
+
+    int idx = (int) t;
+    if (idx < 0)
+        idx = 0;
+    if (idx >= kFruityDigitalLUTSize - 1)
+        return sgn * kFruityDigitalLUT[kFruityDigitalLUTSize - 1];
+
+    const float frac = t - (float) idx;
+    const float y0   = kFruityDigitalLUT[(size_t) idx];
+    const float y1   = kFruityDigitalLUT[(size_t) idx + 1];
+    return sgn * (y0 + frac * (y1 - y0));
 }
 
 //==============================================================
