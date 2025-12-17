@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "fruity_knee_lut_8192.h"
 
 #include <cmath>
 
@@ -21,11 +22,7 @@ static inline float sin9Poly (float x) noexcept
 
 static inline float fruityClipperDigital (float sample) noexcept
 {
-    if (sample > 1.0f)
-        return 1.0f;
-    if (sample < -1.0f)
-        return -1.0f;
-    return sample;
+    return FruityMatch::processSample (sample);
 }
 
 //==============================================================
