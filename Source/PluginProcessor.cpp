@@ -21,21 +21,9 @@ static inline float sin9Poly (float x) noexcept
 
 static inline float fruityClipperDigital (float x) noexcept
 {
-    constexpr float T = 127.0f / 128.0f;  // 0.9921875  (~ -0.068 dBFS)
-    constexpr float K = 1.0f - T;         // 0.0078125
-
-    const float ax = std::abs (x);
-
-    if (ax <= T)
-        return x;
-
-    // Exponential soft-limit above threshold, asymptotically approaching 1.0
-    const float over = ax - T;
-    const float ymag = 1.0f - K * std::exp (-over / K);
-
-    // Safety (optional, but keep it)
-    const float y = std::copysign (ymag, x);
-    return juce::jlimit (-1.0f, 1.0f, y);
+    if (x >  1.0f) return  1.0f;
+    if (x < -1.0f) return -1.0f;
+    return x;
 }
 
 //==============================================================
@@ -853,20 +841,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float silkAmountAnalog = marryAmount;
     const float w = 0.10f * std::pow (juce::jlimit (0.0f, 1.0f, fuckAmount), 2.0f);
 
-    // Global scalars for this block
-    // inputGain comes from the finger (in dB).
-    const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
-
-    // Coarse alignment (kept as 1.0f for now)
-    constexpr float fruityCal = 1.0f;
-
-    // Fine alignment scalar to tune RMS/null vs Fruity.
-    // Start at 1.0f. Later you can try values like 0.99998f, 1.00002f, etc.
-    constexpr float fruityFineCal = 0.99997f;
-
-    // This is the actual drive into OTT/SAT/clipper for default mode.
-    const float inputDrive = inputGain * fruityCal * fruityFineCal;
-
     // LIVE oversample index from parameter (0..6)
     int liveOsIndex = 0;
     if (auto* osModeParam = parameters.getRawParameterValue ("oversampleMode"))
@@ -887,6 +861,30 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     osIndex = juce::jlimit (0, 6, osIndex);
 
     const bool bypassNow = gainBypass.load();
+
+    // Global scalars for this block
+    // inputGain comes from the finger (in dB).
+    const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
+
+    // Coarse alignment (kept as 1.0f for now)
+    constexpr float fruityCal = 1.0f;
+
+    // Fine alignment scalar – must remain 1.0f for digital null tests.
+    constexpr float fruityFineCal = 1.0f;
+
+    const bool cleanDigitalTestMode =
+        (! bypassNow)
+        && (! useLimiter)
+        && (! isAnalogMode)
+        && liveOsIndex == 0
+        && osIndex == 0
+        && killAmount == 0.0f
+        && marryAmount == 0.0f
+        && fuckAmount == 0.0f
+        && std::abs (inputGainDb) < 1.0e-6f;
+
+    // This is the actual drive into OTT/SAT/clipper for default mode.
+    const float inputDrive = cleanDigitalTestMode ? 1.0f : inputGain * fruityCal * fruityFineCal;
     if (bypassNow)
     {
         // BYPASS mode: apply only input gain (for loudness-matched A/B).
@@ -921,6 +919,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         //==========================================================
         // PRE-CHAIN: GAIN + SILK + DSM capture EQ (base rate)
         //==========================================================
+        const bool runSilk = marryAmount > 0.0f;
+        const bool runDsm  = w > 0.0f;
+
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* samples = buffer.getWritePointer (ch);
@@ -928,13 +929,18 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (int i = 0; i < numSamples; ++i)
             {
                 float s = samples[i] * inputDrive;
-                s = applySilkAnalogSample (s, ch, marryAmount);
 
-                if (isAnalogMode)
+                if (runSilk)
+                    s = applySilkAnalogSample (s, ch, marryAmount);
+
+                if (isAnalogMode && runSilk)
                     s = applyAnalogToneMatch (s, ch, marryAmount);
 
-                float eq = dsmCaptureEq.processSample (ch, s);
-                s = s + w * (eq - s);
+                if (runDsm)
+                {
+                    float eq = dsmCaptureEq.processSample (ch, s);
+                    s = s + w * (eq - s);
+                }
 
                 samples[i] = s;
             }
