@@ -1050,7 +1050,7 @@ static inline float processSample (float x) noexcept
     const float sign = (x >= 0.0f ? 1.0f : -1.0f);
     const float ax   = std::fabs (x);
 
-   if (ax <= kKneeStart) return x * 0.999f;
+   if (ax <= kKneeStart) return x;
 
 
     if (ax >= kKneeEnd)
