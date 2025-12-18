@@ -348,6 +348,9 @@ private:
     float limiterGain      = 1.0f;
     float limiterReleaseCo = 0.0f;
 
+    // Hysteresis latch for block-level clip engagement
+    bool clippingActive    = false;
+
     // GUI burn value (0..1)
     std::atomic<float> guiBurn { 0.0f };
 
