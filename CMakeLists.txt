@@ -45,6 +45,7 @@ target_sources(GOREKLIP PRIVATE
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    Source/fruity_knee_lut_8192-2.cpp
 )
 
 # ============================================================
