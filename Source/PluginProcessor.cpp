@@ -4,9 +4,9 @@
 #include "fruity_knee_lut_8192-2.h"
 #include <cmath>
 
-static inline float smoothStep01 (float x) noexcept
+static inline float smoothstep01 (float x) noexcept
 {
-    x = juce::jlimit (0.0f, 1.0f, x);
+    x = fminf(fmaxf(x, 0.0f), 1.0f);
     return x * x * (3.0f - 2.0f * x);
 }
 
@@ -20,36 +20,30 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float microLut (float u) noexcept
+static inline float fruityClipperDigital (float x) noexcept
 {
-    // TODO: I’ll give you the actual micro-LUT values.
-    // For now this returns 0 so it won’t change anything until you fill it.
-    (void)u;
-    return 0.0f;
-}
+    const float ax = std::fabs(x);
 
-static inline float fruityClipperDigital (float sample) noexcept
-{
-    const float ax = std::fabs(sample);
+    // Pick these:
+    // t_lin = where we are GUARANTEED to be linear (no shaping)
+    // t_lut = where LUT is fully on
+    //
+    // If you want “linear until clipping”, set these close to 1.0
+    // Example: start blending at -0.5 dBFS and fully on at 0 dBFS
+    constexpr float t_lin = 0.9440609f; // -0.5 dBFS
+    constexpr float t_lut = 1.0f;       // 0 dBFS
 
-    // Base (your song LUT / full-range LUT)
-    float y = FruityMatch::processSample(sample);
+    if (ax <= t_lin)
+        return x; // perfect linear path
 
-    // Only nudge the very top end:
-    constexpr float t0 = 0.97f;  // start correction
-    constexpr float t1 = 1.20f;  // MUST match your LUT kXMax
+    const float yLut = FruityMatch::processSample(x);
 
-    if (ax > t0)
-    {
-        float u = (ax - t0) / (t1 - t0);   // 0..1
-        u = fminf(fmaxf(u, 0.0f), 1.0f);
+    // Smooth crossfade from linear->LUT
+    const float u = (ax - t_lin) / (t_lut - t_lin);
+    const float w = smoothstep01(u);
 
-        const float dy = microLut(u);      // tiny correction (usually ~1e-6 .. 1e-4)
-        const float ay = fminf(fmaxf(std::fabs(y) + dy, 0.0f), 1.0f);
-        y = std::copysign(ay, sample);
-    }
-
-    return y;
+    // y = (1-w)*x + w*yLut
+    return x + (yLut - x) * w;
 }
 
 //==============================================================
