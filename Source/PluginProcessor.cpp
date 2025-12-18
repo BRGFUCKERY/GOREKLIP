@@ -1,7 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-#include "fruity_knee_lut_8192-2.h"
+#include "fruity_piecewise_lut_131072_t0_0p95_xmax8.h"
 #include <cmath>
 
 static inline float smoothStep01 (float x) noexcept
