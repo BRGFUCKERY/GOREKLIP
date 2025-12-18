@@ -680,7 +680,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     ts.slowEnv = analogSlowEnvA * ts.slowEnv + (1.0f - analogSlowEnvA) * absPre;
 
     const float transient    = juce::jmax (0.0f, ts.fastEnv - ts.slowEnv);
-    const float transientNorm = smoothStep01 (transient / 0.25f);
+    const float transientNorm = smoothstep01 (transient / 0.25f);
 
     const float dynamicKnee  = baseKneeWidth * (1.0f + 0.35f * transientNorm);
     const float dynamicDrive = baseDrive * (1.0f - 0.06f * transientNorm);
@@ -699,7 +699,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // -------------------------------------------------------------
     const float xNorm = juce::jlimit (-1.0f, 1.0f, inRaw * 0.85f);
     const float absN  = std::abs (xNorm);
-    const float gate  = smoothStep01 ((absN - 0.35f) / (0.95f - 0.35f));
+    const float gate  = smoothstep01 ((absN - 0.35f) / (0.95f - 0.35f));
     const float silkWeight = 1.0f - silkShape;
     const float h9Amt = 0.0014f * silkWeight * gate;
     inRaw += h9Amt * sin9Poly (xNorm);
