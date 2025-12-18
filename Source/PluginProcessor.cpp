@@ -28,7 +28,7 @@ static inline float getBlockMaxAbs (const juce::AudioBuffer<float>& b) noexcept
     return m;
 }
 
-static inline float clipLinearThenLut (float x) noexcept
+static inline float clipActiveSample (float x) noexcept
 {
     const float ax = std::fabs (x);
     if (ax <= 1.0f)
@@ -875,7 +875,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Block-level true bypass when safely under the clip threshold.
     const float maxAbs = getBlockMaxAbs (buffer) * inputDrive;
 
-    constexpr float kEnter = 1.001f;
+    constexpr float kEnter = 1.0005f;
     constexpr float kExit  = 0.98f;
 
     if (! clippingActive && maxAbs >= kEnter) clippingActive = true;
@@ -1056,7 +1056,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     else
                     {
                         // DIGITAL clip (Fruity Clipper curve)
-                        sample = clipLinearThenLut (sample);
+                        constexpr float clipDrive = 1.0008f; // tiny pre-LUT boost when active
+                        sample = clipActiveSample (sample * clipDrive);
                     }
 
                     samples[i] = sample;
@@ -1087,7 +1088,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     else
                     {
                         // DIGITAL clip (Fruity Clipper curve)
-                        sample = clipLinearThenLut (sample);
+                        constexpr float clipDrive = 1.0008f; // tiny pre-LUT boost when active
+                        sample = clipActiveSample (sample * clipDrive);
                     }
 
                     samples[i] = sample;
