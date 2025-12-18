@@ -20,9 +20,36 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
+static inline float microLut (float u) noexcept
+{
+    // TODO: I’ll give you the actual micro-LUT values.
+    // For now this returns 0 so it won’t change anything until you fill it.
+    (void)u;
+    return 0.0f;
+}
+
 static inline float fruityClipperDigital (float sample) noexcept
 {
-    return FruityMatch::processSample(sample);
+    const float ax = std::fabs(sample);
+
+    // Base (your song LUT / full-range LUT)
+    float y = FruityMatch::processSample(sample);
+
+    // Only nudge the very top end:
+    constexpr float t0 = 0.97f;  // start correction
+    constexpr float t1 = 1.20f;  // MUST match your LUT kXMax
+
+    if (ax > t0)
+    {
+        float u = (ax - t0) / (t1 - t0);   // 0..1
+        u = fminf(fmaxf(u, 0.0f), 1.0f);
+
+        const float dy = microLut(u);      // tiny correction (usually ~1e-6 .. 1e-4)
+        const float ay = fminf(fmaxf(std::fabs(y) + dy, 0.0f), 1.0f);
+        y = std::copysign(ay, sample);
+    }
+
+    return y;
 }
 
 //==============================================================
