@@ -1,4 +1,11 @@
-    0.99999994f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+#pragma once
+
+#include <algorithm>
+#include <cstddef>
+#include <iterator>
+
+static constexpr float fruity_piecewise_lut_131072_t0_0p95_xmax8[] = {
+0.99999994f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
     1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
     1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
     1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
@@ -6796,3 +6803,24 @@
     1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
     1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
     1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f
+};
+
+struct FruityMatch
+{
+    static float processSample (float sample) noexcept
+    {
+        const float x = juce::jlimit (-1.0f, 1.0f, sample);
+        constexpr auto tableSize = static_cast<float> (std::size (fruity_piecewise_lut_131072_t0_0p95_xmax8));
+
+        const float index = (x * 0.5f + 0.5f) * (tableSize - 1.0f);
+        const auto i0 = static_cast<size_t> (index);
+        const auto i1 = std::min (i0 + 1u, static_cast<size_t> (tableSize - 1.0f));
+        const float frac = index - static_cast<float> (i0);
+
+        const float y0 = fruity_piecewise_lut_131072_t0_0p95_xmax8[i0];
+        const float y1 = fruity_piecewise_lut_131072_t0_0p95_xmax8[i1];
+        const float shaped = y0 + (y1 - y0) * frac;
+
+        return (sample >= 0.0f ? shaped : -shaped);
+    }
+};
