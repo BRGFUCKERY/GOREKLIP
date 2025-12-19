@@ -22,7 +22,8 @@ static inline float sin9Poly (float x) noexcept
 
 static inline float fruityClipperDigital (float sample) noexcept
 {
-    return FruityMatch::processSample(sample);
+    constexpr float kFruityPreGain = 1.0000298f; // matches Fruity linear path on sweep/noise
+    return FruityMatch::processSample (sample * kFruityPreGain);
 }
 
 //==============================================================
