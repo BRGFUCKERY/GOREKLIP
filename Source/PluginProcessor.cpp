@@ -989,148 +989,159 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         //   - No metering here; meters are computed later at base rate
         //==========================================================
 
-        // Compute DC-block coefficient for the analog clipper at the *current processing rate*.
-        // When oversampling is on, applyClipperAnalogSample runs at the oversampled rate.
-        // We want a ~sub-5 Hz corner no matter what.
+        // Hard bypass of clipper/limiter when block is far from clipping.
+        float maxAbs = 0.0f;
+        for (int ch = 0; ch < numChannels; ++ch)
+            maxAbs = juce::jmax (maxAbs, buffer.getMagnitude (ch, 0, numSamples));
+
+        constexpr float kBypass = 0.95f;
+        const bool clipperBypass = (maxAbs <= kBypass);
+
+        if (! clipperBypass)
         {
-            float effectiveSr = (float) sampleRate;
-            if (oversampler && currentOversampleIndex > 0)
-                effectiveSr *= (float) oversampler->getOversamplingFactor();
-
-            // Ultra-low DC cutoff (Hz)
-            constexpr float dcFc = 3.0f;
-            analogDcAlpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / juce::jmax (1.0f, effectiveSr));
-            analogDcAlpha = juce::jlimit (0.0f, 0.9999999f, analogDcAlpha);
-        }
-
-        const bool useOversampling = (oversampler != nullptr && currentOversampleIndex > 0);
-
-        if (useOversampling)
-        {
-            juce::dsp::AudioBlock<float> block (buffer);
-
-            auto osBlock      = oversampler->processSamplesUp (block);
-            const int osNumSamples  = (int) osBlock.getNumSamples();
-            const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
-
-            for (int ch = 0; ch < osNumChannels; ++ch)
+            // Compute DC-block coefficient for the analog clipper at the *current processing rate*.
+            // When oversampling is on, applyClipperAnalogSample runs at the oversampled rate.
+            // We want a ~sub-5 Hz corner no matter what.
             {
-                float* samples = osBlock.getChannelPointer (ch);
+                float effectiveSr = (float) sampleRate;
+                if (oversampler && currentOversampleIndex > 0)
+                    effectiveSr *= (float) oversampler->getOversamplingFactor();
 
-                for (int i = 0; i < osNumSamples; ++i)
+                // Ultra-low DC cutoff (Hz)
+                constexpr float dcFc = 3.0f;
+                analogDcAlpha = std::exp (-2.0f * juce::MathConstants<float>::pi * dcFc / juce::jmax (1.0f, effectiveSr));
+                analogDcAlpha = juce::jlimit (0.0f, 0.9999999f, analogDcAlpha);
+            }
+
+            const bool useOversampling = (oversampler != nullptr && currentOversampleIndex > 0);
+
+            if (useOversampling)
+            {
+                juce::dsp::AudioBlock<float> block (buffer);
+
+                auto osBlock      = oversampler->processSamplesUp (block);
+                const int osNumSamples  = (int) osBlock.getNumSamples();
+                const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
+
+                for (int ch = 0; ch < osNumChannels; ++ch)
                 {
-                    float sample = samples[i];
+                    float* samples = osBlock.getChannelPointer (ch);
 
-                    if (limiterOn)
+                    for (int i = 0; i < osNumSamples; ++i)
                     {
-                        sample = processLimiterSample (sample);
-                    }
-                    else if (isAnalogMode)
-                    {
-                        sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
-                    }
-                    else
-                    {
-                        // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample);
-                    }
+                        float sample = samples[i];
 
-                    samples[i] = sample;
+                        if (limiterOn)
+                        {
+                            sample = processLimiterSample (sample);
+                        }
+                        else if (isAnalogMode)
+                        {
+                            sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
+                        }
+                        else
+                        {
+                            // DIGITAL clip (Fruity Clipper curve)
+                            sample = fruityClipperDigital (sample);
+                        }
+
+                        samples[i] = sample;
+                    }
+                }
+
+                // Downsample once for the whole block.
+                oversampler->processSamplesDown (block);
+            }
+            else
+            {
+                //======================================================
+                // NO OVERSAMPLING – process at base rate only
+                //======================================================
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* samples = buffer.getWritePointer (ch);
+
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        float sample = samples[i];
+
+                        // SAT already applied previously if needed.
+                        if (limiterOn)
+                            sample = processLimiterSample (sample);
+                        else if (isAnalogMode)
+                            sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
+                        else
+                        {
+                            // DIGITAL clip (Fruity Clipper curve)
+                            sample = fruityClipperDigital (sample);
+                        }
+
+                        samples[i] = sample;
+                    }
                 }
             }
 
-            // Downsample once for the whole block.
-            oversampler->processSamplesDown (block);
-        }
-        else
-        {
-            //======================================================
-            // NO OVERSAMPLING – process at base rate only
-            //======================================================
-            for (int ch = 0; ch < numChannels; ++ch)
+            // FINAL SAFETY CEILING AT BASE RATE
+            // Keep clamp for limiter/analog, and also protect digital when oversampling to catch any
+            // tiny post-OS overshoot.
+            const bool applyFinalCeiling = useLimiter || isAnalogMode || (useOversampling && ! isAnalogMode);
+
+            if (applyFinalCeiling)
             {
-                float* samples = buffer.getWritePointer (ch);
-
-                for (int i = 0; i < numSamples; ++i)
+                for (int ch = 0; ch < numChannels; ++ch)
                 {
-                    float sample = samples[i];
+                    float* s = buffer.getWritePointer (ch);
 
-                    // SAT already applied previously if needed.
-                    if (limiterOn)
-                        sample = processLimiterSample (sample);
-                    else if (isAnalogMode)
-                        sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
-                    else
+                    for (int i = 0; i < numSamples; ++i)
                     {
-                        // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample);
+                        float y = s[i];
+                        if (y >  1.0f) y =  1.0f;
+                        if (y < -1.0f) y = -1.0f;
+                        s[i] = y;
                     }
-
-                    samples[i] = sample;
                 }
             }
-        }
 
-        // FINAL SAFETY CEILING AT BASE RATE
-        // Keep clamp for limiter/analog, and also protect digital when oversampling to catch any
-        // tiny post-OS overshoot.
-        const bool applyFinalCeiling = useLimiter || isAnalogMode || (useOversampling && ! isAnalogMode);
-
-        if (applyFinalCeiling)
-        {
-            for (int ch = 0; ch < numChannels; ++ch)
+            // Do not quantize/dither in Fruity DIGITAL mode (must stay float to null).
+            if (useLimiter || isAnalogMode)
             {
-                float* s = buffer.getWritePointer (ch);
+                const int numChannels = buffer.getNumChannels();
+                const int numSamples  = buffer.getNumSamples();
 
-                for (int i = 0; i < numSamples; ++i)
+                // We quantize to 24-bit domain: ±2^23 discrete steps.
+                constexpr float quantSteps = 8388608.0f;       // 2^23
+                constexpr float ditherAmp  = 1.0f / quantSteps; // ~ -138 dBFS
+
+                // Simple random generator (LCG) per block.
+                static uint32_t ditherState = 0x12345678u;
+                auto randFloat = [&]() noexcept
                 {
-                    float y = s[i];
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
-                    s[i] = y;
-                }
-            }
-        }
+                    ditherState = ditherState * 1664525u + 1013904223u;
+                    return (ditherState & 0x00FFFFFFu) / 16777216.0f;
+                };
 
-        // Do not quantize/dither in Fruity DIGITAL mode (must stay float to null).
-        if (useLimiter || isAnalogMode)
-        {
-            const int numChannels = buffer.getNumChannels();
-            const int numSamples  = buffer.getNumSamples();
-
-            // We quantize to 24-bit domain: ±2^23 discrete steps.
-            constexpr float quantSteps = 8388608.0f;       // 2^23
-            constexpr float ditherAmp  = 1.0f / quantSteps; // ~ -138 dBFS
-
-            // Simple random generator (LCG) per block.
-            static uint32_t ditherState = 0x12345678u;
-            auto randFloat = [&]() noexcept
-            {
-                ditherState = ditherState * 1664525u + 1013904223u;
-                return (ditherState & 0x00FFFFFFu) / 16777216.0f;
-            };
-
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* samples = buffer.getWritePointer (ch);
-
-                for (int i = 0; i < numSamples; ++i)
+                for (int ch = 0; ch < numChannels; ++ch)
                 {
-                    float s = samples[i];
+                    float* samples = buffer.getWritePointer (ch);
 
-                    // inaudible Fruity-style TPDF dither
-                    const float r1 = randFloat();
-                    const float r2 = randFloat();
-                    const float tpdf = (r1 - r2) * ditherAmp;
-                    s += tpdf;
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        float s = samples[i];
 
-                    // 24-bit style quantization
-                    const float q = std::round (s * quantSteps) / quantSteps;
+                        // inaudible Fruity-style TPDF dither
+                        const float r1 = randFloat();
+                        const float r2 = randFloat();
+                        const float tpdf = (r1 - r2) * ditherAmp;
+                        s += tpdf;
 
-                    float y = q;
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
-                    samples[i] = y;
+                        // 24-bit style quantization
+                        const float q = std::round (s * quantSteps) / quantSteps;
+
+                        float y = q;
+                        if (y >  1.0f) y =  1.0f;
+                        if (y < -1.0f) y = -1.0f;
+                        samples[i] = y;
+                    }
                 }
             }
         }
