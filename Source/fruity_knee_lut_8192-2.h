@@ -1,6 +1,5 @@
-#ifndef FRUITY_KNEE_LUT_8192_2_H
 #define FRUITY_KNEE_LUT_8192_2_H
-// Auto-generated Fruity knee lookup table
+
     0.99999994f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
     1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
     1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
