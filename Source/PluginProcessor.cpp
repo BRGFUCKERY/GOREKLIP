@@ -20,29 +20,27 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float fruityClipperDigital (float sample) noexcept
+static inline float fruityClipperDigital (float x) noexcept
 {
-    // Fruity onset on your 1k test behaves ~0.9925 (not 0.95)
-    constexpr float kneeStart  = 0.9925f;
-    constexpr float blendWidth = 0.0015f; // small = avoids discontinuity but doesn't “soften early”
+    constexpr float kneeStart  = 0.9922f;   // slightly earlier onset
+    constexpr float blendWidth = 0.00035f;  // MUCH tighter blend
 
-    const float ax = std::abs (sample);
+    const float ax = std::abs (x);
 
     if (ax <= kneeStart)
-        return sample;
+        return x;
 
-    float shaped = FruityMatch::processSample (sample);
+    float y = FruityMatch::processSample (x);
 
-    if (ax < (kneeStart + blendWidth))
+    if (ax < kneeStart + blendWidth)
     {
         float t = (ax - kneeStart) / blendWidth;
         t = juce::jlimit (0.0f, 1.0f, t);
-        t = smoothStep01 (t);
-
-        shaped = sample + (shaped - sample) * t;
+        t = t * t * (3.0f - 2.0f * t); // smoothstep
+        y = x + (y - x) * t;
     }
 
-    return shaped;
+    return y;
 }
 
 //==============================================================
