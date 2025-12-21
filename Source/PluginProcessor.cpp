@@ -20,9 +20,21 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float fruityClipperDigital (float sample) noexcept
+static inline float getBlockMaxAbs (const juce::AudioBuffer<float>& b) noexcept
 {
-    return FruityMatch::processSample(sample);
+    float m = 0.0f;
+    for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        m = juce::jmax (m, b.getMagnitude (ch, 0, b.getNumSamples()));
+    return m;
+}
+
+static inline float clipActiveSample (float x) noexcept
+{
+    const float ax = std::fabs (x);
+    if (ax <= 1.0f)
+        return x;
+
+    return FruityMatch::processSample (x);
 }
 
 //==============================================================
@@ -860,6 +872,18 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // This is the actual drive into OTT/SAT/clipper for default mode.
     const float inputDrive = inputGain * fruityCal * fruityFineCal;
 
+    // Block-level true bypass when safely under the clip threshold.
+    const float maxAbs = getBlockMaxAbs (buffer) * inputDrive;
+
+    constexpr float kEnter = 1.0005f;
+    constexpr float kExit  = 0.98f;
+
+    if (! clippingActive && maxAbs >= kEnter) clippingActive = true;
+    if ( clippingActive && maxAbs <= kExit ) clippingActive = false;
+
+    if (! clippingActive)
+        return;
+
     // LIVE oversample index from parameter (0..6)
     int liveOsIndex = 0;
     if (auto* osModeParam = parameters.getRawParameterValue ("oversampleMode"))
@@ -1032,7 +1056,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     else
                     {
                         // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample);
+                        constexpr float clipDrive = 1.0008f; // tiny pre-LUT boost when active
+                        sample = clipActiveSample (sample * clipDrive);
                     }
 
                     samples[i] = sample;
@@ -1063,7 +1088,8 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     else
                     {
                         // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample);
+                        constexpr float clipDrive = 1.0008f; // tiny pre-LUT boost when active
+                        sample = clipActiveSample (sample * clipDrive);
                     }
 
                     samples[i] = sample;
