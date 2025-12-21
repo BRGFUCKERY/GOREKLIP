@@ -22,7 +22,26 @@ static inline float sin9Poly (float x) noexcept
 
 static inline float fruityClipperDigital (float sample) noexcept
 {
-    return FruityMatch::processSample(sample);
+    constexpr float kneeStart  = 0.95f;
+    constexpr float blendWidth = 0.0035f;
+
+    const float ax = std::abs (sample);
+
+    if (ax <= kneeStart)
+        return sample;
+
+    float shaped = FruityMatch::processSample (sample);
+
+    if (ax < (kneeStart + blendWidth))
+    {
+        float t = (ax - kneeStart) / blendWidth;
+        t = juce::jlimit (0.0f, 1.0f, t);
+        t = smoothStep01 (t);
+
+        shaped = sample + (shaped - sample) * t;
+    }
+
+    return shaped;
 }
 
 //==============================================================
