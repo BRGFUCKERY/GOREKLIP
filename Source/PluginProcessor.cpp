@@ -4,9 +4,9 @@
 #include "fruity_knee_lut_8192-2.h"
 #include <cmath>
 
-static inline float smoothStep01 (float x) noexcept
+static inline float smoothstep01 (float x) noexcept
 {
-    x = juce::jlimit (0.0f, 1.0f, x);
+    x = fminf (fmaxf (x, 0.0f), 1.0f);
     return x * x * (3.0f - 2.0f * x);
 }
 
@@ -20,9 +20,24 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float fruityClipperDigital (float sample) noexcept
+static inline float fruityClipperDigital (float x) noexcept
 {
-    return FruityMatch::processSample(sample);
+    const float ax = std::fabs (x);
+
+    // sweep peaks ~0.40, noise peaks ~0.68, so this stays perfectly linear there
+    constexpr float t_lin = 0.90f;  // guaranteed linear zone
+    constexpr float t_lut = 1.02f;  // LUT fully on slightly above 1.0
+
+    if (ax <= t_lin)
+        return x;
+
+    const float yLut = FruityMatch::processSample (x);
+
+    // blend (prevents “hard switch” artifacts)
+    const float u = (ax - t_lin) / (t_lut - t_lin);
+    const float w = smoothstep01 (u);
+
+    return x + (yLut - x) * w;
 }
 
 //==============================================================
@@ -659,7 +674,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     ts.slowEnv = analogSlowEnvA * ts.slowEnv + (1.0f - analogSlowEnvA) * absPre;
 
     const float transient    = juce::jmax (0.0f, ts.fastEnv - ts.slowEnv);
-    const float transientNorm = smoothStep01 (transient / 0.25f);
+    const float transientNorm = smoothstep01 (transient / 0.25f);
 
     const float dynamicKnee  = baseKneeWidth * (1.0f + 0.35f * transientNorm);
     const float dynamicDrive = baseDrive * (1.0f - 0.06f * transientNorm);
@@ -678,7 +693,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // -------------------------------------------------------------
     const float xNorm = juce::jlimit (-1.0f, 1.0f, inRaw * 0.85f);
     const float absN  = std::abs (xNorm);
-    const float gate  = smoothStep01 ((absN - 0.35f) / (0.95f - 0.35f));
+    const float gate  = smoothstep01 ((absN - 0.35f) / (0.95f - 0.35f));
     const float silkWeight = 1.0f - silkShape;
     const float h9Amt = 0.0014f * silkWeight * gate;
     inRaw += h9Amt * sin9Poly (xNorm);
