@@ -20,9 +20,21 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float fruityClipperDigital (float sample) noexcept
+static inline float fruityClipperDigital (float x) noexcept
 {
-    return FruityMatch::processSample(sample);
+    const float ax = std::fabs(x);
+
+    // 1) True linear pass-through until you actually clip
+    if (ax <= 1.0f)
+        return x;
+
+    // 2) Only above 1.0, apply your Fruity LUT model
+    // IMPORTANT: Your LUT must satisfy:
+    //   lut(1.0) == 1.0
+    // and be monotone.
+    const float y = FruityMatch::processSample(x);
+
+    return y;
 }
 
 //==============================================================
