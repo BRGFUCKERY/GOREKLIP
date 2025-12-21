@@ -22,8 +22,9 @@ static inline float sin9Poly (float x) noexcept
 
 static inline float fruityClipperDigital (float sample) noexcept
 {
-    constexpr float kneeStart  = 0.95f;
-    constexpr float blendWidth = 0.0035f;
+    // Fruity onset on your 1k test behaves ~0.9925 (not 0.95)
+    constexpr float kneeStart  = 0.9925f;
+    constexpr float blendWidth = 0.0015f; // small = avoids discontinuity but doesn't “soften early”
 
     const float ax = std::abs (sample);
 
