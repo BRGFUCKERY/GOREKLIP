@@ -1096,7 +1096,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // Smooth asymptotic ceiling (normalized tanh): tanh(k*x)/tanh(k)
                 // k chosen to be "Lavry-ish": transparent until the last few tenths of a dB.
                 constexpr float k = 4.0f;
-                constexpr float invTanhK = 1.0f / std::tanh (k);
+                const float invTanhK = 1.0f / std::tanh (k);
                 return std::tanh (k * x) * invTanhK;
             };
 

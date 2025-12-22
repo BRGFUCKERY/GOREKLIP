@@ -337,6 +337,23 @@ private:
 
     std::vector<AnalogClipState> analogClipStates;
 
+    // Lightweight placeholder for the measured analog null model.
+    // Currently acts as a pass-through but keeps the AudioProcessor wiring intact.
+    class AnalogNullModel
+    {
+    public:
+        void reset() noexcept {}
+        void prepare (double, int, int) noexcept {}
+        void prepareBlockForSilk (float) noexcept {}
+
+        template <typename BlockType>
+        void processBlock (BlockType&, float) noexcept {}
+
+        float processSample (int, float x, float) noexcept { return x; }
+    };
+
+    AnalogNullModel analogNullModel;
+
     //==========================================================
     // Internal state
     //==========================================================
