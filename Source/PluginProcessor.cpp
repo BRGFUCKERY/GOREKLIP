@@ -20,9 +20,29 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float fruityClipperDigital (float sample) noexcept
+static inline float fruityClipperDigital (float x) noexcept
 {
-    return FruityMatch::processSample(sample);
+    constexpr float kneeStart  = 0.9922f;
+    constexpr float blendWidth = 0.00035f;
+
+    const float ax = std::abs (x);
+
+    // IMPORTANT: keep perfect identity for almost the whole range
+    if (ax <= kneeStart)
+        return x;
+
+    float y = FruityMatch::processSample (x);
+
+    // Smoothly blend into LUT right at the knee
+    if (ax < kneeStart + blendWidth)
+    {
+        float t = (ax - kneeStart) / blendWidth;
+        t = juce::jlimit (0.0f, 1.0f, t);
+        t = t * t * (3.0f - 2.0f * t); // smoothstep
+        y = x + (y - x) * t;
+    }
+
+    return y;
 }
 
 //==============================================================
@@ -869,7 +889,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     constexpr float fruityFineCal = 0.99997f;
 
     // This is the actual drive into OTT/SAT/clipper for default mode.
-    const float inputDrive = inputGain * fruityCal * fruityFineCal;
+    const float inputDrive = isAnalogMode
+                                 ? (inputGain * fruityCal * fruityFineCal)
+                                 : inputGain;
 
     // LIVE oversample index from parameter (0..6)
     int liveOsIndex = 0;
