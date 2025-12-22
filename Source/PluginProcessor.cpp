@@ -20,27 +20,9 @@ static inline float sin9Poly (float x) noexcept
     return 9.0f * x - 120.0f * x3 + 432.0f * x5 - 576.0f * x7 + 256.0f * x9;
 }
 
-static inline float fruityClipperDigital (float x) noexcept
+static inline float fruityClipperDigital (float sample) noexcept
 {
-    constexpr float kneeStart  = 0.9922f;   // slightly earlier onset
-    constexpr float blendWidth = 0.00035f;  // MUCH tighter blend
-
-    const float ax = std::abs (x);
-
-    if (ax <= kneeStart)
-        return x;
-
-    float y = FruityMatch::processSample (x);
-
-    if (ax < kneeStart + blendWidth)
-    {
-        float t = (ax - kneeStart) / blendWidth;
-        t = juce::jlimit (0.0f, 1.0f, t);
-        t = t * t * (3.0f - 2.0f * t); // smoothstep
-        y = x + (y - x) * t;
-    }
-
-    return y;
+    return FruityMatch::processSample(sample);
 }
 
 //==============================================================
@@ -289,6 +271,7 @@ void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
     if (numStages <= 0 || numChannels <= 0)
     {
         oversampler.reset();
+        analogNullModel.reset();
         return;
     }
 
@@ -299,6 +282,8 @@ void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
         true /* maximum quality */);
 
     oversampler->reset();
+
+    analogNullModel.reset();
 
     if (maxBlockSize > 0)
         oversampler->initProcessing ((size_t) maxBlockSize);
@@ -393,6 +378,9 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     {
         updateOversampling (0, getTotalNumOutputChannels());
     }
+
+    // Analog model state (FIR+LUT)
+    analogNullModel.prepare (sampleRate, samplesPerBlock, getTotalNumOutputChannels());
 
     // Reset GUI signal envelope for LUFS gating
     guiSignalEnv.store (0.0f);
@@ -864,6 +852,11 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     const float silkAmountAnalog = marryAmount;
     const float w = 0.10f * std::pow (juce::jlimit (0.0f, 1.0f, fuckAmount), 2.0f);
 
+    // Analog null model: match exactly at silk = 0/50/100, and linearly interpolate *model parameters*
+    // between those points (not an output crossfade).
+    if (isAnalogMode)
+        analogNullModel.prepareBlockForSilk (silkAmountAnalog);
+
     // Global scalars for this block
     // inputGain comes from the finger (in dB).
     const float inputGain = juce::Decibels::decibelsToGain (inputGainDb);
@@ -873,7 +866,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     // Fine alignment scalar to tune RMS/null vs Fruity.
     // Start at 1.0f. Later you can try values like 0.99998f, 1.00002f, etc.
-    constexpr float fruityFineCal = 1.0f;
+    constexpr float fruityFineCal = 0.99997f;
 
     // This is the actual drive into OTT/SAT/clipper for default mode.
     const float inputDrive = inputGain * fruityCal * fruityFineCal;
@@ -939,14 +932,17 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (int i = 0; i < numSamples; ++i)
             {
                 float s = samples[i] * inputDrive;
-                if (marryAmount > 0.0f)
+                // DIGITAL MODE: keep the existing (updated) SILK behavior.
+                // ANALOG MODE: the analog null model owns SILK (0/50/100 matches + parameter interpolation).
+                if (marryAmount > 0.0f && ! isAnalogMode)
                     s = applySilkAnalogSample (s, ch, marryAmount);
 
-                if (isAnalogMode)
-                    s = applyAnalogToneMatch (s, ch, marryAmount);
-
-                float eq = dsmCaptureEq.processSample (ch, s);
-                s = s + w * (eq - s);
+                // Legacy tone-match blocks are bypassed in analog mode.
+                if (! isAnalogMode)
+                {
+                    float eq = dsmCaptureEq.processSample (ch, s);
+                    s = s + w * (eq - s);
+                }
 
                 samples[i] = s;
             }
@@ -957,7 +953,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         //==========================================================
         const bool limiterOn = useLimiter;
 
-        if (! limiterOn && killAmount > 0.0f)
+        if (! limiterOn && ! isAnalogMode && killAmount > 0.0f)
         {
             for (int ch = 0; ch < numChannels; ++ch)
             {
@@ -1031,32 +1027,31 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             const int osNumSamples  = (int) osBlock.getNumSamples();
             const int osNumChannels = (int) osBlock.getNumChannels(); // should match numChannels
 
-            for (int ch = 0; ch < osNumChannels; ++ch)
+            if (isAnalogMode)
             {
-                float* samples = osBlock.getChannelPointer (ch);
-
-                for (int i = 0; i < osNumSamples; ++i)
+                // Analog (Lavry) model: measured FIR + transfer LUT.
+                // Uses the silk anchors (0/50/100) and linearly interpolates between them.
+                analogNullModel.processBlock (osBlock, silkAmountAnalog);
+            }
+            else
+            {
+                for (int ch = 0; ch < osNumChannels; ++ch)
                 {
-                    float sample = samples[i];
+                    float* samples = osBlock.getChannelPointer (ch);
 
-                    if (limiterOn)
+                    for (int i = 0; i < osNumSamples; ++i)
                     {
-                        sample = processLimiterSample (sample);
-                    }
-                    else if (isAnalogMode)
-                    {
-                        sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
-                    }
-                    else
-                    {
-                        // DIGITAL clip (Fruity Clipper curve)
-                        sample = fruityClipperDigital (sample);
-                    }
+                        float sample = samples[i];
 
-                    samples[i] = sample;
+                        if (limiterOn)
+                            sample = processLimiterSample (sample);
+                        else
+                            sample = fruityClipperDigital (sample);
+
+                        samples[i] = sample;
+                    }
                 }
             }
-
             // Downsample once for the whole block.
             oversampler->processSamplesDown (block);
         }
@@ -1077,7 +1072,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     if (limiterOn)
                         sample = processLimiterSample (sample);
                     else if (isAnalogMode)
-                        sample = applyClipperAnalogSample (sample, ch, silkAmountAnalog);
+                        sample = analogNullModel.processSample (ch, sample, silkAmountAnalog);
                     else
                     {
                         // DIGITAL clip (Fruity Clipper curve)
@@ -1096,6 +1091,15 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
         if (applyFinalCeiling)
         {
+            auto lavrySafetyCeiling = [] (float x) noexcept
+            {
+                // Smooth asymptotic ceiling (normalized tanh): tanh(k*x)/tanh(k)
+                // k chosen to be "Lavry-ish": transparent until the last few tenths of a dB.
+                constexpr float k = 4.0f;
+                constexpr float invTanhK = 1.0f / std::tanh (k);
+                return std::tanh (k * x) * invTanhK;
+            };
+
             for (int ch = 0; ch < numChannels; ++ch)
             {
                 float* s = buffer.getWritePointer (ch);
@@ -1103,55 +1107,26 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 for (int i = 0; i < numSamples; ++i)
                 {
                     float y = s[i];
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
+
+                    if (isAnalogMode)
+                    {
+                        // Only engage if we ever overshoot full-scale.
+                        if (std::abs (y) > 1.0f)
+                            y = lavrySafetyCeiling (y);
+                    }
+                    else
+                    {
+                        if (y >  1.0f) y =  1.0f;
+                        if (y < -1.0f) y = -1.0f;
+                    }
+
                     s[i] = y;
                 }
             }
         }
 
-        // Do not quantize/dither in Fruity DIGITAL mode (must stay float to null).
-        if (useLimiter || isAnalogMode)
-        {
-            const int numChannels = buffer.getNumChannels();
-            const int numSamples  = buffer.getNumSamples();
-
-            // We quantize to 24-bit domain: ±2^23 discrete steps.
-            constexpr float quantSteps = 8388608.0f;       // 2^23
-            constexpr float ditherAmp  = 1.0f / quantSteps; // ~ -138 dBFS
-
-            // Simple random generator (LCG) per block.
-            static uint32_t ditherState = 0x12345678u;
-            auto randFloat = [&]() noexcept
-            {
-                ditherState = ditherState * 1664525u + 1013904223u;
-                return (ditherState & 0x00FFFFFFu) / 16777216.0f;
-            };
-
-            for (int ch = 0; ch < numChannels; ++ch)
-            {
-                float* samples = buffer.getWritePointer (ch);
-
-                for (int i = 0; i < numSamples; ++i)
-                {
-                    float s = samples[i];
-
-                    // inaudible Fruity-style TPDF dither
-                    const float r1 = randFloat();
-                    const float r2 = randFloat();
-                    const float tpdf = (r1 - r2) * ditherAmp;
-                    s += tpdf;
-
-                    // 24-bit style quantization
-                    const float q = std::round (s * quantSteps) / quantSteps;
-
-                    float y = q;
-                    if (y >  1.0f) y =  1.0f;
-                    if (y < -1.0f) y = -1.0f;
-                    samples[i] = y;
-                }
-            }
-        }
+        // 24-bit quantize/dither intentionally disabled (per request).
+        // Keep output float to preserve nulling and avoid adding noise / rounding artifacts.
     }
 
     //==========================================================
