@@ -125,9 +125,6 @@ private:
     // Analog tone-match tilt, post-clip, back at base rate or in the oversampled block
     float applyAnalogToneMatch (float x, int channel, float silkAmount);
 
-    // Oversampling config helper
-    void updateOversampling (int osIndex, int numChannels);
-
     //==========================================================
     // K-weighted LUFS meter state
     //==========================================================
@@ -202,6 +199,7 @@ private:
     float analogFastEnvA = 0.0f;
     float analogSlowEnvA = 0.0f;
     float analogSlewA    = 0.0f;
+    float analogBiasA    = 0.0f;
 
     struct DsmCaptureEq
     {
@@ -384,7 +382,11 @@ private:
     //==========================================================
     std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
     int currentOversampleIndex = 0;   // 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32, 6=x64
+    int currentOversampleFactor = 1;  // 1,2,4,8,16,32,64 (derived from index)
     int maxBlockSize           = 0;   // for oversampler->initProcessing
+
+    void updateOversampling (int osIndex, int numChannels);
+    void updateAnalogClipperCoefficients();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FruityClipAudioProcessor)
 };

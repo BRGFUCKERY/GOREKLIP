@@ -268,6 +268,48 @@ void FruityClipAudioProcessor::setStoredLiveOversampleIndex (int index)
 //==============================================================
 // Oversampling config helper
 //==============================================================
+void FruityClipAudioProcessor::updateAnalogClipperCoefficients()
+{
+    const float osFactor = (float) juce::jmax (1, currentOversampleFactor);
+    const float srEff    = (float) sampleRate * osFactor;
+
+    if (srEff <= 0.0f)
+        return;
+
+    // Bias envelope follower coefficients (slow vs waveform, fast vs transients)
+    {
+        const float attackMs  = 1.5f;
+        const float releaseMs = 35.0f;
+        const float aTau = attackMs  * 0.001f;
+        const float rTau = releaseMs * 0.001f;
+
+        analogEnvAttackAlpha  = std::exp (-1.0f / (aTau * srEff));
+        analogEnvReleaseAlpha = std::exp (-1.0f / (rTau * srEff));
+        analogEnvAttackAlpha  = juce::jlimit (0.0f, 0.9999999f, analogEnvAttackAlpha);
+        analogEnvReleaseAlpha = juce::jlimit (0.0f, 0.9999999f, analogEnvReleaseAlpha);
+    }
+
+    // Transient envelope smoothing (fast/slow) for analog memory
+    {
+        const float fastTau = 0.0015f; // 1.5 ms
+        const float slowTau = 0.035f;  // 35 ms
+        analogFastEnvA = juce::jlimit (0.0f, 0.9999999f, std::exp (-1.0f / (fastTau * srEff)));
+        analogSlowEnvA = juce::jlimit (0.0f, 0.9999999f, std::exp (-1.0f / (slowTau * srEff)));
+    }
+
+    // Slew limiter coefficient (~8 kHz corner in REAL TIME, regardless of OS)
+    {
+        const float alphaSlew = std::exp (-2.0f * juce::MathConstants<float>::pi * 8000.0f / srEff);
+        analogSlewA = juce::jlimit (0.0f, 0.9999999f, alphaSlew);
+    }
+
+    // Bias memory smoothing (~4 ms in real time)
+    {
+        const float biasTau = 0.004f; // 4 ms
+        analogBiasA = juce::jlimit (0.0f, 0.9999999f, std::exp (-1.0f / (biasTau * srEff)));
+    }
+}
+
 void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 {
     // osIndex: 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32, 6=x64
@@ -286,9 +328,13 @@ void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
         default: numStages = 0; break;
     }
 
+    currentOversampleFactor = 1 << numStages; // 1,2,4,8,16,32,64
+
     if (numStages <= 0 || numChannels <= 0)
     {
         oversampler.reset();
+        currentOversampleFactor = 1;
+        updateAnalogClipperCoefficients();
         return;
     }
 
@@ -302,6 +348,8 @@ void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 
     if (maxBlockSize > 0)
         oversampler->initProcessing ((size_t) maxBlockSize);
+
+    updateAnalogClipperCoefficients();
 }
 
 //==============================================================
@@ -338,17 +386,6 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         silkEvenDcAlpha = juce::jlimit (0.0f, 0.9999999f, silkEvenDcAlpha);
     }
 
-    // Analog bias envelope follower coefficients (slow vs waveform, fast vs transients)
-    {
-        const float attackMs  = 1.5f;   // 1.5 ms attack
-        const float releaseMs = 35.0f;  // 35 ms release
-        const float aTau = attackMs  * 0.001f;
-        const float rTau = releaseMs * 0.001f;
-        analogEnvAttackAlpha  = std::exp (-1.0f / (aTau * sr));
-        analogEnvReleaseAlpha = std::exp (-1.0f / (rTau * sr));
-    }
-
-
     // One-pole lowpass for SAT bass tilt (around 300 Hz at base rate)
     {
         const float fcSat = 300.0f;
@@ -365,20 +402,6 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         const float fcHigh = 10000.0f;
         const float alphaH = std::exp (-2.0f * juce::MathConstants<float>::pi * fcHigh / sr);
         analogToneAlpha10k = juce::jlimit (0.0f, 1.0f, alphaH);
-    }
-
-    // Transient envelope smoothing (fast/slow) for analog memory
-    {
-        const float fastTau = 0.0015f; // ~1.5 ms
-        const float slowTau = 0.035f;  // ~35 ms
-        analogFastEnvA = juce::jlimit (0.0f, 0.9999999f, std::exp (-1.0f / (fastTau * sr)));
-        analogSlowEnvA = juce::jlimit (0.0f, 0.9999999f, std::exp (-1.0f / (slowTau * sr)));
-    }
-
-    // Slew limiter coefficient (~8 kHz corner)
-    {
-        const float alphaSlew = std::exp (-2.0f * juce::MathConstants<float>::pi * 8000.0f / sr);
-        analogSlewA = juce::jlimit (0.0f, 0.9999999f, alphaSlew);
     }
 
     dsmCaptureEq.prepare (sampleRate, getTotalNumInputChannels());
@@ -731,8 +754,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     float targetBias = (biasBase + biasSilk * silkShape) * levelT;
 
     // Micro "memory" on bias itself
-    constexpr float biasAlpha = 0.992f; // ~4 ms @ 48k
-    st.biasMemory = biasAlpha * st.biasMemory + (1.0f - biasAlpha) * targetBias;
+    st.biasMemory = analogBiasA * st.biasMemory + (1.0f - analogBiasA) * targetBias;
 
     float bias = st.biasMemory;
 
