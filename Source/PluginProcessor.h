@@ -191,6 +191,7 @@ private:
         float fastEnv = 0.0f;
         float slowEnv = 0.0f;
         float slew    = 0.0f;
+        float prev    = 0.0f;
     };
 
     void resetAnalogTransientState (int numChannels);

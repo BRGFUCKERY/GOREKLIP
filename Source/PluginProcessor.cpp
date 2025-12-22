@@ -515,6 +515,7 @@ void FruityClipAudioProcessor::resetAnalogTransientState (int numChannels)
         st.fastEnv = 0.0f;
         st.slowEnv = 0.0f;
         st.slew    = 0.0f;
+        st.prev    = 0.0f;
     }
 }
 
@@ -707,12 +708,34 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
 
     float inRaw = x * dynamicDrive;
 
-    // Optional slew blend during transients
+    // Slew blend only when corners are steep (Lavry-style edge rounding)
     const float pre = inRaw;
+
+    // 1-pole smoothing
     const float slewed = analogSlewA * ts.slew + (1.0f - analogSlewA) * pre;
     ts.slew = slewed;
-    if (transientNorm > 0.0f)
-        inRaw = slewed * (0.35f * transientNorm) + pre * (1.0f - 0.35f * transientNorm);
+
+    // slope detector (time-domain stable across oversampling)
+    const float srEff = (float) sampleRate * (float) juce::jmax (1, currentOversampleFactor);
+    const float dx    = pre - ts.prev;
+    ts.prev = pre;
+
+    const float slopePerSec = std::abs (dx) * srEff;
+
+    // gate thresholds (checkpoint values, we will tune)
+    constexpr float gateStart = 9000.0f;
+    constexpr float gateEnd   = 26000.0f;
+
+    // smoothstep gate
+    float g = (slopePerSec - gateStart) / (gateEnd - gateStart);
+    g = juce::jlimit (0.0f, 1.0f, g);
+    g = g * g * (3.0f - 2.0f * g);
+
+    // blend amount
+    constexpr float maxBlend = 0.55f;
+    const float blend = maxBlend * g;
+
+    inRaw = pre + blend * (slewed - pre);
 
     // -------------------------------------------------------------
     // H9 harmonic fill (gated, strongest at SILK 0)
@@ -961,11 +984,27 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (int i = 0; i < numSamples; ++i)
             {
                 float s = samples[i] * inputDrive;
-                if (marryAmount > 0.0f)
-                    s = applySilkAnalogSample (s, ch, marryAmount);
 
                 if (isAnalogMode)
+                {
+                    // 5060 baseline colour even when knob is at 0
+                    constexpr float silkBase = 0.15f; // checkpoint value (we will tune later)
+
+                    const float silkEff = juce::jlimit (0.0f, 1.0f,
+                                                        silkBase + (1.0f - silkBase) * marryAmount);
+
+                    s = applySilkAnalogSample (s, ch, silkEff);
+
+                    // IMPORTANT: keep tone-match driven by the knob (0..1),
+                    // so "0" still means the baseline measured curve.
                     s = applyAnalogToneMatch (s, ch, marryAmount);
+                }
+                else
+                {
+                    // Digital path stays exactly as-is (true bypass at 0)
+                    if (marryAmount > 0.0f)
+                        s = applySilkAnalogSample (s, ch, marryAmount);
+                }
 
                 float eq = dsmCaptureEq.processSample (ch, s);
                 s = s + w * (eq - s);

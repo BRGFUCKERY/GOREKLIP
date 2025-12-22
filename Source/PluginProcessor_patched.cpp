@@ -693,19 +693,35 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // -------------------------------------------------------------
     // Gate threshold is specified in "units per second" so it remains stable under oversampling.
     // Calibrated from the provided 1k clipped-sine capture (silk 0) at 48k.
-    constexpr float slewGatePerSec = 16800.0f; // ~= 0.35 * 48k
-    const float osFactor = (float) juce::jmax (1, currentOversampleFactor);
+    //
+    // Slew blend only when corners are steep (Lavry-style edge rounding)
+    const float pre = x;
 
-    const float dx      = std::abs (x - ts.prev);
-    const float dxPerSec = dx * (float) sampleRate * osFactor;
-    ts.prev = x;
+    // 1-pole smoothing
+    const float slewed = analogSlewA * ts.slew + (1.0f - analogSlewA) * pre;
+    ts.slew = slewed;
 
-    const float g = smoothStep01 (dxPerSec / slewGatePerSec); // 0..1
+    // slope detector (time-domain stable across oversampling)
+    const float srEff = (float) sampleRate * (float) juce::jmax (1, currentOversampleFactor);
+    const float dx    = pre - ts.prev;
+    ts.prev = pre;
 
-    // One-pole LP memory (alpha computed in updateAnalogClipperCoefficients using effective SR)
-    ts.slew = analogSlewA * ts.slew + (1.0f - analogSlewA) * x;
+    const float slopePerSec = std::abs (dx) * srEff;
 
-    const float v = (1.0f - g) * x + g * ts.slew;
+    // gate thresholds (checkpoint values, we will tune)
+    constexpr float gateStart = 9000.0f;
+    constexpr float gateEnd   = 26000.0f;
+
+    // smoothstep gate
+    float g = (slopePerSec - gateStart) / (gateEnd - gateStart);
+    g = juce::jlimit (0.0f, 1.0f, g);
+    g = g * g * (3.0f - 2.0f * g);
+
+    // blend amount
+    constexpr float maxBlend = 0.55f;
+    const float blend = maxBlend * g;
+
+    const float v = pre + blend * (slewed - pre);
 
     // -------------------------------------------------------------
     // 2) Hard clip (Lavry clip behavior)
@@ -904,11 +920,27 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (int i = 0; i < numSamples; ++i)
             {
                 float s = samples[i] * inputDrive;
-                if (marryAmount > 0.0f)
-                    s = applySilkAnalogSample (s, ch, marryAmount);
 
                 if (isAnalogMode)
+                {
+                    // 5060 baseline colour even when knob is at 0
+                    constexpr float silkBase = 0.15f; // checkpoint value (we will tune later)
+
+                    const float silkEff = juce::jlimit (0.0f, 1.0f,
+                                                        silkBase + (1.0f - silkBase) * marryAmount);
+
+                    s = applySilkAnalogSample (s, ch, silkEff);
+
+                    // IMPORTANT: keep tone-match driven by the knob (0..1),
+                    // so "0" still means the baseline measured curve.
                     s = applyAnalogToneMatch (s, ch, marryAmount);
+                }
+                else
+                {
+                    // Digital path stays exactly as-is (true bypass at 0)
+                    if (marryAmount > 0.0f)
+                        s = applySilkAnalogSample (s, ch, marryAmount);
+                }
 
                 float eq = dsmCaptureEq.processSample (ch, s);
                 s = s + w * (eq - s);
