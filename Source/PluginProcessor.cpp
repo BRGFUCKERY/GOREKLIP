@@ -644,19 +644,24 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.20f) / 0.80f);
     driveT = driveT * driveT;
 
-    // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
-    // 4x-calibrated even scale (less aggressive)
-    const float evenScale = juce::jmap (s, 0.0f, 1.0f, 10.5f, 6.5f);
+    // Even-harmonic coefficient (calibrated to hardware at SILK=0, then +~2.4 dB at SILK=100)
+//
+// IMPORTANT: do NOT let the "even scale" depend on SILK directly — that was causing H2 to *drop* as SILK increased.
+// We keep a stable baseline coefficient, then apply a bounded SILK delta via sEven.
 
-    // slightly reduced base term
-    constexpr float evenTrim      = 0.80f; // ~ -1.2 dB on H2 target
-    constexpr float evenBase      = 0.65f;
-    constexpr float silkEvenGain  = 0.42f; // ~ -7 dB range reduction
-    const float baseEven          = evenScale * 0.028f * driveT * evenTrim;
+// 4x-calibrated baseline scale (locked to the matched SILK=0 baseline)
+constexpr float evenScale = 2.7f;
+constexpr float evenTrim  = 0.80f;   // baseline lock
+constexpr float evenCal   = 0.35f;   // brings SILK=0 H2 back to hardware (was ~+9 dB too hot)
 
-    float evenCoeff = baseEven * (evenBase + silkEvenGain * (1.0f - evenBase) * sEven);
+// SILK delta: +2.4 dB total at 100% => multiplier = 10^(2.4/20) ≈ 1.318 => gain ≈ 0.318
+constexpr float silkEvenGain = 0.318f;
 
-    // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
+const float baseEven = evenScale * 0.035f * driveT * evenTrim * evenCal;
+
+// baseline + silk delta (bounded)
+const float evenCoeff = baseEven * (1.0f + silkEvenGain * sEven);
+// IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
     float e = evenSrc * evenSrc;
 
