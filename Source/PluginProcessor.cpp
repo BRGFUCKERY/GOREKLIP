@@ -652,7 +652,10 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     const float evenScale = juce::jmap (s, 0.0f, 1.0f, 10.5f, 6.5f);
 
     // slightly reduced base term
+    constexpr float evenTrim = 0.89f; // ~ -1.2 dB on H2 target
+
     float evenCoeff = evenScale * (0.028f + 0.0100f * s) * driveT * s;
+    evenCoeff *= evenTrim;
 
     // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
@@ -808,10 +811,11 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     st.postLP2 = analogReconA * st.postLP2 + (1.0f - analogReconA) * st.postLP1;
     // recon engages strongly once we're truly near the ceiling
     float reconT = 0.0f;
-    if (env > 0.65f)
-        reconT = juce::jlimit (0.0f, 1.0f, (env - 0.65f) / (1.00f - 0.65f));
+    if (env > 0.55f)
+        reconT = juce::jlimit (0.0f, 1.0f, (env - 0.55f) / (1.00f - 0.55f));
 
-    const float reconBlend = reconT;
+    float reconBlend = reconT * reconT;
+    reconBlend = juce::jlimit (0.0f, 1.0f, 1.15f * reconBlend);
     y = y + reconBlend * (st.postLP2 - y);
 
     return juce::jlimit (-2.0f, 2.0f, y);
