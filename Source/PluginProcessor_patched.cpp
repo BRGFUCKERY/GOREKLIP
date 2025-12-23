@@ -595,8 +595,10 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
     auto& st = silkStates[(size_t) channel];
 
     // Same shaped control
-    const float s   = juce::jlimit (0.0f, 1.0f, silkAmount);
-    const float amt = std::pow (s, 0.8f);
+    const float s      = juce::jlimit (0.0f, 1.0f, silkAmount);
+    const float sRecon = juce::jlimit (0.0f, 1.0f, 1.075f * std::pow (s, 1.56f));
+
+    const float amt = sRecon;
 
     // One-pole lowpass in the upper band to gently smooth top end
     const float fc    = juce::jmap (amt, 0.0f, 1.0f, 9500.0f, 6200.0f);
@@ -618,7 +620,9 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     // so the even-harmonic term collapses after DC removal. To keep even harmonics
     // alive on hot material, we square the LOW band from the pre-emphasis split.
 
-    const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
+    const float s      = juce::jlimit (0.0f, 1.0f, silkAmount);
+    const float sEven  = std::pow (s, 0.86f);
+    const float sRecon = juce::jlimit (0.0f, 1.0f, 1.075f * std::pow (s, 1.56f));
 
     if (channel < 0 || channel >= (int) silkStates.size())
         return x;
@@ -641,7 +645,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
     constexpr float evenScale = 2.7f; // was ~1.0
-    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT * s;
+    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT * sEven;
 
     // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
@@ -657,7 +661,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     float y = pre + evenCoeffCapped * e;
 
     // De-emphasis
-    return applySilkDeEmphasis (y, channel, s);
+    return applySilkDeEmphasis (y, channel, sRecon);
 }
 
 
