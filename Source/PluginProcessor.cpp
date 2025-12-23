@@ -651,7 +651,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     const float sEven = std::pow (s, 0.86f); // knob curve for even growth (tune later)
 
     // Keep baseline constant (DO NOT depend on s)
-    constexpr float evenScale = 2.7f; // whatever value matches your locked SILK=0 baseline
+    constexpr float evenScale = 1.95f; // whatever value matches your locked SILK=0 baseline
     constexpr float evenTrim  = 0.80f; // keep your baseline trim here
 
     // Desired total increase at 100%: +2.4 dB -> multiplier 10^(2.4/20)=1.318 -> delta gain 0.318
