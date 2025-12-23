@@ -305,7 +305,7 @@ void FruityClipAudioProcessor::updateAnalogClipperCoefficients()
 
     // Post-clip reconstruction smoothing (Lavry-ish HF damping)
     {
-        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 6500.0f / srEff);
+        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 5500.0f / srEff);
         analogReconA = juce::jlimit (0.0f, 0.9999999f, alphaRecon);
     }
 
@@ -803,7 +803,12 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
 
     // Extra HF damping when driven (models converter reconstruction smoothing)
     st.postLP = analogReconA * st.postLP + (1.0f - analogReconA) * y;
-    const float reconBlend = 0.90f * levelT;
+    // recon engages strongly once we're truly near the ceiling
+    float reconT = 0.0f;
+    if (env > 0.75f)
+        reconT = juce::jlimit (0.0f, 1.0f, (env - 0.75f) / (1.00f - 0.75f)); // 0.75 -> 1.0
+
+    const float reconBlend = 0.95f * reconT;
     y = y + reconBlend * (st.postLP - y);
 
     return juce::jlimit (-2.0f, 2.0f, y);
