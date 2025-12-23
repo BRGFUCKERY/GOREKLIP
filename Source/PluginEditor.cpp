@@ -445,11 +445,40 @@ FruityClipAudioProcessorEditor::FruityClipAudioProcessorEditor (FruityClipAudioP
     // --------------------------------------------------
     // BACKGROUND + LOGO
     // --------------------------------------------------
+    auto makeInvertedCopy = [] (const juce::Image& img)
+    {
+        if (! img.isValid())
+            return juce::Image {};
+
+        auto copy = img.createCopy();
+        juce::Image::BitmapData data (copy, juce::Image::BitmapData::readWrite);
+
+        for (int y = 0; y < data.height; ++y)
+        {
+            for (int x = 0; x < data.width; ++x)
+            {
+                auto c = data.getPixelColour (x, y);
+                auto a = c.getAlpha();
+                data.setPixelColour (x, y,
+                                     juce::Colour::fromRGBA (255 - c.getRed(),
+                                                             255 - c.getGreen(),
+                                                             255 - c.getBlue(),
+                                                             a));
+            }
+        }
+
+        return copy;
+    };
+
     bgImage = juce::ImageCache::getFromMemory (BinaryData::bg_png,
                                                BinaryData::bg_pngSize);
 
+    bgImageInverted = makeInvertedCopy (bgImage);
+
     slamImage = juce::ImageCache::getFromMemory (BinaryData::slam_jpg,
                                                  BinaryData::slam_jpgSize);
+
+    slamImageInverted = makeInvertedCopy (slamImage);
 
     logoImage = juce::ImageCache::getFromMemory (BinaryData::gorekliper_logo_png,
                                                  BinaryData::gorekliper_logo_pngSize);
@@ -777,6 +806,8 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     const int w = getWidth();
     const int h = getHeight();
 
+    const bool isAnalogMode = processor.getClipMode() == FruityClipAudioProcessor::ClipMode::Analog;
+
     // Map burn into 0..1
     const float burnRaw = juce::jlimit (0.0f, 1.0f, lastBurn);
 
@@ -784,18 +815,22 @@ void FruityClipAudioProcessorEditor::paint (juce::Graphics& g)
     const float burnShaped = std::pow (burnRaw, 1.3f);
 
     // 1) Base background
-    if (bgImage.isValid())
-        g.drawImageWithin (bgImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+    const auto& bgToUse = (isAnalogMode && bgImageInverted.isValid()) ? bgImageInverted : bgImage;
+
+    if (bgToUse.isValid())
+        g.drawImageWithin (bgToUse, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     else
         g.fillAll (juce::Colours::black);
 
     // 2) Slam background
-    if (slamImage.isValid() && burnShaped > 0.02f)
+    const auto& slamToUse = (isAnalogMode && slamImageInverted.isValid()) ? slamImageInverted : slamImage;
+
+    if (slamToUse.isValid() && burnShaped > 0.02f)
     {
         juce::Graphics::ScopedSaveState save (g);
 
         g.setOpacity (burnShaped);
-        g.drawImageWithin (slamImage, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
+        g.drawImageWithin (slamToUse, 0, 0, w, h, juce::RectanglePlacement::stretchToFit);
     }
 
     // 3) Logo – normal at low slam, fades to white as you pin it

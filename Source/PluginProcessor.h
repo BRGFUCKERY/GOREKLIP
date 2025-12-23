@@ -185,12 +185,14 @@ private:
     float analogEnvAttackAlpha  = 0.0f; // envelope follower for analog bias
     float analogEnvReleaseAlpha = 0.0f;
     float analogDcAlpha         = 0.0f; // DC blocker coefficient for analog clipper (computed per-block for OS rate)
+    float analogReconA          = 0.0f; // post-clip reconstruction smoothing
 
     struct AnalogTransientState
     {
         float fastEnv = 0.0f;
         float slowEnv = 0.0f;
         float slew    = 0.0f;
+        float prev    = 0.0f;
     };
 
     void resetAnalogTransientState (int numChannels);
@@ -329,6 +331,8 @@ private:
         float biasMemory = 0.0f;
         float levelEnv   = 0.0f; // slow envelope of |in| for bias engagement
         float dcBlock    = 0.0f; // ultra-low HP state to remove DC without killing even harmonics
+        float postLP1    = 0.0f; // post-clip HF damping state (pole 1)
+        float postLP2    = 0.0f; // post-clip HF damping state (pole 2)
     };
 
     void resetAnalogClipState (int numChannels);
