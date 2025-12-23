@@ -303,6 +303,12 @@ void FruityClipAudioProcessor::updateAnalogClipperCoefficients()
         analogSlewA = juce::jlimit (0.0f, 0.9999999f, alphaSlew);
     }
 
+    // Post-clip reconstruction smoothing (Lavry-ish HF damping)
+    {
+        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 9000.0f / srEff);
+        analogReconA = juce::jlimit (0.0f, 0.9999999f, alphaRecon);
+    }
+
     // Bias memory smoothing (~4 ms in real time)
     {
         const float biasTau = 0.004f; // 4 ms
@@ -531,6 +537,7 @@ void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
         st.biasMemory = 0.0f;
         st.levelEnv   = 0.0f;
         st.dcBlock    = 0.0f;
+        st.postLP     = 0.0f;
     }
 }
 
@@ -640,7 +647,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     driveT = driveT * driveT;
 
     // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
-    constexpr float evenScale = 2.7f; // was ~1.0
+    const float evenScale = juce::jmap (s, 0.0f, 1.0f, 17.5f, 6.4f);
     float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT * s;
 
     // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
@@ -795,6 +802,11 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // DC blocker (very low corner) – keeps the expensive even series, removes DC drift
     st.dcBlock = analogDcAlpha * st.dcBlock + (1.0f - analogDcAlpha) * y;
     y -= st.dcBlock;
+
+    // Extra HF damping when driven (models converter reconstruction smoothing)
+    st.postLP = analogReconA * st.postLP + (1.0f - analogReconA) * y;
+    const float reconBlend = 0.90f * levelT;
+    y = y + reconBlend * (st.postLP - y);
 
     return juce::jlimit (-2.0f, 2.0f, y);
 }
