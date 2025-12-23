@@ -815,8 +815,9 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
         reconT = juce::jlimit (0.0f, 1.0f, (env - 0.55f) / (1.00f - 0.55f));
 
     float reconBlend = reconT * reconT * reconT;
-    reconBlend = juce::jlimit (0.0f, 1.0f, 1.25f * reconBlend);
-    reconBlend *= 0.93f;
+
+    // back off HF damping to match hardware "air" at silk=0
+    reconBlend = juce::jlimit (0.0f, 1.0f, 0.80f * reconBlend);
     y = y + reconBlend * (st.postLP2 - y);
 
     return juce::jlimit (-2.0f, 2.0f, y);
