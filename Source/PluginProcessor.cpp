@@ -647,15 +647,20 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.20f) / 0.80f);
     driveT = driveT * driveT;
 
-    // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
-    // 4x-calibrated even scale (less aggressive)
-    const float evenScale = juce::jmap (s, 0.0f, 1.0f, 10.5f, 6.5f);
+    // --- EVEN HARMONICS (delta-only on top of locked baseline) ---
+    const float sEven = std::pow (s, 0.86f); // knob curve for even growth (tune later)
 
-    // slightly reduced base term
-    constexpr float evenTrim = 0.80f; // ~ -1.2 dB on H2 target
+    // Keep baseline constant (DO NOT depend on s)
+    constexpr float evenScale = 1.95f; // whatever value matches your locked SILK=0 baseline
+    constexpr float evenTrim  = 0.80f; // keep your baseline trim here
 
-    float evenCoeff = evenScale * (0.028f + 0.0100f * s) * driveT * s;
-    evenCoeff *= evenTrim;
+    // Desired total increase at 100%: +2.4 dB -> multiplier 10^(2.4/20)=1.318 -> delta gain 0.318
+    constexpr float silkEvenGain = 0.318f;
+
+    const float baseEven = evenScale * 0.028f * driveT * evenTrim;
+
+    // delta-only: at s=0 => 1.0 (baseline unchanged), at s=1 => 1.318 (~+2.4 dB)
+    const float evenCoeff = baseEven * (1.0f + silkEvenGain * sEven);
 
     // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
@@ -817,7 +822,10 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     float reconBlend = reconT * reconT * reconT;
 
     // back off HF damping to match hardware "air" at silk=0
-    reconBlend = juce::jlimit (0.0f, 1.0f, 0.80f * reconBlend);
+    const float reconBlendBase = juce::jlimit (0.0f, 1.0f, 0.80f * reconBlend);
+    const float sRecon = std::pow (silkShape, 1.56f);
+    constexpr float reconBlendMaxDelta = 0.20f;
+    reconBlend = juce::jlimit (0.0f, 1.0f, reconBlendBase + reconBlendMaxDelta * sRecon);
     y = y + reconBlend * (st.postLP2 - y);
 
     return juce::jlimit (-2.0f, 2.0f, y);
