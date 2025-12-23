@@ -645,7 +645,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
     constexpr float evenScale = 2.7f; // was ~1.0
-    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT * sEven;
+    float evenCoeff = evenScale * 0.035f * driveT * sEven;
 
     // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
@@ -927,16 +927,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                 if (isAnalogMode)
                 {
-                    // 5060 baseline colour even when knob is at 0
-                    constexpr float silkBase = 0.15f; // checkpoint value (we will tune later)
-
-                    const float silkEff = juce::jlimit (0.0f, 1.0f,
-                                                        silkBase + (1.0f - silkBase) * marryAmount);
-
-                    s = applySilkAnalogSample (s, ch, silkEff);
-
-                    // IMPORTANT: keep tone-match driven by the knob (0..1),
-                    // so "0" still means the baseline measured curve.
+                    s = applySilkAnalogSample (s, ch, marryAmount);
                     s = applyAnalogToneMatch (s, ch, marryAmount);
                 }
                 else
