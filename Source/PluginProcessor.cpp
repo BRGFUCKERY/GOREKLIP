@@ -652,7 +652,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     const float evenScale = juce::jmap (s, 0.0f, 1.0f, 10.5f, 6.5f);
 
     // slightly reduced base term
-    constexpr float evenTrim = 0.89f; // ~ -1.2 dB on H2 target
+    constexpr float evenTrim = 0.83f; // ~ -1.2 dB on H2 target
 
     float evenCoeff = evenScale * (0.028f + 0.0100f * s) * driveT * s;
     evenCoeff *= evenTrim;
