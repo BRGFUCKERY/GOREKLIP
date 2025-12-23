@@ -603,8 +603,10 @@ float FruityClipAudioProcessor::applySilkDeEmphasis (float x, int channel, float
     auto& st = silkStates[(size_t) channel];
 
     // Same shaped control
-    const float s   = juce::jlimit (0.0f, 1.0f, silkAmount);
-    const float amt = std::pow (s, 0.8f);
+    const float s      = juce::jlimit (0.0f, 1.0f, silkAmount);
+    const float sRecon = juce::jlimit (0.0f, 1.0f, 1.075f * std::pow (s, 1.56f));
+
+    const float amt = sRecon;
 
     // One-pole lowpass in the upper band to gently smooth top end
     const float fc    = juce::jmap (amt, 0.0f, 1.0f, 9500.0f, 6200.0f);
@@ -626,19 +628,14 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     // so the even-harmonic term collapses after DC removal. To keep even harmonics
     // alive on hot material, we square the LOW band from the pre-emphasis split.
 
-    const float s = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
+    const float s      = juce::jlimit (0.0f, 1.0f, silkAmount);
+    const float sEven  = std::pow (s, 0.86f);
+    const float sRecon = juce::jlimit (0.0f, 1.0f, 1.075f * std::pow (s, 1.56f));
 
     if (channel < 0 || channel >= (int) silkStates.size())
         return x;
 
     auto& st = silkStates[(size_t) channel];
-
-    if (s <= 1.0e-6f)
-    {
-        const float pre = applySilkPreEmphasis (x, channel, 0.0f);
-        const float de  = applySilkDeEmphasis (pre, channel, 0.0f);
-        return de;
-    }
 
     // Pre-emphasis (updates st.pre as the low-band state)
     const float pre = applySilkPreEmphasis (x, channel, s);
@@ -647,17 +644,24 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     float driveT = juce::jlimit (0.0f, 1.0f, (std::abs (pre) - 0.20f) / 0.80f);
     driveT = driveT * driveT;
 
-    // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
-    // 4x-calibrated even scale (less aggressive)
-    const float evenScale = juce::jmap (s, 0.0f, 1.0f, 10.5f, 6.5f);
+    // Even-harmonic coefficient (calibrated to hardware at SILK=0, then +~2.4 dB at SILK=100)
+//
+// IMPORTANT: do NOT let the "even scale" depend on SILK directly — that was causing H2 to *drop* as SILK increased.
+// We keep a stable baseline coefficient, then apply a bounded SILK delta via sEven.
 
-    // slightly reduced base term
-    constexpr float evenTrim = 0.80f; // ~ -1.2 dB on H2 target
+// 4x-calibrated baseline scale (locked to the matched SILK=0 baseline)
+constexpr float evenScale = 2.7f;
+constexpr float evenTrim  = 0.80f;   // baseline lock
+constexpr float evenCal   = 0.35f;   // brings SILK=0 H2 back to hardware (was ~+9 dB too hot)
 
-    float evenCoeff = evenScale * (0.028f + 0.0100f * s) * driveT * s;
-    evenCoeff *= evenTrim;
+// SILK delta: +2.4 dB total at 100% => multiplier = 10^(2.4/20) ≈ 1.318 => gain ≈ 0.318
+constexpr float silkEvenGain = 0.318f;
 
-    // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
+const float baseEven = evenScale * 0.035f * driveT * evenTrim * evenCal;
+
+// baseline + silk delta (bounded)
+const float evenCoeff = baseEven * (1.0f + silkEvenGain * sEven);
+// IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
     float e = evenSrc * evenSrc;
 
@@ -671,7 +675,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     float y = pre + evenCoeffCapped * e;
 
     // De-emphasis
-    return applySilkDeEmphasis (y, channel, s);
+    return applySilkDeEmphasis (y, channel, sRecon);
 }
 
 
@@ -1009,14 +1013,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                 if (isAnalogMode)
                 {
-                    // 5060 baseline color even when knob is at 0
-                    constexpr float silkBase = 0.15f; // starting point — we will tune after we see numbers
-                    const float silkEff = juce::jlimit (0.0f, 1.0f,
-                                                        silkBase + (1.0f - silkBase) * marryAmount);
-
-                    s = applySilkAnalogSample (s, ch, silkEff);
-
-                    // keep tone-match driven by the knob (0..1) so silk=0 targets your “0 silk” capture curve
+                    s = applySilkAnalogSample (s, ch, marryAmount);
                     s = applyAnalogToneMatch (s, ch, marryAmount);
                 }
                 else
