@@ -709,29 +709,27 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     float inRaw = x * dynamicDrive;
 
     // Slew blend only when corners are steep (Lavry-style edge rounding)
-    const float pre = inRaw;
-
-    // 1-pole smoothing
+    const float pre    = inRaw;
     const float slewed = analogSlewA * ts.slew + (1.0f - analogSlewA) * pre;
     ts.slew = slewed;
 
-    // slope detector (time-domain stable across oversampling)
+    // slope detector (stable across oversampling)
     const float srEff = (float) sampleRate * (float) juce::jmax (1, currentOversampleFactor);
     const float dx    = pre - ts.prev;
     ts.prev = pre;
 
     const float slopePerSec = std::abs (dx) * srEff;
 
-    // gate thresholds (checkpoint values, we will tune)
+    // thresholds (start/end) — checkpoint values, we tune later
     constexpr float gateStart = 9000.0f;
     constexpr float gateEnd   = 26000.0f;
 
-    // smoothstep gate
+    // smoothstep
     float g = (slopePerSec - gateStart) / (gateEnd - gateStart);
     g = juce::jlimit (0.0f, 1.0f, g);
     g = g * g * (3.0f - 2.0f * g);
 
-    // blend amount
+    // maxBlend controls “how Lavry” the rounding is
     constexpr float maxBlend = 0.55f;
     const float blend = maxBlend * g;
 
@@ -987,21 +985,19 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                 if (isAnalogMode)
                 {
-                    // 5060 baseline colour even when knob is at 0
-                    constexpr float silkBase = 0.15f; // checkpoint value (we will tune later)
-
+                    // 5060 baseline color even when knob is at 0
+                    constexpr float silkBase = 0.15f; // starting point — we will tune after we see numbers
                     const float silkEff = juce::jlimit (0.0f, 1.0f,
                                                         silkBase + (1.0f - silkBase) * marryAmount);
 
                     s = applySilkAnalogSample (s, ch, silkEff);
 
-                    // IMPORTANT: keep tone-match driven by the knob (0..1),
-                    // so "0" still means the baseline measured curve.
+                    // keep tone-match driven by the knob (0..1) so silk=0 targets your “0 silk” capture curve
                     s = applyAnalogToneMatch (s, ch, marryAmount);
                 }
                 else
                 {
-                    // Digital path stays exactly as-is (true bypass at 0)
+                    // Digital path remains true-bypass when 0 (keeps fruity null)
                     if (marryAmount > 0.0f)
                         s = applySilkAnalogSample (s, ch, marryAmount);
                 }
