@@ -305,7 +305,7 @@ void FruityClipAudioProcessor::updateAnalogClipperCoefficients()
 
     // Post-clip reconstruction smoothing (Lavry-ish HF damping)
     {
-        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 8000.0f / srEff);
+        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 6500.0f / srEff);
         analogReconA = juce::jlimit (0.0f, 0.9999999f, alphaRecon);
     }
 
@@ -647,8 +647,11 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     driveT = driveT * driveT;
 
     // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
-    const float evenScale = juce::jmap (s, 0.0f, 1.0f, 17.5f, 6.4f);
-    float evenCoeff = evenScale * (0.035f + 0.0115f * s) * driveT * s;
+    // 4x-calibrated even scale (less aggressive)
+    const float evenScale = juce::jmap (s, 0.0f, 1.0f, 8.0f, 5.0f);
+
+    // slightly reduced base term
+    float evenCoeff = evenScale * (0.028f + 0.0100f * s) * driveT * s;
 
     // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
@@ -658,8 +661,8 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     st.evenDc = silkEvenDcAlpha * st.evenDc + (1.0f - silkEvenDcAlpha) * e;
     e -= st.evenDc;
 
-    // Raised cap so boost can actually take effect at hot levels
-    const float evenCoeffCapped = juce::jlimit (0.0f, 0.40f, evenCoeff);
+    // tighter cap to stop high-order even build-up
+    const float evenCoeffCapped = juce::jlimit (0.0f, 0.22f, evenCoeff);
 
     float y = pre + evenCoeffCapped * e;
 
