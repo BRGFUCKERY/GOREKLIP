@@ -637,13 +637,6 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     auto& st = silkStates[(size_t) channel];
 
-    if (s <= 1.0e-6f)
-    {
-        const float pre = applySilkPreEmphasis (x, channel, 0.0f);
-        const float de  = applySilkDeEmphasis (pre, channel, 0.0f);
-        return de;
-    }
-
     // Pre-emphasis (updates st.pre as the low-band state)
     const float pre = applySilkPreEmphasis (x, channel, s);
 
@@ -656,10 +649,12 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     const float evenScale = juce::jmap (s, 0.0f, 1.0f, 10.5f, 6.5f);
 
     // slightly reduced base term
-    constexpr float evenTrim = 0.80f; // ~ -1.2 dB on H2 target
+    constexpr float evenTrim      = 0.80f; // ~ -1.2 dB on H2 target
+    constexpr float evenBase      = 0.65f;
+    constexpr float silkEvenGain  = 0.42f; // ~ -7 dB range reduction
+    const float baseEven          = evenScale * 0.028f * driveT * evenTrim;
 
-    float evenCoeff = evenScale * 0.028f * driveT * sEven;
-    evenCoeff *= evenTrim;
+    float evenCoeff = baseEven * (evenBase + silkEvenGain * (1.0f - evenBase) * sEven);
 
     // IMPORTANT: build even term from low-band so it doesn't vanish on flat tops
     const float evenSrc = st.pre;
