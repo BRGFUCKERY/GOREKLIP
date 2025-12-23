@@ -305,7 +305,7 @@ void FruityClipAudioProcessor::updateAnalogClipperCoefficients()
 
     // Post-clip reconstruction smoothing (Lavry-ish HF damping)
     {
-        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 9000.0f / srEff);
+        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 7000.0f / srEff);
         analogReconA = juce::jlimit (0.0f, 0.9999999f, alphaRecon);
     }
 
@@ -649,7 +649,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
 
     // Even-harmonic coefficient (tuned to hit hardware-like H2/H4/H6 on hot material)
     // 4x-calibrated even scale (less aggressive)
-    const float evenScale = juce::jmap (s, 0.0f, 1.0f, 8.0f, 5.0f);
+    const float evenScale = juce::jmap (s, 0.0f, 1.0f, 10.5f, 6.5f);
 
     // slightly reduced base term
     float evenCoeff = evenScale * (0.028f + 0.0100f * s) * driveT * s;
@@ -663,7 +663,7 @@ float FruityClipAudioProcessor::applySilkAnalogSample (float x, int channel, flo
     e -= st.evenDc;
 
     // tighter cap to stop high-order even build-up
-    const float evenCoeffCapped = juce::jlimit (0.0f, 0.22f, evenCoeff);
+    const float evenCoeffCapped = juce::jlimit (0.0f, 0.24f, evenCoeff);
 
     float y = pre + evenCoeffCapped * e;
 
@@ -808,10 +808,10 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     st.postLP2 = analogReconA * st.postLP2 + (1.0f - analogReconA) * st.postLP1;
     // recon engages strongly once we're truly near the ceiling
     float reconT = 0.0f;
-    if (env > 0.75f)
-        reconT = juce::jlimit (0.0f, 1.0f, (env - 0.75f) / (1.00f - 0.75f)); // 0.75 -> 1.0
+    if (env > 0.65f)
+        reconT = juce::jlimit (0.0f, 1.0f, (env - 0.65f) / (1.00f - 0.65f));
 
-    const float reconBlend = juce::jlimit (0.0f, 1.0f, reconT);
+    const float reconBlend = reconT;
     y = y + reconBlend * (st.postLP2 - y);
 
     return juce::jlimit (-2.0f, 2.0f, y);
