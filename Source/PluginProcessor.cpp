@@ -305,7 +305,7 @@ void FruityClipAudioProcessor::updateAnalogClipperCoefficients()
 
     // Post-clip reconstruction smoothing (Lavry-ish HF damping)
     {
-        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 9000.0f / srEff);
+        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 8000.0f / srEff);
         analogReconA = juce::jlimit (0.0f, 0.9999999f, alphaRecon);
     }
 
@@ -743,14 +743,9 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     inRaw = pre + blend * (slewed - pre);
 
     // -------------------------------------------------------------
-    // H9 harmonic fill (gated, strongest at SILK 0)
+    // H9 fill disabled — keep Lavry stage clean/symmetric
+    // (5060 colour comes from SILK stage now)
     // -------------------------------------------------------------
-    const float xNorm = juce::jlimit (-1.0f, 1.0f, inRaw * 0.85f);
-    const float absN  = std::abs (xNorm);
-    const float gate  = smoothStep01 ((absN - 0.35f) / (0.95f - 0.35f));
-    const float silkWeight = 1.0f - silkShape;
-    const float h9Amt = 0.0014f * silkWeight * gate;
-    inRaw += h9Amt * sin9Poly (xNorm);
 
     const float absIn = std::abs (inRaw);
 
@@ -776,8 +771,8 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
         levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
 
     // Baseline even content at SILK 0, more with SILK
-    constexpr float biasBase = 0.018f;
-    constexpr float biasSilk = 0.031f;
+    constexpr float biasBase = 0.0f;
+    constexpr float biasSilk = 0.0f;
 
     float targetBias = (biasBase + biasSilk * silkShape) * levelT;
 
@@ -797,7 +792,7 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     // Instead, we allow the asymmetry to exist, then remove *only DC*
     // with an ultra-low cutoff one-pole HP (preserves H2/H4/H6).
     // -------------------------------------------------------------
-    float y = softClip (inRaw + bias, dynamicKnee);
+    float y = softClip (inRaw, dynamicKnee);
 
     // DC blocker (very low corner) – keeps the expensive even series, removes DC drift
     st.dcBlock = analogDcAlpha * st.dcBlock + (1.0f - analogDcAlpha) * y;
