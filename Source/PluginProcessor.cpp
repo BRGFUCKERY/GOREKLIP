@@ -305,7 +305,7 @@ void FruityClipAudioProcessor::updateAnalogClipperCoefficients()
 
     // Post-clip reconstruction smoothing (Lavry-ish HF damping)
     {
-        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 5500.0f / srEff);
+        const float alphaRecon = std::exp (-2.0f * juce::MathConstants<float>::pi * 9000.0f / srEff);
         analogReconA = juce::jlimit (0.0f, 0.9999999f, alphaRecon);
     }
 
@@ -537,7 +537,8 @@ void FruityClipAudioProcessor::resetAnalogClipState (int numChannels)
         st.biasMemory = 0.0f;
         st.levelEnv   = 0.0f;
         st.dcBlock    = 0.0f;
-        st.postLP     = 0.0f;
+        st.postLP1    = 0.0f;
+        st.postLP2    = 0.0f;
     }
 }
 
@@ -774,8 +775,9 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
         levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
 
     // Baseline even content at SILK 0, more with SILK
-    constexpr float biasBase = 0.0f;
-    constexpr float biasSilk = 0.0f;
+    constexpr float biasTrim = 1.20f;   // +1.6 dB-ish on H2/H4
+    constexpr float biasBase = 0.018f * biasTrim;
+    constexpr float biasSilk = 0.031f * biasTrim;
 
     float targetBias = (biasBase + biasSilk * silkShape) * levelT;
 
@@ -802,14 +804,15 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     y -= st.dcBlock;
 
     // Extra HF damping when driven (models converter reconstruction smoothing)
-    st.postLP = analogReconA * st.postLP + (1.0f - analogReconA) * y;
+    st.postLP1 = analogReconA * st.postLP1 + (1.0f - analogReconA) * y;
+    st.postLP2 = analogReconA * st.postLP2 + (1.0f - analogReconA) * st.postLP1;
     // recon engages strongly once we're truly near the ceiling
     float reconT = 0.0f;
     if (env > 0.75f)
         reconT = juce::jlimit (0.0f, 1.0f, (env - 0.75f) / (1.00f - 0.75f)); // 0.75 -> 1.0
 
-    const float reconBlend = 0.95f * reconT;
-    y = y + reconBlend * (st.postLP - y);
+    const float reconBlend = juce::jlimit (0.0f, 1.0f, reconT);
+    y = y + reconBlend * (st.postLP2 - y);
 
     return juce::jlimit (-2.0f, 2.0f, y);
 }

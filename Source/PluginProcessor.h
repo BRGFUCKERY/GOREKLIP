@@ -331,7 +331,8 @@ private:
         float biasMemory = 0.0f;
         float levelEnv   = 0.0f; // slow envelope of |in| for bias engagement
         float dcBlock    = 0.0f; // ultra-low HP state to remove DC without killing even harmonics
-        float postLP     = 0.0f; // post-clip HF damping state
+        float postLP1    = 0.0f; // post-clip HF damping state (pole 1)
+        float postLP2    = 0.0f; // post-clip HF damping state (pole 2)
     };
 
     void resetAnalogClipState (int numChannels);
