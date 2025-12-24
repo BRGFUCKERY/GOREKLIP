@@ -676,59 +676,33 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     //   2) Hard clip at +/-1.0
     //   3) Ultra-low DC blocker (already set per-block at the effective processing rate)
 
-    if (channel < 0 || channel >= (int) analogClipStates.size() || channel >= (int) analogTransientStates.size())
+    if (channel < 0 || channel >= (int) analogClipStates.size())
         return x;
 
     auto& st = analogClipStates[(size_t) channel];
-    auto& ts = analogTransientStates[(size_t) channel];
+    const float drive = 1.0f;
+    constexpr float kneeStart = 0.62f;
 
-    auto smoothStep01 = [] (float t) -> float
+    // -------------------------------------------------------------
+    // 1) Static memoryless clip curve
+    // -------------------------------------------------------------
+    const float pre = x * drive;
+    const float absPre = std::abs (pre);
+    float v = 0.0f;
+    if (absPre <= kneeStart)
     {
-        t = juce::jlimit (0.0f, 1.0f, t);
-        return t * t * (3.0f - 2.0f * t);
-    };
-
-    // -------------------------------------------------------------
-    // 1) Derivative-gated slew blend
-    // -------------------------------------------------------------
-    // Gate threshold is specified in "units per second" so it remains stable under oversampling.
-    // Calibrated from the provided 1k clipped-sine capture (silk 0) at 48k.
-    //
-    // Slew blend only when corners are steep (Lavry-style edge rounding)
-    const float pre = x;
-
-    // 1-pole smoothing
-    const float slewed = analogSlewA * ts.slew + (1.0f - analogSlewA) * pre;
-    ts.slew = slewed;
-
-    // slope detector (time-domain stable across oversampling)
-    const float srEff = (float) sampleRate * (float) juce::jmax (1, currentOversampleFactor);
-    const float dx    = pre - ts.prev;
-    ts.prev = pre;
-
-    const float slopePerSec = std::abs (dx) * srEff;
-
-    // gate thresholds (checkpoint values, we will tune)
-    constexpr float gateStart = 9000.0f;
-    constexpr float gateEnd   = 26000.0f;
-
-    // smoothstep gate
-    float g = (slopePerSec - gateStart) / (gateEnd - gateStart);
-    g = juce::jlimit (0.0f, 1.0f, g);
-    g = g * g * (3.0f - 2.0f * g);
-
-    // Slew/edge rounding now only engages near ceiling to avoid program-wide transient limiting.
-    const float ax = std::abs (pre);
-    constexpr float nearStart = 0.975f;
-    constexpr float nearEnd   = 0.995f;
-    float nearCeiling = (ax - nearStart) / (nearEnd - nearStart);
-    nearCeiling = juce::jlimit (0.0f, 1.0f, nearCeiling);
-
-    // blend amount
-    constexpr float maxBlend = 0.20f;
-    const float blend = maxBlend * g * nearCeiling;
-
-    const float v = pre + blend * (slewed - pre);
+        v = pre;
+    }
+    else if (absPre < 1.0f)
+    {
+        const float u = (absPre - kneeStart) / (1.0f - kneeStart);
+        const float s = u * u * (3.0f - 2.0f * u);
+        v = std::copysign (kneeStart + (1.0f - kneeStart) * s, pre);
+    }
+    else
+    {
+        v = std::copysign (1.0f, pre);
+    }
 
     // -------------------------------------------------------------
     // 2) Hard clip (Lavry clip behavior)
