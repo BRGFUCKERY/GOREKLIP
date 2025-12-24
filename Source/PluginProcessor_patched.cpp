@@ -717,9 +717,16 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     g = juce::jlimit (0.0f, 1.0f, g);
     g = g * g * (3.0f - 2.0f * g);
 
+    // Slew/edge rounding now only engages near ceiling to avoid program-wide transient limiting.
+    const float ax = std::abs (pre);
+    constexpr float nearStart = 0.975f;
+    constexpr float nearEnd   = 0.995f;
+    float nearCeiling = (ax - nearStart) / (nearEnd - nearStart);
+    nearCeiling = juce::jlimit (0.0f, 1.0f, nearCeiling);
+
     // blend amount
-    constexpr float maxBlend = 0.55f;
-    const float blend = maxBlend * g;
+    constexpr float maxBlend = 0.20f;
+    const float blend = maxBlend * g * nearCeiling;
 
     const float v = pre + blend * (slewed - pre);
 
