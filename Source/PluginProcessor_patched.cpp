@@ -310,6 +310,68 @@ void FruityClipAudioProcessor::updateAnalogClipperCoefficients()
     }
 }
 
+void FruityClipAudioProcessor::updateAnalogToneSplitCoefficients()
+{
+    const float sr = (float) juce::jmax (1.0, sampleRate);
+    const float fcLow  = 250.0f;
+    const float fcHigh = 10000.0f;
+
+    analogToneAlpha250 = juce::jlimit (0.0f, 0.9999999f,
+                                       std::exp (-2.0f * juce::MathConstants<float>::pi * fcLow / sr));
+
+    analogToneAlpha10k = juce::jlimit (0.0f, 0.9999999f,
+                                       std::exp (-2.0f * juce::MathConstants<float>::pi * fcHigh / sr));
+}
+
+void FruityClipAudioProcessor::updateLavryUltrasonicLowpass()
+{
+    const float sr = (float) juce::jmax (1.0, sampleRate);
+
+    float fc = 0.42f * sr;
+    fc = juce::jlimit (1000.0f, 0.49f * sr, fc);
+
+    constexpr float Q = 0.70710678f;
+
+    const float w0 = 2.0f * juce::MathConstants<float>::pi * (fc / sr);
+    const float c  = std::cos (w0);
+    const float s  = std::sin (w0);
+    const float alpha = s / (2.0f * Q);
+
+    const float b0 = (1.0f - c) * 0.5f;
+    const float b1 = (1.0f - c);
+    const float b2 = (1.0f - c) * 0.5f;
+    const float a0 = (1.0f + alpha);
+    const float a1 = (-2.0f * c);
+    const float a2 = (1.0f - alpha);
+
+    lavryLP_b0 = b0 / a0;
+    lavryLP_b1 = b1 / a0;
+    lavryLP_b2 = b2 / a0;
+    lavryLP_a1 = a1 / a0;
+    lavryLP_a2 = a2 / a0;
+}
+
+inline float FruityClipAudioProcessor::processLavryUltrasonicLowpass (float x, int ch) noexcept
+{
+    if (ch < 0 || ch >= (int) lavryLPStates.size())
+        return x;
+
+    auto& st = lavryLPStates[(size_t) ch];
+
+    const float y =
+        lavryLP_b0 * x +
+        lavryLP_b1 * st.x1 +
+        lavryLP_b2 * st.x2
+      - lavryLP_a1 * st.y1
+      - lavryLP_a2 * st.y2;
+
+    st.x2 = st.x1;
+    st.x1 = x;
+    st.y2 = st.y1;
+    st.y1 = y;
+    return y;
+}
+
 void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 {
     // osIndex: 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32, 6=x64
@@ -376,6 +438,7 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     resetSilkState (getTotalNumOutputChannels());
     resetAnalogClipState (getTotalNumOutputChannels());
     resetAnalogTransientState (getTotalNumOutputChannels());
+    lavryLPStates.assign ((size_t) getTotalNumInputChannels(), LavryLPState {});
 
     const float sr = (float) sampleRate;
 
@@ -393,16 +456,8 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         satLowAlpha = juce::jlimit (0.0f, 1.0f, alphaSat);
     }
 
-    // One-pole lowpasses for analog tone tilt splits (~250 Hz and ~10 kHz)
-    {
-        const float fcLow  = 250.0f;
-        const float alphaL = std::exp (-2.0f * juce::MathConstants<float>::pi * fcLow / sr);
-        analogToneAlpha250 = juce::jlimit (0.0f, 1.0f, alphaL);
-
-        const float fcHigh = 10000.0f;
-        const float alphaH = std::exp (-2.0f * juce::MathConstants<float>::pi * fcHigh / sr);
-        analogToneAlpha10k = juce::jlimit (0.0f, 1.0f, alphaH);
-    }
+    updateAnalogToneSplitCoefficients();
+    updateLavryUltrasonicLowpass();
 
     dsmCaptureEq.prepare (sampleRate, getTotalNumInputChannels());
 
@@ -915,6 +970,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // IMPORTANT: keep tone-match driven by the knob (0..1),
                     // so "0" still means the baseline measured curve.
                     s = applyAnalogToneMatch (s, ch, marryAmount);
+                    s = processLavryUltrasonicLowpass (s, ch);
                 }
                 else
                 {

@@ -182,6 +182,14 @@ private:
     std::vector<AnalogToneState> analogToneStates;
     float analogToneAlpha250 = 0.0f;    // one-pole LP factor for ~250 Hz split
     float analogToneAlpha10k = 0.0f;    // one-pole LP factor for ~10 kHz split
+    // Tone split coeff updater (base-rate; independent of oversampling)
+    void updateAnalogToneSplitCoefficients();
+
+    struct LavryLPState { float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f; };
+    std::vector<LavryLPState> lavryLPStates;
+    float lavryLP_b0 = 1.0f, lavryLP_b1 = 0.0f, lavryLP_b2 = 0.0f, lavryLP_a1 = 0.0f, lavryLP_a2 = 0.0f;
+    void updateLavryUltrasonicLowpass();
+    inline float processLavryUltrasonicLowpass (float x, int ch) noexcept;
     float analogEnvAttackAlpha  = 0.0f; // envelope follower for analog bias
     float analogEnvReleaseAlpha = 0.0f;
     float analogDcAlpha         = 0.0f; // DC blocker coefficient for analog clipper (computed per-block for OS rate)
