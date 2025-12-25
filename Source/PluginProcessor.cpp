@@ -834,9 +834,18 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // -----------------------------------------------------------------
     // 3) 3-band tilt target derived from measurements
     // -----------------------------------------------------------------
-    const float lowDb  = juce::jmap (s, 0.0f, 1.0f, -0.28f, +0.37f);
-    const float midDb  = juce::jmap (s, 0.0f, 1.0f, -1.50f, +0.45f);
-    const float highDb = juce::jmap (s, 0.0f, 1.0f, -5.72f, -2.77f);
+    float lowDb  = juce::jmap (s, 0.0f, 1.0f, -0.28f, +0.37f);
+    float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.31f, +0.45f);
+    float highDb = juce::jmap (s, 0.0f, 1.0f, -4.72f, -2.77f);
+
+    const float baselineBlend = 1.0f - s;
+    constexpr float kBaseCorrLowDb  = -2.08f;
+    constexpr float kBaseCorrMidDb  = -1.39f;
+    constexpr float kBaseCorrHighDb = +2.97f;
+
+    lowDb  += baselineBlend * kBaseCorrLowDb;
+    midDb  += baselineBlend * kBaseCorrMidDb;
+    highDb += baselineBlend * kBaseCorrHighDb;
     const float gainLow  = juce::Decibels::decibelsToGain (lowDb);
     const float gainMid  = juce::Decibels::decibelsToGain (midDb);
     const float gainHigh = juce::Decibels::decibelsToGain (highDb);
@@ -991,7 +1000,9 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                     // keep tone-match driven by the knob (0..1) so silk=0 targets your “0 silk” capture curve
                     s = applyAnalogToneMatch (s, ch, marryAmount);
-                    s = processUltrasonicLowpass (s, ch);
+                    const float ultraBlend = std::pow (juce::jlimit (0.0f, 1.0f, marryAmount), 0.8f);
+                    const float lp = processUltrasonicLowpass (s, ch);
+                    s = s + ultraBlend * (lp - s);
                 }
                 else
                 {
