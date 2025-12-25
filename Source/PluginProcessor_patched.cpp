@@ -327,7 +327,7 @@ void FruityClipAudioProcessor::updateUltrasonicLowpass()
 {
     const float sr = (float) juce::jmax (1.0, sampleRate);
 
-    float fc = 18000.0f * (sr / 48000.0f);
+    float fc = 16500.0f * (sr / 48000.0f);
     fc = juce::jlimit (12000.0f, 0.49f * sr, fc);
 
     constexpr float Q = 0.70710678f;
