@@ -329,6 +329,70 @@ void FruityClipAudioProcessor::updateAnalogToneSplitCoefficients()
                                        std::exp (-2.0f * juce::MathConstants<float>::pi * fcHigh / sr));
 }
 
+static inline void makeRBJLowpass (float sr, float fc, float Q,
+                                   float& b0, float& b1, float& b2, float& a1, float& a2)
+{
+    const float w0 = 2.0f * juce::MathConstants<float>::pi * (fc / sr);
+    const float c  = std::cos (w0);
+    const float s  = std::sin (w0);
+    const float alpha = s / (2.0f * Q);
+
+    const float bb0 = (1.0f - c) * 0.5f;
+    const float bb1 = (1.0f - c);
+    const float bb2 = (1.0f - c) * 0.5f;
+    const float aa0 = (1.0f + alpha);
+    const float aa1 = (-2.0f * c);
+    const float aa2 = (1.0f - alpha);
+
+    b0 = bb0 / aa0;
+    b1 = bb1 / aa0;
+    b2 = bb2 / aa0;
+    a1 = aa1 / aa0;
+    a2 = aa2 / aa0;
+}
+
+void FruityClipAudioProcessor::updatePostLP4()
+{
+    const float sr = (float) juce::jmax (1.0, sampleRate);
+
+    float fc = 16150.0f * (sr / 48000.0f);
+    fc = juce::jlimit (9000.0f, 0.49f * sr, fc);
+
+    constexpr float Q1 = 0.5411961f;
+    constexpr float Q2 = 1.3065630f;
+
+    makeRBJLowpass (sr, fc, Q1, pc_b0_1, pc_b1_1, pc_b2_1, pc_a1_1, pc_a2_1);
+    makeRBJLowpass (sr, fc, Q2, pc_b0_2, pc_b1_2, pc_b2_2, pc_a1_2, pc_a2_2);
+}
+
+inline float FruityClipAudioProcessor::processPostLP4 (float x, int ch) noexcept
+{
+    if (ch < 0 || ch >= (int) postLP_a.size())
+        return x;
+
+    {
+        auto& st = postLP_a[(size_t) ch];
+        const float y = pc_b0_1 * x + pc_b1_1 * st.x1 + pc_b2_1 * st.x2
+                      - pc_a1_1 * st.y1 - pc_a2_1 * st.y2;
+        st.x2 = st.x1;
+        st.x1 = x;
+        st.y2 = st.y1;
+        st.y1 = y;
+        x = y;
+    }
+    {
+        auto& st = postLP_b[(size_t) ch];
+        const float y = pc_b0_2 * x + pc_b1_2 * st.x1 + pc_b2_2 * st.x2
+                      - pc_a1_2 * st.y1 - pc_a2_2 * st.y2;
+        st.x2 = st.x1;
+        st.x1 = x;
+        st.y2 = st.y1;
+        st.y1 = y;
+        x = y;
+    }
+    return x;
+}
+
 
 void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 {
@@ -414,6 +478,10 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     }
 
     updateAnalogToneSplitCoefficients();
+    const int chs = getTotalNumInputChannels();
+    postLP_a.assign ((size_t) chs, PostLPState {});
+    postLP_b.assign ((size_t) chs, PostLPState {});
+    updatePostLP4();
 
     dsmCaptureEq.prepare (sampleRate, getTotalNumInputChannels());
 
@@ -783,7 +851,7 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // -----------------------------------------------------------------
     const float lowDb  = juce::jmap (s, 0.0f, 1.0f, +0.29f, +0.37f);
     const float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.52f, +0.45f);
-    const float highDb = juce::jmap (s, 0.0f, 1.0f, -6.91f, -2.77f);
+    const float highDb = juce::jmap (s, 0.0f, 1.0f, -5.35f, -2.77f);
     const float gainLow  = juce::Decibels::decibelsToGain (lowDb);
     const float gainMid  = juce::Decibels::decibelsToGain (midDb);
     const float gainHigh = juce::Decibels::decibelsToGain (highDb);
@@ -1060,6 +1128,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
             // Downsample once for the whole block.
             oversampler->processSamplesDown (block);
+
+            if (isAnalogMode)
+            {
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* s = buffer.getWritePointer (ch);
+                    for (int i = 0; i < numSamples; ++i)
+                        s[i] = processPostLP4 (s[i], ch);
+                }
+            }
         }
         else
         {
@@ -1086,6 +1164,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     }
 
                     samples[i] = sample;
+                }
+            }
+
+            if (isAnalogMode)
+            {
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* s = buffer.getWritePointer (ch);
+                    for (int i = 0; i < numSamples; ++i)
+                        s[i] = processPostLP4 (s[i], ch);
                 }
             }
         }
