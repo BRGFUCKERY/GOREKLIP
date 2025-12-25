@@ -355,7 +355,7 @@ void FruityClipAudioProcessor::updatePostLP4()
 {
     const float sr = (float) juce::jmax (1.0, sampleRate);
 
-    float fc = 16150.0f * (sr / 48000.0f);
+    float fc = 19120.6367f * (sr / 48000.0f);
     fc = juce::jlimit (9000.0f, 0.49f * sr, fc);
 
     constexpr float Q1 = 0.5411961f;
@@ -998,7 +998,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (isAnalogMode)
                 {
                     // 5060 baseline color even when knob is at 0
-                    constexpr float silkBase = 0.15f; // starting point — we will tune after we see numbers
+                    constexpr float silkBase = 0.0f; // true off at knob=0
                     const float silkEff = juce::jlimit (0.0f, 1.0f,
                                                         silkBase + (1.0f - silkBase) * marryAmount);
 
