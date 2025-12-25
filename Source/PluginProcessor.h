@@ -175,6 +175,9 @@ private:
     {
         float low250 = 0.0f; // lowpassed state for ~250 Hz split
         float low10k = 0.0f; // lowpassed state for ~10 kHz split
+        // Ultrasonic rolloff biquad state (base-rate)
+        float u_x1 = 0.0f, u_x2 = 0.0f;
+        float u_y1 = 0.0f, u_y2 = 0.0f;
     };
 
     void resetAnalogToneState (int numChannels);
@@ -185,11 +188,10 @@ private:
     // Tone split coeff updater (base-rate; independent of oversampling)
     void updateAnalogToneSplitCoefficients();
 
-    struct LavryLPState { float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f; };
-    std::vector<LavryLPState> lavryLPStates;
-    float lavryLP_b0 = 1.0f, lavryLP_b1 = 0.0f, lavryLP_b2 = 0.0f, lavryLP_a1 = 0.0f, lavryLP_a2 = 0.0f;
-    void updateLavryUltrasonicLowpass();
-    inline float processLavryUltrasonicLowpass (float x, int ch) noexcept;
+    float ultraLP_b0 = 1.0f, ultraLP_b1 = 0.0f, ultraLP_b2 = 0.0f;
+    float ultraLP_a1 = 0.0f, ultraLP_a2 = 0.0f;
+    void updateUltrasonicLowpass();
+    inline float processUltrasonicLowpass (float x, int ch) noexcept;
     float analogEnvAttackAlpha  = 0.0f; // envelope follower for analog bias
     float analogEnvReleaseAlpha = 0.0f;
     float analogDcAlpha         = 0.0f; // DC blocker coefficient for analog clipper (computed per-block for OS rate)
