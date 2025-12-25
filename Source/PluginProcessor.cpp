@@ -316,6 +316,84 @@ void FruityClipAudioProcessor::updateAnalogClipperCoefficients()
     }
 }
 
+void FruityClipAudioProcessor::updateAnalogToneSplitCoefficients()
+{
+    const float sr = (float) juce::jmax (1.0, sampleRate);
+    const float fcLow  = 250.0f;
+    const float fcHigh = 10000.0f;
+
+    analogToneAlpha250 = juce::jlimit (0.0f, 0.9999999f,
+                                       std::exp (-2.0f * juce::MathConstants<float>::pi * fcLow / sr));
+
+    analogToneAlpha10k = juce::jlimit (0.0f, 0.9999999f,
+                                       std::exp (-2.0f * juce::MathConstants<float>::pi * fcHigh / sr));
+}
+
+static inline void makeRBJLowpass (float sr, float fc, float Q,
+                                   float& b0, float& b1, float& b2, float& a1, float& a2)
+{
+    const float w0 = 2.0f * juce::MathConstants<float>::pi * (fc / sr);
+    const float c  = std::cos (w0);
+    const float s  = std::sin (w0);
+    const float alpha = s / (2.0f * Q);
+
+    const float bb0 = (1.0f - c) * 0.5f;
+    const float bb1 = (1.0f - c);
+    const float bb2 = (1.0f - c) * 0.5f;
+    const float aa0 = (1.0f + alpha);
+    const float aa1 = (-2.0f * c);
+    const float aa2 = (1.0f - alpha);
+
+    b0 = bb0 / aa0;
+    b1 = bb1 / aa0;
+    b2 = bb2 / aa0;
+    a1 = aa1 / aa0;
+    a2 = aa2 / aa0;
+}
+
+void FruityClipAudioProcessor::updatePostLP4()
+{
+    const float sr = (float) juce::jmax (1.0, sampleRate);
+
+    float fc = 19120.6367f * (sr / 48000.0f);
+    fc = juce::jlimit (9000.0f, 0.49f * sr, fc);
+
+    constexpr float Q1 = 0.5411961f;
+    constexpr float Q2 = 1.3065630f;
+
+    makeRBJLowpass (sr, fc, Q1, pc_b0_1, pc_b1_1, pc_b2_1, pc_a1_1, pc_a2_1);
+    makeRBJLowpass (sr, fc, Q2, pc_b0_2, pc_b1_2, pc_b2_2, pc_a1_2, pc_a2_2);
+}
+
+inline float FruityClipAudioProcessor::processPostLP4 (float x, int ch) noexcept
+{
+    if (ch < 0 || ch >= (int) postLP_a.size())
+        return x;
+
+    {
+        auto& st = postLP_a[(size_t) ch];
+        const float y = pc_b0_1 * x + pc_b1_1 * st.x1 + pc_b2_1 * st.x2
+                      - pc_a1_1 * st.y1 - pc_a2_1 * st.y2;
+        st.x2 = st.x1;
+        st.x1 = x;
+        st.y2 = st.y1;
+        st.y1 = y;
+        x = y;
+    }
+    {
+        auto& st = postLP_b[(size_t) ch];
+        const float y = pc_b0_2 * x + pc_b1_2 * st.x1 + pc_b2_2 * st.x2
+                      - pc_a1_2 * st.y1 - pc_a2_2 * st.y2;
+        st.x2 = st.x1;
+        st.x1 = x;
+        st.y2 = st.y1;
+        st.y1 = y;
+        x = y;
+    }
+    return x;
+}
+
+
 void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 {
     // osIndex: 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32, 6=x64
@@ -399,16 +477,11 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         satLowAlpha = juce::jlimit (0.0f, 1.0f, alphaSat);
     }
 
-    // One-pole lowpasses for analog tone tilt splits (~250 Hz and ~10 kHz)
-    {
-        const float fcLow  = 250.0f;
-        const float alphaL = std::exp (-2.0f * juce::MathConstants<float>::pi * fcLow / sr);
-        analogToneAlpha250 = juce::jlimit (0.0f, 1.0f, alphaL);
-
-        const float fcHigh = 10000.0f;
-        const float alphaH = std::exp (-2.0f * juce::MathConstants<float>::pi * fcHigh / sr);
-        analogToneAlpha10k = juce::jlimit (0.0f, 1.0f, alphaH);
-    }
+    updateAnalogToneSplitCoefficients();
+    const int chs = getTotalNumInputChannels();
+    postLP_a.assign ((size_t) chs, PostLPState {});
+    postLP_b.assign ((size_t) chs, PostLPState {});
+    updatePostLP4();
 
     dsmCaptureEq.prepare (sampleRate, getTotalNumInputChannels());
 
@@ -685,147 +758,54 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     constexpr float threshold = 1.0f;
     constexpr float baseKneeWidth = 0.38f;
 
-    auto softClip = [] (float v, float kneeWidth) noexcept
-    {
-        constexpr float threshold = 1.0f;
-
-        const float a = std::abs (v);
-        if (a <= threshold)
-            return v;
-
-        const float over   = a - threshold;
-        const float shaped = threshold + std::tanh (over / kneeWidth) * kneeWidth;
-        return std::copysign (shaped, v);
-    };
-
     // Shaped SILK control
     const float silkShape = std::pow (juce::jlimit (0.0f, 1.0f, silkAmount), 0.8f);
 
     // Per-channel state
-    if (channel < 0 || channel >= (int) analogClipStates.size() || channel >= (int) analogTransientStates.size())
+    if (channel < 0 || channel >= (int) analogClipStates.size())
         return x;
 
     auto& st  = analogClipStates[(size_t) channel];
-    auto& ts  = analogTransientStates[(size_t) channel];
 
-    // Very gentle drive — we rely on bias & shape, not brute force
+    // Very gentle drive — static parameter shape only
     const float baseDrive = 1.0f + 0.04f * silkShape;
-    const float preEnv    = x * baseDrive;
-    const float absPre    = std::abs (preEnv);
+    float inRaw = x * baseDrive;
 
-    // -------------------------------------------------------------
-    // Fast/slow transient detector
-    // -------------------------------------------------------------
-    ts.fastEnv = analogFastEnvA * ts.fastEnv + (1.0f - analogFastEnvA) * absPre;
-    ts.slowEnv = analogSlowEnvA * ts.slowEnv + (1.0f - analogSlowEnvA) * absPre;
-
-    const float transient    = juce::jmax (0.0f, ts.fastEnv - ts.slowEnv);
-    const float transientNorm = smoothStep01 (transient / 0.25f);
-
-    const float dynamicKnee  = baseKneeWidth * (1.0f + 0.35f * transientNorm);
-    const float dynamicDrive = baseDrive * (1.0f - 0.06f * transientNorm);
-
-    float inRaw = x * dynamicDrive;
-
-    // Slew blend only when corners are steep (Lavry-style edge rounding)
-    const float pre    = inRaw;
-    const float slewed = analogSlewA * ts.slew + (1.0f - analogSlewA) * pre;
-    ts.slew = slewed;
-
-    // slope detector (stable across oversampling)
-    const float srEff = (float) sampleRate * (float) juce::jmax (1, currentOversampleFactor);
-    const float dx    = pre - ts.prev;
-    ts.prev = pre;
-
-    const float slopePerSec = std::abs (dx) * srEff;
-
-    // thresholds (start/end) — checkpoint values, we tune later
-    constexpr float gateStart = 9000.0f;
-    constexpr float gateEnd   = 26000.0f;
-
-    // smoothstep
-    float g = (slopePerSec - gateStart) / (gateEnd - gateStart);
-    g = juce::jlimit (0.0f, 1.0f, g);
-    g = g * g * (3.0f - 2.0f * g);
-
-    // maxBlend controls “how Lavry” the rounding is
-    constexpr float maxBlend = 0.55f;
-    const float blend = maxBlend * g;
-
-    inRaw = pre + blend * (slewed - pre);
+    // Slew/edge rounding removed: use a static memoryless soft clip curve.
+    const float kneeStart = juce::jlimit (0.0f, 0.999f, threshold - baseKneeWidth);
+    const float absIn = std::abs (inRaw);
+    float y = 0.0f;
+    if (absIn <= kneeStart)
+    {
+        y = inRaw;
+    }
+    else if (absIn < threshold)
+    {
+        const float u = (absIn - kneeStart) / (threshold - kneeStart);
+        const float s = u * u * (3.0f - 2.0f * u);
+        y = std::copysign (kneeStart + (threshold - kneeStart) * s, inRaw);
+    }
+    else
+    {
+        y = std::copysign (threshold, inRaw);
+    }
 
     // -------------------------------------------------------------
     // H9 fill disabled — keep Lavry stage clean/symmetric
     // (5060 colour comes from SILK stage now)
     // -------------------------------------------------------------
 
-    const float absIn = std::abs (inRaw);
-
-    // -------------------------------------------------------------
-    // Slow envelope follower of |in| (so bias doesn't "follow" the sine)
-    // -------------------------------------------------------------
-    float env = st.levelEnv;
-    if (absIn > env)
-        env = analogEnvAttackAlpha * env + (1.0f - analogEnvAttackAlpha) * absIn;
-    else
-        env = analogEnvReleaseAlpha * env + (1.0f - analogEnvReleaseAlpha) * absIn;
-
-    st.levelEnv = env;
-
-    // -------------------------------------------------------------
-    // Bias envelope (engages near clipping)
-    // -------------------------------------------------------------
-    constexpr float levelStart = 0.55f; // start engaging below threshold
-    constexpr float levelEnd   = 1.45f;
-
-    float levelT = 0.0f;
-    if (env > levelStart)
-        levelT = juce::jlimit (0.0f, 1.0f, (env - levelStart) / (levelEnd - levelStart));
-
-    // Baseline even content at SILK 0, more with SILK
-    constexpr float biasTrim = 1.20f;   // +1.6 dB-ish on H2/H4
-    constexpr float biasBase = 0.018f * biasTrim;
-    constexpr float biasSilk = 0.031f * biasTrim;
-
-    float targetBias = (biasBase + biasSilk * silkShape) * levelT;
-
-    // Micro "memory" on bias itself
-    st.biasMemory = analogBiasA * st.biasMemory + (1.0f - analogBiasA) * targetBias;
-
-    float bias = st.biasMemory;
-
-    // Tame bias at insane levels (avoid fuzz)
-    bias *= 1.0f / (1.0f + 0.20f * env);
-    // -------------------------------------------------------------
-    // Bias inside shaper (creates even harmonics)
-    //
-    // IMPORTANT:
-    // We do NOT do (shaped - shaped(bias)) here anymore.
-    // That DC-comp trick was killing the even-harmonic energy.
-    // Instead, we allow the asymmetry to exist, then remove *only DC*
-    // with an ultra-low cutoff one-pole HP (preserves H2/H4/H6).
-    // -------------------------------------------------------------
-    float y = softClip (inRaw, dynamicKnee);
-
     // DC blocker (very low corner) – keeps the expensive even series, removes DC drift
     st.dcBlock = analogDcAlpha * st.dcBlock + (1.0f - analogDcAlpha) * y;
     y -= st.dcBlock;
 
-    // Extra HF damping when driven (models converter reconstruction smoothing)
+    // Extra HF damping with static mix (no program-dependent gain control)
     st.postLP1 = analogReconA * st.postLP1 + (1.0f - analogReconA) * y;
     st.postLP2 = analogReconA * st.postLP2 + (1.0f - analogReconA) * st.postLP1;
-    // recon engages strongly once we're truly near the ceiling
-    float reconT = 0.0f;
-    if (env > 0.55f)
-        reconT = juce::jlimit (0.0f, 1.0f, (env - 0.55f) / (1.00f - 0.55f));
-
-    float reconBlend = reconT * reconT * reconT;
-
-    // back off HF damping to match hardware "air" at silk=0
-    const float reconBlendBase = juce::jlimit (0.0f, 1.0f, 0.80f * reconBlend);
     const float sRecon = std::pow (silkShape, 1.56f);
-    constexpr float reconBlendMaxDelta = 0.20f;
-    reconBlend = juce::jlimit (0.0f, 1.0f, reconBlendBase + reconBlendMaxDelta * sRecon);
+    constexpr float reconBlendBase = 0.10f;
+    constexpr float reconBlendMaxDelta = 0.10f;
+    const float reconBlend = juce::jlimit (0.0f, 1.0f, reconBlendBase + reconBlendMaxDelta * sRecon);
     y = y + reconBlend * (st.postLP2 - y);
 
     return juce::jlimit (-2.0f, 2.0f, y);
@@ -869,9 +849,9 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // -----------------------------------------------------------------
     // 3) 3-band tilt target derived from measurements
     // -----------------------------------------------------------------
-    const float lowDb  = juce::jmap (s, 0.0f, 1.0f, -0.28f, +0.37f);
-    const float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.31f, +0.45f);
-    const float highDb = juce::jmap (s, 0.0f, 1.0f, -4.72f, -2.77f);
+    const float lowDb  = juce::jmap (s, 0.0f, 1.0f, +0.29f, +0.37f);
+    const float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.52f, +0.45f);
+    const float highDb = juce::jmap (s, 0.0f, 1.0f, -5.35f, -2.77f);
     const float gainLow  = juce::Decibels::decibelsToGain (lowDb);
     const float gainMid  = juce::Decibels::decibelsToGain (midDb);
     const float gainHigh = juce::Decibels::decibelsToGain (highDb);
@@ -1018,7 +998,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (isAnalogMode)
                 {
                     // 5060 baseline color even when knob is at 0
-                    constexpr float silkBase = 0.15f; // starting point — we will tune after we see numbers
+                    constexpr float silkBase = 0.0f; // true off at knob=0
                     const float silkEff = juce::jlimit (0.0f, 1.0f,
                                                         silkBase + (1.0f - silkBase) * marryAmount);
 
@@ -1148,6 +1128,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
             // Downsample once for the whole block.
             oversampler->processSamplesDown (block);
+
+            if (isAnalogMode)
+            {
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* s = buffer.getWritePointer (ch);
+                    for (int i = 0; i < numSamples; ++i)
+                        s[i] = processPostLP4 (s[i], ch);
+                }
+            }
         }
         else
         {
@@ -1174,6 +1164,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     }
 
                     samples[i] = sample;
+                }
+            }
+
+            if (isAnalogMode)
+            {
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* s = buffer.getWritePointer (ch);
+                    for (int i = 0; i < numSamples; ++i)
+                        s[i] = processPostLP4 (s[i], ch);
                 }
             }
         }

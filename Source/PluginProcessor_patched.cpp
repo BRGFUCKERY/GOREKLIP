@@ -310,6 +310,106 @@ void FruityClipAudioProcessor::updateAnalogClipperCoefficients()
     }
 }
 
+void FruityClipAudioProcessor::updateAnalogToneSplitCoefficients()
+{
+    const float sr = (float) juce::jmax (1.0, sampleRate);
+    const float fcLow  = 250.0f;
+    const float fcHigh = 10000.0f;
+
+    analogToneAlpha250 = juce::jlimit (0.0f, 0.9999999f,
+                                       std::exp (-2.0f * juce::MathConstants<float>::pi * fcLow / sr));
+
+    analogToneAlpha10k = juce::jlimit (0.0f, 0.9999999f,
+                                       std::exp (-2.0f * juce::MathConstants<float>::pi * fcHigh / sr));
+}
+
+static inline void makeRBJLowpass (float sr, float fc, float Q,
+                                   float& b0, float& b1, float& b2, float& a1, float& a2)
+{
+    const float w0 = 2.0f * juce::MathConstants<float>::pi * (fc / sr);
+    const float c  = std::cos (w0);
+    const float s  = std::sin (w0);
+    const float alpha = s / (2.0f * Q);
+
+    const float bb0 = (1.0f - c) * 0.5f;
+    const float bb1 = (1.0f - c);
+    const float bb2 = (1.0f - c) * 0.5f;
+    const float aa0 = (1.0f + alpha);
+    const float aa1 = (-2.0f * c);
+    const float aa2 = (1.0f - alpha);
+
+    b0 = bb0 / aa0;
+    b1 = bb1 / aa0;
+    b2 = bb2 / aa0;
+    a1 = aa1 / aa0;
+    a2 = aa2 / aa0;
+}
+
+void FruityClipAudioProcessor::updatePostLP4()
+{
+    const float sr = (float) juce::jmax (1.0, sampleRate);
+
+    float fc = 19120.6367f * (sr / 48000.0f);
+    fc = juce::jlimit (9000.0f, 0.49f * sr, fc);
+
+    constexpr float Q1 = 0.5411961f;
+    constexpr float Q2 = 1.3065630f;
+
+    makeRBJLowpass (sr, fc, Q1, pc_b0_1, pc_b1_1, pc_b2_1, pc_a1_1, pc_a2_1);
+    makeRBJLowpass (sr, fc, Q2, pc_b0_2, pc_b1_2, pc_b2_2, pc_a1_2, pc_a2_2);
+}
+
+inline float FruityClipAudioProcessor::processPostLP4 (float x, int ch) noexcept
+{
+    if (ch < 0 || ch >= (int) postLP_a.size())
+        return x;
+
+    {
+        auto& st = postLP_a[(size_t) ch];
+        const float y = pc_b0_1 * x + pc_b1_1 * st.x1 + pc_b2_1 * st.x2
+                      - pc_a1_1 * st.y1 - pc_a2_1 * st.y2;
+        st.x2 = st.x1;
+        st.x1 = x;
+        st.y2 = st.y1;
+        st.y1 = y;
+        x = y;
+    }
+    {
+        auto& st = postLP_b[(size_t) ch];
+        const float y = pc_b0_2 * x + pc_b1_2 * st.x1 + pc_b2_2 * st.x2
+                      - pc_a1_2 * st.y1 - pc_a2_2 * st.y2;
+        st.x2 = st.x1;
+        st.x1 = x;
+        st.y2 = st.y1;
+        st.y1 = y;
+        x = y;
+    }
+    return x;
+}
+
+static inline void makeRBJLowpass (float sr, float fc, float Q,
+                                   float& b0, float& b1, float& b2, float& a1, float& a2)
+{
+    const float w0 = 2.0f * juce::MathConstants<float>::pi * (fc / sr);
+    const float c  = std::cos (w0);
+    const float s  = std::sin (w0);
+    const float alpha = s / (2.0f * Q);
+
+    const float bb0 = (1.0f - c) * 0.5f;
+    const float bb1 = (1.0f - c);
+    const float bb2 = (1.0f - c) * 0.5f;
+    const float aa0 = (1.0f + alpha);
+    const float aa1 = (-2.0f * c);
+    const float aa2 = (1.0f - alpha);
+
+    b0 = bb0 / aa0;
+    b1 = bb1 / aa0;
+    b2 = bb2 / aa0;
+    a1 = aa1 / aa0;
+    a2 = aa2 / aa0;
+}
+
+
 void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
 {
     // osIndex: 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32, 6=x64
@@ -393,16 +493,11 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
         satLowAlpha = juce::jlimit (0.0f, 1.0f, alphaSat);
     }
 
-    // One-pole lowpasses for analog tone tilt splits (~250 Hz and ~10 kHz)
-    {
-        const float fcLow  = 250.0f;
-        const float alphaL = std::exp (-2.0f * juce::MathConstants<float>::pi * fcLow / sr);
-        analogToneAlpha250 = juce::jlimit (0.0f, 1.0f, alphaL);
-
-        const float fcHigh = 10000.0f;
-        const float alphaH = std::exp (-2.0f * juce::MathConstants<float>::pi * fcHigh / sr);
-        analogToneAlpha10k = juce::jlimit (0.0f, 1.0f, alphaH);
-    }
+    updateAnalogToneSplitCoefficients();
+    const int chs = getTotalNumInputChannels();
+    postLP_a.assign ((size_t) chs, PostLPState {});
+    postLP_b.assign ((size_t) chs, PostLPState {});
+    updatePostLP4();
 
     dsmCaptureEq.prepare (sampleRate, getTotalNumInputChannels());
 
@@ -676,52 +771,33 @@ float FruityClipAudioProcessor::applyClipperAnalogSample (float x, int channel, 
     //   2) Hard clip at +/-1.0
     //   3) Ultra-low DC blocker (already set per-block at the effective processing rate)
 
-    if (channel < 0 || channel >= (int) analogClipStates.size() || channel >= (int) analogTransientStates.size())
+    if (channel < 0 || channel >= (int) analogClipStates.size())
         return x;
 
     auto& st = analogClipStates[(size_t) channel];
-    auto& ts = analogTransientStates[(size_t) channel];
+    const float drive = 1.0f;
+    constexpr float kneeStart = 0.62f;
 
-    auto smoothStep01 = [] (float t) -> float
+    // -------------------------------------------------------------
+    // 1) Static memoryless clip curve
+    // -------------------------------------------------------------
+    const float pre = x * drive;
+    const float absPre = std::abs (pre);
+    float v = 0.0f;
+    if (absPre <= kneeStart)
     {
-        t = juce::jlimit (0.0f, 1.0f, t);
-        return t * t * (3.0f - 2.0f * t);
-    };
-
-    // -------------------------------------------------------------
-    // 1) Derivative-gated slew blend
-    // -------------------------------------------------------------
-    // Gate threshold is specified in "units per second" so it remains stable under oversampling.
-    // Calibrated from the provided 1k clipped-sine capture (silk 0) at 48k.
-    //
-    // Slew blend only when corners are steep (Lavry-style edge rounding)
-    const float pre = x;
-
-    // 1-pole smoothing
-    const float slewed = analogSlewA * ts.slew + (1.0f - analogSlewA) * pre;
-    ts.slew = slewed;
-
-    // slope detector (time-domain stable across oversampling)
-    const float srEff = (float) sampleRate * (float) juce::jmax (1, currentOversampleFactor);
-    const float dx    = pre - ts.prev;
-    ts.prev = pre;
-
-    const float slopePerSec = std::abs (dx) * srEff;
-
-    // gate thresholds (checkpoint values, we will tune)
-    constexpr float gateStart = 9000.0f;
-    constexpr float gateEnd   = 26000.0f;
-
-    // smoothstep gate
-    float g = (slopePerSec - gateStart) / (gateEnd - gateStart);
-    g = juce::jlimit (0.0f, 1.0f, g);
-    g = g * g * (3.0f - 2.0f * g);
-
-    // blend amount
-    constexpr float maxBlend = 0.55f;
-    const float blend = maxBlend * g;
-
-    const float v = pre + blend * (slewed - pre);
+        v = pre;
+    }
+    else if (absPre < 1.0f)
+    {
+        const float u = (absPre - kneeStart) / (1.0f - kneeStart);
+        const float s = u * u * (3.0f - 2.0f * u);
+        v = std::copysign (kneeStart + (1.0f - kneeStart) * s, pre);
+    }
+    else
+    {
+        v = std::copysign (1.0f, pre);
+    }
 
     // -------------------------------------------------------------
     // 2) Hard clip (Lavry clip behavior)
@@ -775,9 +851,9 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // -----------------------------------------------------------------
     // 3) 3-band tilt target derived from measurements
     // -----------------------------------------------------------------
-    const float lowDb  = juce::jmap (s, 0.0f, 1.0f, -0.28f, +0.37f);
-    const float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.31f, +0.45f);
-    const float highDb = juce::jmap (s, 0.0f, 1.0f, -4.72f, -2.77f);
+    const float lowDb  = juce::jmap (s, 0.0f, 1.0f, +0.29f, +0.37f);
+    const float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.52f, +0.45f);
+    const float highDb = juce::jmap (s, 0.0f, 1.0f, -5.35f, -2.77f);
     const float gainLow  = juce::Decibels::decibelsToGain (lowDb);
     const float gainMid  = juce::Decibels::decibelsToGain (midDb);
     const float gainHigh = juce::Decibels::decibelsToGain (highDb);
@@ -924,7 +1000,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (isAnalogMode)
                 {
                     // 5060 baseline colour even when knob is at 0
-                    constexpr float silkBase = 0.15f; // checkpoint value (we will tune later)
+                    constexpr float silkBase = 0.0f; // true off at knob=0
 
                     const float silkEff = juce::jlimit (0.0f, 1.0f,
                                                         silkBase + (1.0f - silkBase) * marryAmount);
@@ -1056,6 +1132,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
             // Downsample once for the whole block.
             oversampler->processSamplesDown (block);
+
+            if (isAnalogMode)
+            {
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* s = buffer.getWritePointer (ch);
+                    for (int i = 0; i < numSamples; ++i)
+                        s[i] = processPostLP4 (s[i], ch);
+                }
+            }
         }
         else
         {
@@ -1082,6 +1168,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     }
 
                     samples[i] = sample;
+                }
+            }
+
+            if (isAnalogMode)
+            {
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    float* s = buffer.getWritePointer (ch);
+                    for (int i = 0; i < numSamples; ++i)
+                        s[i] = processPostLP4 (s[i], ch);
                 }
             }
         }
