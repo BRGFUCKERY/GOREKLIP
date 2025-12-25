@@ -327,10 +327,10 @@ void FruityClipAudioProcessor::updateUltrasonicLowpass()
 {
     const float sr = (float) juce::jmax (1.0, sampleRate);
 
-    float fc = 19500.0f * (sr / 48000.0f);
+    float fc = 22000.0f * (sr / 48000.0f);
     fc = juce::jlimit (12000.0f, 0.49f * sr, fc);
 
-    constexpr float Q = 0.50f;
+    constexpr float Q = 0.70710678f;
 
     const float w0 = 2.0f * juce::MathConstants<float>::pi * (fc / sr);
     const float c  = std::cos (w0);
@@ -815,7 +815,7 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // 3) 3-band tilt target derived from measurements
     // -----------------------------------------------------------------
     const float lowDb  = juce::jmap (s, 0.0f, 1.0f, -0.28f, +0.37f);
-    const float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.31f, +0.45f);
+    const float midDb  = juce::jmap (s, 0.0f, 1.0f, -1.50f, +0.45f);
     const float highDb = juce::jmap (s, 0.0f, 1.0f, -5.72f, -2.77f);
     const float gainLow  = juce::Decibels::decibelsToGain (lowDb);
     const float gainMid  = juce::Decibels::decibelsToGain (midDb);
