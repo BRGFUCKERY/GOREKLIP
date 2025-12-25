@@ -351,29 +351,29 @@ static inline void makeRBJLowpass (float sr, float fc, float Q,
     a2 = aa2 / aa0;
 }
 
-void FruityClipAudioProcessor::updateUltraLP4()
+void FruityClipAudioProcessor::updatePostClipLP4()
 {
     const float sr = (float) juce::jmax (1.0, sampleRate);
 
-    float fc = 15556.0f * (sr / 48000.0f);
-    fc = juce::jlimit (8000.0f, 0.49f * sr, fc);
+    float fc = 16670.0f * (sr / 48000.0f);
+    fc = juce::jlimit (9000.0f, 0.49f * sr, fc);
 
     constexpr float Q1 = 0.5411961f;
     constexpr float Q2 = 1.3065630f;
 
-    makeRBJLowpass (sr, fc, Q1, ulp_b0_1, ulp_b1_1, ulp_b2_1, ulp_a1_1, ulp_a2_1);
-    makeRBJLowpass (sr, fc, Q2, ulp_b0_2, ulp_b1_2, ulp_b2_2, ulp_a1_2, ulp_a2_2);
+    makeRBJLowpass (sr, fc, Q1, pc_b0_1, pc_b1_1, pc_b2_1, pc_a1_1, pc_a2_1);
+    makeRBJLowpass (sr, fc, Q2, pc_b0_2, pc_b1_2, pc_b2_2, pc_a1_2, pc_a2_2);
 }
 
-inline float FruityClipAudioProcessor::processUltraLP4 (float x, int ch) noexcept
+inline float FruityClipAudioProcessor::processPostClipLP4 (float x, int ch) noexcept
 {
-    if (ch < 0 || ch >= (int) ultraLP4_a.size())
+    if (ch < 0 || ch >= (int) postLP4a.size())
         return x;
 
     {
-        auto& st = ultraLP4_a[(size_t) ch];
-        const float y = ulp_b0_1 * x + ulp_b1_1 * st.x1 + ulp_b2_1 * st.x2
-                      - ulp_a1_1 * st.y1 - ulp_a2_1 * st.y2;
+        auto& st = postLP4a[(size_t) ch];
+        const float y = pc_b0_1 * x + pc_b1_1 * st.x1 + pc_b2_1 * st.x2
+                      - pc_a1_1 * st.y1 - pc_a2_1 * st.y2;
         st.x2 = st.x1;
         st.x1 = x;
         st.y2 = st.y1;
@@ -381,9 +381,9 @@ inline float FruityClipAudioProcessor::processUltraLP4 (float x, int ch) noexcep
         x = y;
     }
     {
-        auto& st = ultraLP4_b[(size_t) ch];
-        const float y = ulp_b0_2 * x + ulp_b1_2 * st.x1 + ulp_b2_2 * st.x2
-                      - ulp_a1_2 * st.y1 - ulp_a2_2 * st.y2;
+        auto& st = postLP4b[(size_t) ch];
+        const float y = pc_b0_2 * x + pc_b1_2 * st.x1 + pc_b2_2 * st.x2
+                      - pc_a1_2 * st.y1 - pc_a2_2 * st.y2;
         st.x2 = st.x1;
         st.x1 = x;
         st.y2 = st.y1;
@@ -478,9 +478,9 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
 
     updateAnalogToneSplitCoefficients();
     const int chs = getTotalNumInputChannels();
-    ultraLP4_a.assign ((size_t) chs, UltraLP4State {});
-    ultraLP4_b.assign ((size_t) chs, UltraLP4State {});
-    updateUltraLP4();
+    postLP4a.assign ((size_t) chs, PostClipLP4State {});
+    postLP4b.assign ((size_t) chs, PostClipLP4State {});
+    updatePostClipLP4();
 
     dsmCaptureEq.prepare (sampleRate, getTotalNumInputChannels());
 
@@ -850,7 +850,7 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // -----------------------------------------------------------------
     float lowDb  = juce::jmap (s, 0.0f, 1.0f, -0.28f, +0.37f);
     float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.31f, +0.45f);
-    float highDb = juce::jmap (s, 0.0f, 1.0f, -6.92f, -2.77f);
+    float highDb = juce::jmap (s, 0.0f, 1.0f, -7.57f, -2.77f);
 
     const float baselineBlend = 1.0f - s;
     constexpr float kBaseCorrLowDb  = -2.08f;
@@ -1014,7 +1014,6 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                     // keep tone-match driven by the knob (0..1) so silk=0 targets your “0 silk” capture curve
                     s = applyAnalogToneMatch (s, ch, marryAmount);
-                    s = processUltraLP4 (s, ch);
                 }
                 else
                 {
@@ -1164,6 +1163,16 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                     samples[i] = sample;
                 }
+            }
+        }
+
+        if (isAnalogMode)
+        {
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                float* s = buffer.getWritePointer (ch);
+                for (int i = 0; i < numSamples; ++i)
+                    s[i] = processPostClipLP4 (s[i], ch);
             }
         }
 
