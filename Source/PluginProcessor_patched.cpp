@@ -323,53 +323,68 @@ void FruityClipAudioProcessor::updateAnalogToneSplitCoefficients()
                                        std::exp (-2.0f * juce::MathConstants<float>::pi * fcHigh / sr));
 }
 
-void FruityClipAudioProcessor::updateUltrasonicLowpass()
+static inline void makeRBJLowpass (float sr, float fc, float Q,
+                                   float& b0, float& b1, float& b2, float& a1, float& a2)
 {
-    const float sr = (float) juce::jmax (1.0, sampleRate);
-
-    float fc = 22000.0f * (sr / 48000.0f);
-    fc = juce::jlimit (12000.0f, 0.49f * sr, fc);
-
-    constexpr float Q = 0.70710678f;
-
     const float w0 = 2.0f * juce::MathConstants<float>::pi * (fc / sr);
     const float c  = std::cos (w0);
     const float s  = std::sin (w0);
     const float alpha = s / (2.0f * Q);
 
-    const float b0 = (1.0f - c) * 0.5f;
-    const float b1 = (1.0f - c);
-    const float b2 = (1.0f - c) * 0.5f;
-    const float a0 = (1.0f + alpha);
-    const float a1 = (-2.0f * c);
-    const float a2 = (1.0f - alpha);
+    const float bb0 = (1.0f - c) * 0.5f;
+    const float bb1 = (1.0f - c);
+    const float bb2 = (1.0f - c) * 0.5f;
+    const float aa0 = (1.0f + alpha);
+    const float aa1 = (-2.0f * c);
+    const float aa2 = (1.0f - alpha);
 
-    ultraLP_b0 = b0 / a0;
-    ultraLP_b1 = b1 / a0;
-    ultraLP_b2 = b2 / a0;
-    ultraLP_a1 = a1 / a0;
-    ultraLP_a2 = a2 / a0;
+    b0 = bb0 / aa0;
+    b1 = bb1 / aa0;
+    b2 = bb2 / aa0;
+    a1 = aa1 / aa0;
+    a2 = aa2 / aa0;
 }
 
-inline float FruityClipAudioProcessor::processUltrasonicLowpass (float x, int ch) noexcept
+void FruityClipAudioProcessor::updateUltraLP4()
 {
-    if (ch < 0 || ch >= (int) analogToneStates.size())
+    const float sr = (float) juce::jmax (1.0, sampleRate);
+
+    float fc = 15556.0f * (sr / 48000.0f);
+    fc = juce::jlimit (8000.0f, 0.49f * sr, fc);
+
+    constexpr float Q1 = 0.5411961f;
+    constexpr float Q2 = 1.3065630f;
+
+    makeRBJLowpass (sr, fc, Q1, ulp_b0_1, ulp_b1_1, ulp_b2_1, ulp_a1_1, ulp_a2_1);
+    makeRBJLowpass (sr, fc, Q2, ulp_b0_2, ulp_b1_2, ulp_b2_2, ulp_a1_2, ulp_a2_2);
+}
+
+inline float FruityClipAudioProcessor::processUltraLP4 (float x, int ch) noexcept
+{
+    if (ch < 0 || ch >= (int) ultraLP4_a.size())
         return x;
 
-    auto& st = analogToneStates[(size_t) ch];
-
-    const float y =
-        ultraLP_b0 * x +
-        ultraLP_b1 * st.u_x1 +
-        ultraLP_b2 * st.u_x2
-      - ultraLP_a1 * st.u_y1
-      - ultraLP_a2 * st.u_y2;
-
-    st.u_x2 = st.u_x1;
-    st.u_x1 = x;
-    st.u_y2 = st.u_y1;
-    st.u_y1 = y;
-    return y;
+    {
+        auto& st = ultraLP4_a[(size_t) ch];
+        const float y = ulp_b0_1 * x + ulp_b1_1 * st.x1 + ulp_b2_1 * st.x2
+                      - ulp_a1_1 * st.y1 - ulp_a2_1 * st.y2;
+        st.x2 = st.x1;
+        st.x1 = x;
+        st.y2 = st.y1;
+        st.y1 = y;
+        x = y;
+    }
+    {
+        auto& st = ultraLP4_b[(size_t) ch];
+        const float y = ulp_b0_2 * x + ulp_b1_2 * st.x1 + ulp_b2_2 * st.x2
+                      - ulp_a1_2 * st.y1 - ulp_a2_2 * st.y2;
+        st.x2 = st.x1;
+        st.x1 = x;
+        st.y2 = st.y1;
+        st.y1 = y;
+        x = y;
+    }
+    return x;
 }
 
 void FruityClipAudioProcessor::updateOversampling (int osIndex, int numChannels)
@@ -456,7 +471,10 @@ void FruityClipAudioProcessor::prepareToPlay (double newSampleRate, int samplesP
     }
 
     updateAnalogToneSplitCoefficients();
-    updateUltrasonicLowpass();
+    const int chs = getTotalNumInputChannels();
+    ultraLP4_a.assign ((size_t) chs, UltraLP4State {});
+    ultraLP4_b.assign ((size_t) chs, UltraLP4State {});
+    updateUltraLP4();
 
     dsmCaptureEq.prepare (sampleRate, getTotalNumInputChannels());
 
@@ -553,10 +571,6 @@ void FruityClipAudioProcessor::resetAnalogToneState (int numChannels)
     {
         st.low250 = 0.0f;
         st.low10k = 0.0f;
-        st.u_x1 = 0.0f;
-        st.u_x2 = 0.0f;
-        st.u_y1 = 0.0f;
-        st.u_y2 = 0.0f;
     }
 }
 
@@ -816,7 +830,7 @@ float FruityClipAudioProcessor::applyAnalogToneMatch (float x, int channel, floa
     // -----------------------------------------------------------------
     float lowDb  = juce::jmap (s, 0.0f, 1.0f, -0.28f, +0.37f);
     float midDb  = juce::jmap (s, 0.0f, 1.0f, -0.31f, +0.45f);
-    float highDb = juce::jmap (s, 0.0f, 1.0f, -4.72f, -2.77f);
+    float highDb = juce::jmap (s, 0.0f, 1.0f, -6.92f, -2.77f);
 
     const float baselineBlend = 1.0f - s;
     constexpr float kBaseCorrLowDb  = -2.08f;
@@ -982,9 +996,7 @@ void FruityClipAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // IMPORTANT: keep tone-match driven by the knob (0..1),
                     // so "0" still means the baseline measured curve.
                     s = applyAnalogToneMatch (s, ch, marryAmount);
-                    const float ultraBlend = std::pow (juce::jlimit (0.0f, 1.0f, marryAmount), 0.8f);
-                    const float lp = processUltrasonicLowpass (s, ch);
-                    s = s + ultraBlend * (lp - s);
+                    s = processUltraLP4 (s, ch);
                 }
                 else
                 {
