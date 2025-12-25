@@ -185,15 +185,6 @@ private:
     // Tone split coeff updater (base-rate; independent of oversampling)
     void updateAnalogToneSplitCoefficients();
 
-    struct PostClipLP4State { float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f; };
-    std::vector<PostClipLP4State> postLP4a;
-    std::vector<PostClipLP4State> postLP4b;
-
-    float pc_b0_1 = 1.0f, pc_b1_1 = 0.0f, pc_b2_1 = 0.0f, pc_a1_1 = 0.0f, pc_a2_1 = 0.0f;
-    float pc_b0_2 = 1.0f, pc_b1_2 = 0.0f, pc_b2_2 = 0.0f, pc_a1_2 = 0.0f, pc_a2_2 = 0.0f;
-
-    void updatePostClipLP4();
-    inline float processPostClipLP4 (float x, int ch) noexcept;
     float analogEnvAttackAlpha  = 0.0f; // envelope follower for analog bias
     float analogEnvReleaseAlpha = 0.0f;
     float analogDcAlpha         = 0.0f; // DC blocker coefficient for analog clipper (computed per-block for OS rate)
